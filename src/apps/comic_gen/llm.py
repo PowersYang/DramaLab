@@ -40,8 +40,7 @@ class ScriptProcessor:
             dashscope.api_key = self.api_key
             
             response = dashscope.Generation.call(
-                # model='deepseek-v3.2',
-                model='qwen-max',
+                model='qwen3.5-plus',
                 prompt=prompt,
                 result_format='message',
             )
@@ -416,7 +415,7 @@ CRITICAL STYLE GUIDELINES:
             dashscope.api_key = self.api_key
             
             response = dashscope.Generation.call(
-                model='qwen-plus',
+                model='qwen3.5-plus',
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -671,7 +670,7 @@ Props:
             dashscope.api_key = self.api_key
             
             response = dashscope.Generation.call(
-                model='qwen-max',
+                model='qwen3.5-plus',
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。"}
@@ -792,7 +791,7 @@ Return STRICTLY a JSON object:
             dashscope.api_key = self.api_key
             
             response = dashscope.Generation.call(
-                model='qwen-plus',
+                model='qwen3.5-plus',
                 prompt=system_prompt,
                 result_format='message',
                 response_format={'type': 'json_object'}
@@ -866,7 +865,7 @@ Return STRICTLY a JSON object:
             dashscope.api_key = self.api_key
 
             response = dashscope.Generation.call(
-                model='qwen-plus',
+                model='qwen3.5-plus',
                 messages=[
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': draft_prompt}
@@ -964,7 +963,7 @@ OUTPUT:
             dashscope.api_key = self.api_key
 
             response = dashscope.Generation.call(
-                model='qwen-plus',
+                model='qwen3.5-plus',
                 messages=[
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': draft_prompt}

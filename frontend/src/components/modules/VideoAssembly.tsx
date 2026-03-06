@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText } from "lucide-react";
+import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
@@ -14,6 +14,7 @@ export default function VideoAssembly() {
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
     const [isMerging, setIsMerging] = useState(false);
     const [mergeError, setMergeError] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     // Group videos by frame
     const videosByFrame = useMemo(() => {
@@ -68,6 +69,27 @@ export default function VideoAssembly() {
         }
     };
 
+
+    const handleDownload = async () => {
+        if (!currentProject?.merged_video_url) return;
+        setIsDownloading(true);
+        try {
+            const url = getAssetUrl(currentProject.merged_video_url);
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = `${currentProject.title || "merged"}_${currentProject.id}.mp4`;
+            a.click();
+            URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            console.error("Failed to download video:", error);
+            alert("Failed to download video. Please try again.");
+        } finally {
+            setIsDownloading(false);
+        }
+    };
 
     const selectedFrame = useMemo(() => {
         return currentProject?.frames?.find((f: any) => f.id === selectedFrameId);
@@ -343,13 +365,14 @@ export default function VideoAssembly() {
                                 </div>
 
                                 <div className="flex gap-4">
-                                    <a
-                                        href={getAssetUrl(currentProject.merged_video_url)}
-                                        download={`merged_${currentProject.id}.mp4`}
-                                        className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg font-bold flex items-center gap-2 transition-colors"
+                                    <button
+                                        onClick={handleDownload}
+                                        disabled={isDownloading}
+                                        className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg font-bold flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        Download MP4
-                                    </a>
+                                        <Download size={18} />
+                                        {isDownloading ? "Downloading..." : "Download MP4"}
+                                    </button>
                                     {/* Optional: Proceed Button if needed, or user uses sidebar */}
                                 </div>
                             </div>

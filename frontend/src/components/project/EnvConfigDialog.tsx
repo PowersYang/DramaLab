@@ -17,7 +17,10 @@ interface EnvConfig {
   OSS_BUCKET_NAME: string;
   OSS_ENDPOINT: string;
   OSS_BASE_PATH: string;
-  [key: string]: string; // 添加索引签名以兼容Record类型
+  KLING_ACCESS_KEY: string;
+  KLING_SECRET_KEY: string;
+  VIDU_API_KEY: string;
+  [key: string]: string;
 }
 
 export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }: EnvConfigDialogProps) {
@@ -28,6 +31,9 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
     OSS_BUCKET_NAME: "",
     OSS_ENDPOINT: "",
     OSS_BASE_PATH: "",
+    KLING_ACCESS_KEY: "",
+    KLING_SECRET_KEY: "",
+    VIDU_API_KEY: "",
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -237,6 +243,63 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Kling Configuration */}
+              <div className="pt-4 border-t border-gray-800">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">Kling AI 配置</h3>
+                  <span className="text-xs text-gray-500">可选 - 用于 Kling 视频生成</span>
+                </div>
+
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Kling Access Key
+                    </label>
+                    <input
+                      type="password"
+                      value={config.KLING_ACCESS_KEY}
+                      onChange={(e) => handleChange("KLING_ACCESS_KEY", e.target.value)}
+                      placeholder="Kling API Access Key"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Kling Secret Key
+                    </label>
+                    <input
+                      type="password"
+                      value={config.KLING_SECRET_KEY}
+                      onChange={(e) => handleChange("KLING_SECRET_KEY", e.target.value)}
+                      placeholder="Kling API Secret Key"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Vidu Configuration */}
+              <div className="pt-4 border-t border-gray-800">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">Vidu AI 配置</h3>
+                  <span className="text-xs text-gray-500">可选 - 用于 Vidu 视频生成</span>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Vidu API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={config.VIDU_API_KEY}
+                    onChange={(e) => handleChange("VIDU_API_KEY", e.target.value)}
+                    placeholder="Vidu API Key"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                  />
                 </div>
               </div>
             </>

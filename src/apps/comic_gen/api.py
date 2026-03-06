@@ -262,6 +262,9 @@ class EnvConfig(BaseModel):
     OSS_BUCKET_NAME: Optional[str] = None
     OSS_ENDPOINT: Optional[str] = None
     OSS_BASE_PATH: Optional[str] = None
+    KLING_ACCESS_KEY: Optional[str] = None
+    KLING_SECRET_KEY: Optional[str] = None
+    VIDU_API_KEY: Optional[str] = None
 
 
 def get_user_config_path() -> str:
@@ -1239,6 +1242,46 @@ async def select_video(script_id: str, frame_id: str, request: SelectVideoReques
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ExtractLastFrameRequest(BaseModel):
+    video_task_id: str
+
+
+@app.post("/projects/{script_id}/frames/{frame_id}/extract_last_frame")
+async def extract_last_frame(script_id: str, frame_id: str, request: ExtractLastFrameRequest):
+    """Extract the last frame from a completed video and add it as a variant to the frame's rendered_image_asset."""
+    try:
+        updated_script = pipeline.extract_last_frame(script_id, frame_id, request.video_task_id)
+        return signed_response(updated_script)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error extracting last frame: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/projects/{script_id}/frames/{frame_id}/upload_image")
+async def upload_frame_image(script_id: str, frame_id: str, file: UploadFile = File(...)):
+    """Upload an image as a variant for a frame's rendered_image_asset."""
+    try:
+        # Save file locally first
+        file_ext = os.path.splitext(file.filename)[1]
+        filename = f"{uuid.uuid4()}{file_ext}"
+        file_path = os.path.join("output/uploads", filename)
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        updated_script = pipeline.upload_frame_image(script_id, frame_id, file_path)
+        return signed_response(updated_script)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error uploading frame image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/projects/{script_id}/merge", response_model=Script)
 async def merge_videos(script_id: str):
     """Merge all selected frame videos into final output"""
@@ -1401,6 +1444,9 @@ class EnvConfig(BaseModel):
     OSS_BUCKET_NAME: Optional[str] = None
     OSS_ENDPOINT: Optional[str] = None
     OSS_BASE_PATH: Optional[str] = None
+    KLING_ACCESS_KEY: Optional[str] = None
+    KLING_SECRET_KEY: Optional[str] = None
+    VIDU_API_KEY: Optional[str] = None
 
 
 @app.get("/config/env")
@@ -1413,7 +1459,10 @@ async def get_env_config():
             "ALIBABA_CLOUD_ACCESS_KEY_SECRET": os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""),
             "OSS_BUCKET_NAME": os.getenv("OSS_BUCKET_NAME", ""),
             "OSS_ENDPOINT": os.getenv("OSS_ENDPOINT", ""),
-            "OSS_BASE_PATH": os.getenv("OSS_BASE_PATH", "")
+            "OSS_BASE_PATH": os.getenv("OSS_BASE_PATH", ""),
+            "KLING_ACCESS_KEY": os.getenv("KLING_ACCESS_KEY", ""),
+            "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
+            "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1340,6 +1340,126 @@ class ComicGenPipeline:
         self._save_data()
         return script, task_id
 
+    def extract_last_frame(self, script_id: str, frame_id: str, video_task_id: str) -> Script:
+        """Extract the last frame from a video task and add it as a variant of the frame's rendered_image_asset."""
+        from .models import ImageVariant, ImageAsset
+
+        script = self.get_script(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        frame = next((f for f in script.frames if f.id == frame_id), None)
+        if not frame:
+            raise ValueError("Frame not found")
+
+        # Find the video task
+        video_task = next((t for t in script.video_tasks if t.id == video_task_id), None)
+        if not video_task or video_task.status != "completed" or not video_task.video_url:
+            raise ValueError("Video task not found or not completed")
+
+        # Resolve video path
+        video_path = video_task.video_url
+        if not video_path.startswith("/") and not video_path.startswith("http"):
+            video_path = os.path.join("output", video_path)
+
+        if video_path.startswith("http"):
+            # Download to temp file first
+            video_path = self._download_temp_image(video_path)
+
+        if not os.path.exists(video_path):
+            raise ValueError(f"Video file not found: {video_path}")
+
+        # Extract last frame using FFmpeg
+        ffmpeg_path = get_ffmpeg_path()
+        if not ffmpeg_path:
+            raise RuntimeError("FFmpeg is required for frame extraction but was not found.")
+
+        output_dir = os.path.join("output", "storyboard")
+        os.makedirs(output_dir, exist_ok=True)
+        output_filename = f"frame_{frame_id}_lastframe_{uuid.uuid4().hex[:8]}.jpg"
+        output_path = os.path.join(output_dir, output_filename)
+
+        cmd = [
+            ffmpeg_path, "-sseof", "-0.1",
+            "-i", video_path,
+            "-frames:v", "1",
+            "-q:v", "2",
+            "-y", output_path
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                raise RuntimeError(f"FFmpeg error: {result.stderr}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("FFmpeg frame extraction timed out")
+
+        if not os.path.exists(output_path):
+            raise RuntimeError("Failed to extract last frame from video")
+
+        # Upload to OSS if configured
+        from ...utils.oss_utils import OSSImageUploader
+        uploader = OSSImageUploader()
+        oss_url = uploader.upload_image(output_path)
+        image_url = oss_url if oss_url else os.path.relpath(output_path, "output")
+
+        # Create new variant
+        variant = ImageVariant(
+            id=str(uuid.uuid4()),
+            url=image_url,
+            prompt_used="Extracted last frame from video",
+            is_uploaded_source=True,
+            upload_type="image",
+        )
+
+        # Initialize rendered_image_asset if needed
+        if not frame.rendered_image_asset:
+            frame.rendered_image_asset = ImageAsset()
+
+        frame.rendered_image_asset.variants.append(variant)
+        frame.rendered_image_asset.selected_id = variant.id
+
+        script.updated_at = time.time()
+        self._save_data()
+        return script
+
+    def upload_frame_image(self, script_id: str, frame_id: str, image_path: str) -> Script:
+        """Upload an image as a variant of the frame's rendered_image_asset."""
+        from .models import ImageVariant, ImageAsset
+
+        script = self.get_script(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        frame = next((f for f in script.frames if f.id == frame_id), None)
+        if not frame:
+            raise ValueError("Frame not found")
+
+        # Upload to OSS if configured
+        from ...utils.oss_utils import OSSImageUploader
+        uploader = OSSImageUploader()
+        oss_url = uploader.upload_image(image_path)
+        image_url = oss_url if oss_url else os.path.relpath(image_path, "output")
+
+        # Create new variant
+        variant = ImageVariant(
+            id=str(uuid.uuid4()),
+            url=image_url,
+            prompt_used="User uploaded image",
+            is_uploaded_source=True,
+            upload_type="image",
+        )
+
+        if not frame.rendered_image_asset:
+            frame.rendered_image_asset = ImageAsset()
+
+        frame.rendered_image_asset.variants.append(variant)
+        frame.rendered_image_asset.selected_id = variant.id
+
+        script.updated_at = time.time()
+        self._save_data()
+        return script
+
     def _download_temp_image(self, url: str) -> str:
         """Downloads an image to a temporary file."""
         import requests
@@ -1755,27 +1875,59 @@ class ComicGenPipeline:
 
             # Ensure img_url is passed correctly for OSS
             img_url = task.image_url
-            
-            video_path, _ = self.video_generator.model.generate(
-                prompt=task.prompt,
-                output_path=output_path,
-                img_path=img_path,
-                img_url=img_url,
-                duration=task.duration,
-                seed=task.seed,
-                resolution=task.resolution,
-                # Pass new params
-                audio_url=final_audio_url,
-                audio=final_generate_audio, # Pass as 'audio' to match Wan API expectation if needed, or keep generate_audio
-                prompt_extend=task.prompt_extend,
-                negative_prompt=task.negative_prompt,
-                model=task.model,
-                shot_type=task.shot_type,  # Pass shot_type for wan2.6-i2v (single/multi)
-                ref_video_urls=task.reference_video_urls if task.generation_mode == "r2v" else None,  # R2V reference videos
-                # Legacy params mapped or ignored
-                camera_motion=None, 
-                subject_motion=None
-            )
+
+            # Route to the appropriate model based on task.model
+            model_prefix = (task.model or "").split("-")[0] if task.model else ""
+
+            if model_prefix in ("kling",):
+                # Use Kling model
+                from ...models.kling import KlingModel
+                kling_model = KlingModel({})
+                video_path, _ = kling_model.generate(
+                    prompt=task.prompt,
+                    output_path=output_path,
+                    img_url=img_url,
+                    img_path=img_path,
+                    duration=task.duration,
+                    model=task.model,
+                    negative_prompt=task.negative_prompt,
+                    aspect_ratio="16:9",
+                )
+            elif model_prefix in ("vidu", "viduq2"):
+                # Use Vidu model
+                from ...models.vidu import ViduModel
+                vidu_model = ViduModel({})
+                video_path, _ = vidu_model.generate(
+                    prompt=task.prompt,
+                    output_path=output_path,
+                    img_url=img_url,
+                    img_path=img_path,
+                    duration=task.duration,
+                    model=task.model,
+                    resolution=task.resolution,
+                    aspect_ratio="16:9",
+                )
+            else:
+                # Default: Wanx model
+                video_path, _ = self.video_generator.model.generate(
+                    prompt=task.prompt,
+                    output_path=output_path,
+                    img_path=img_path,
+                    img_url=img_url,
+                    duration=task.duration,
+                    seed=task.seed,
+                    resolution=task.resolution,
+                    # Pass new params
+                    audio_url=final_audio_url,
+                    audio=final_generate_audio,
+                    prompt_extend=task.prompt_extend,
+                    negative_prompt=task.negative_prompt,
+                    model=task.model,
+                    shot_type=task.shot_type,
+                    ref_video_urls=task.reference_video_urls if task.generation_mode == "r2v" else None,
+                    camera_motion=None,
+                    subject_motion=None
+                )
             
             task.video_url = os.path.relpath(output_path, "output")
             task.status = "completed"

@@ -495,6 +495,27 @@ export const api = {
         });
         return res.data;
     },
+
+    extractLastFrame: async (scriptId: string, frameId: string, videoTaskId: string) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/frames/${frameId}/extract_last_frame`, {
+            video_task_id: videoTaskId,
+        });
+        return res.data;
+    },
+
+    uploadFrameImage: async (scriptId: string, frameId: string, file: File) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        const response = await fetch(
+            `${API_URL}/projects/${scriptId}/frames/${frameId}/upload_image`,
+            { method: "POST", body: formData }
+        );
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "Failed to upload frame image");
+        }
+        return response.json();
+    },
 };
 
 // ============================================

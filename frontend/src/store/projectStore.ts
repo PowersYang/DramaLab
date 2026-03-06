@@ -157,6 +157,9 @@ export const I2V_MODELS = [
     { id: 'wan2.5-i2v-preview', name: 'Wan 2.5 I2V Preview', description: 'Default I2V' },
     { id: 'wan2.2-i2v-plus', name: 'Wan 2.2 I2V Plus', description: 'Higher quality' },
     { id: 'wan2.2-i2v-flash', name: 'Wan 2.2 I2V Flash', description: 'Faster generation' },
+    { id: 'kling-v2-6', name: 'Kling v2.6', description: 'Kling AI video model' },
+    { id: 'viduq2-pro', name: 'Vidu Q2 Pro', description: 'Vidu I2V model' },
+    { id: 'viduq2', name: 'Vidu Q2', description: 'Vidu T2V model' },
 ];
 
 export const ASPECT_RATIOS = [
