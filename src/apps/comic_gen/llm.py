@@ -24,13 +24,12 @@ logger = get_logger(__name__)
 class ScriptProcessor:
     def __init__(self, api_key: str = None):
         self._api_key = api_key
+        from .llm_adapter import LLMAdapter
+        self.llm = LLMAdapter()
 
     @property
-    def api_key(self):
-        api_key = os.getenv("DASHSCOPE_API_KEY")
-        if not api_key:
-            logger.warning("Warning: DASHSCOPE_API_KEY not set.")
-        return api_key
+    def is_configured(self):
+        return self.llm.is_configured
 
     def parse_novel(self, title: str, text: str) -> Script:
         """
@@ -38,33 +37,21 @@ class ScriptProcessor:
         """
         logger.info(f"Parsing novel: {title}...")
         
-        if not self.api_key:
-             logger.error("DASHSCOPE_API_KEY not set.")
-             raise ValueError("DASHSCOPE_API_KEY 未配置。请在 API 配置中设置 DASHSCOPE_API_KEY 后重试。")
+        if not self.is_configured:
+             logger.error("LLM API key not configured.")
+             raise ValueError("LLM API Key 未配置。请在 API 配置中设置对应的 API Key 后重试。")
 
         prompt = self._construct_prompt(text)
-        
+
         try:
-            import dashscope
-            dashscope.api_key = self.api_key
-            
-            response = dashscope.Generation.call(
-                model='qwen3.5-plus',
-                prompt=prompt,
-                result_format='message',
+            content = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
             )
-            
-            if response.status_code == 200:
-                content = response.output.choices[0].message.content
-                logger.debug(f"LLM Response Content:\n{content}")
-                
-                content = _strip_markdown_json(content)
-                data = json.loads(content)
-                return self._create_script_from_data(title, text, data)
-            else:
-                error_msg = f"LLM 调用失败: {response.code} - {response.message}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
+            logger.debug(f"LLM Response Content:\n{content}")
+
+            content = _strip_markdown_json(content)
+            data = json.loads(content)
+            return self._create_script_from_data(title, text, data)
                 
         except json.JSONDecodeError as e:
             error_msg = f"LLM 返回的数据格式错误，无法解析 JSON: {e}"
@@ -371,7 +358,7 @@ class ScriptProcessor:
         
         logger.info("Analyzing script for visual style recommendations...")
         
-        if not self.api_key:
+        if not self.is_configured:
             logger.warning("DASHSCOPE_API_KEY not set. Returning default recommendations.")
             return self._mock_style_recommendations()
         
@@ -415,121 +402,109 @@ CRITICAL STYLE GUIDELINES:
         user_prompt = f"剧本内容：\n\n{script_text[:2000]}"  # 限制长度避免 token 限制
         
         try:
-            import dashscope
-            dashscope.api_key = self.api_key
-            
-            response = dashscope.Generation.call(
-                model='qwen3.5-plus',
+            content = self.llm.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                result_format='message',
-                # Enable JSON mode to ensure valid JSON output
-                response_format={'type': 'json_object'}
+                response_format={'type': 'json_object'},
             )
-            
-            if response.status_code == 200:
-                content = response.output.choices[0].message.content
-                logger.debug(f"Style Analysis Response:\n{content}")
-                
-                # Clean up markdown code blocks if present
-                content = _strip_markdown_json(content)
-                
-                # Safety check: if content is suspiciously long, truncate it
-                # This prevents issues where the model gets stuck in a loop
-                if len(content) > 5000:
-                    logger.warning(f"Response too long ({len(content)} chars), truncating...")
-                    content = content[:5000]
-                    # Find the last closing brace of a recommendation object to make truncation cleaner
-                    last_brace = content.rfind("}")
-                    if last_brace != -1:
-                        content = content[:last_brace+1]
-                
-                def repair_json(json_str):
-                    """Attempt to repair truncated or malformed JSON."""
-                    json_str = json_str.strip()
-                    
-                    # If truncated, try to close it
-                    if not json_str.endswith("}"):
-                        # Count open braces/brackets
-                        open_braces = json_str.count("{") - json_str.count("}")
-                        open_brackets = json_str.count("[") - json_str.count("]")
-                        open_quotes = json_str.count('"') % 2
-                        
-                        if open_quotes:
-                            json_str += '"'
-                        
-                        json_str += "]" * open_brackets
-                        json_str += "}" * open_braces
-                    
-                    # Ensure the root object is closed
-                    if json_str.count("{") > json_str.count("}"):
-                         json_str += "}" * (json_str.count("{") - json_str.count("}"))
-                         
-                    return json_str
+            logger.debug(f"Style Analysis Response:\n{content}")
 
+            # Clean up markdown code blocks if present
+            content = _strip_markdown_json(content)
+
+            # Safety check: if content is suspiciously long, truncate it
+            # This prevents issues where the model gets stuck in a loop
+            if len(content) > 5000:
+                logger.warning(f"Response too long ({len(content)} chars), truncating...")
+                content = content[:5000]
+                # Find the last closing brace of a recommendation object to make truncation cleaner
+                last_brace = content.rfind("}")
+                if last_brace != -1:
+                    content = content[:last_brace+1]
+
+            def repair_json(json_str):
+                """Attempt to repair truncated or malformed JSON."""
+                json_str = json_str.strip()
+
+                # If truncated, try to close it
+                if not json_str.endswith("}"):
+                    # Count open braces/brackets
+                    open_braces = json_str.count("{") - json_str.count("}")
+                    open_brackets = json_str.count("[") - json_str.count("]")
+                    open_quotes = json_str.count('"') % 2
+
+                    if open_quotes:
+                        json_str += '"'
+
+                    json_str += "]" * open_brackets
+                    json_str += "}" * open_braces
+
+                # Ensure the root object is closed
+                if json_str.count("{") > json_str.count("}"):
+                     json_str += "}" * (json_str.count("{") - json_str.count("}"))
+
+                return json_str
+
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parsing error: {e}")
+                logger.error(f"Raw content length: {len(content)}")
+
+                # Try to fix common JSON issues
                 try:
+                    # 1. Attempt to extract JSON object from text using regex
+                    import re
+                    # Look for the outermost JSON object
+                    json_match = re.search(r'\{[\s\S]*\}', content)
+                    if json_match:
+                        content = json_match.group(0)
+
+                    # 2. Try to repair if it looks truncated
+                    content = repair_json(content)
+
                     data = json.loads(content)
-                except json.JSONDecodeError as e:
-                    logger.error(f"JSON parsing error: {e}")
-                    logger.error(f"Raw content length: {len(content)}")
-                    
-                    # Try to fix common JSON issues
+                except Exception as inner_e:
+                    logger.error(f"Failed to recover JSON: {inner_e}")
+                    # Last resort: try to parse partially using regex for fields
                     try:
-                        # 1. Attempt to extract JSON object from text using regex
-                        import re
-                        # Look for the outermost JSON object
-                        json_match = re.search(r'\{[\s\S]*\}', content)
-                        if json_match:
-                            content = json_match.group(0)
-                        
-                        # 2. Try to repair if it looks truncated
-                        content = repair_json(content)
-                        
-                        data = json.loads(content)
-                    except Exception as inner_e:
-                        logger.error(f"Failed to recover JSON: {inner_e}")
-                        # Last resort: try to parse partially using regex for fields
-                        try:
-                            logger.debug("Attempting regex extraction of fields...")
-                            recommendations = []
-                            # Regex to find style objects - improved to be non-greedy and handle newlines
-                            style_matches = re.finditer(r'\{\s*"name":\s*"(.*?)",\s*"description":\s*"(.*?)".*?\}', content, re.DOTALL)
-                            
-                            # If that fails, try a simpler regex that just looks for the array items
-                            if not list(style_matches):
-                                # Fallback manual parsing
-                                pass
-                                
-                            if not recommendations:
-                                # Construct a basic valid JSON if we have at least some content
-                                if "recommendations" in content:
-                                    # Try to close it forcefully
-                                    fixed_content = content + "}]}"
-                                    try:
-                                        data = json.loads(fixed_content)
-                                        recommendations = data.get("recommendations", [])
-                                    except:
-                                        pass
-                                        
-                            if not recommendations:
-                                raise ValueError("Regex extraction failed")
-                        except:
-                            return self._mock_style_recommendations()
-                
-                recommendations = data.get("recommendations", [])
-                
-                # Add unique IDs
-                for i, rec in enumerate(recommendations):
-                    rec["id"] = f"ai-rec-{i+1}-{str(uuid.uuid4())[:8]}"
-                    rec["is_custom"] = False
-                    
-                return recommendations
-            else:
-                logger.error(f"LLM Call Failed: {response.code} - {response.message}")
-                return self._mock_style_recommendations()
-                
+                        logger.debug("Attempting regex extraction of fields...")
+                        recommendations = []
+                        # Regex to find style objects - improved to be non-greedy and handle newlines
+                        style_matches = re.finditer(r'\{\s*"name":\s*"(.*?)",\s*"description":\s*"(.*?)".*?\}', content, re.DOTALL)
+
+                        # If that fails, try a simpler regex that just looks for the array items
+                        if not list(style_matches):
+                            # Fallback manual parsing
+                            pass
+
+                        if not recommendations:
+                            # Construct a basic valid JSON if we have at least some content
+                            if "recommendations" in content:
+                                # Try to close it forcefully
+                                fixed_content = content + "}]}"
+                                try:
+                                    data = json.loads(fixed_content)
+                                    recommendations = data.get("recommendations", [])
+                                except:
+                                    pass
+
+                        if not recommendations:
+                            raise ValueError("Regex extraction failed")
+                    except:
+                        return self._mock_style_recommendations()
+
+            recommendations = data.get("recommendations", [])
+
+            # Add unique IDs
+            for i, rec in enumerate(recommendations):
+                rec["id"] = f"ai-rec-{i+1}-{str(uuid.uuid4())[:8]}"
+                rec["is_custom"] = False
+
+            return recommendations
+
         except Exception as e:
             logger.error(f"Error analyzing script for styles: {e}", exc_info=True)
             return self._mock_style_recommendations()
@@ -573,7 +548,7 @@ CRITICAL STYLE GUIDELINES:
         """
         logger.info(f"Analyzing text to storyboard: {text[:100]}...")
         
-        if not self.api_key:
+        if not self.is_configured:
             logger.warning("DASHSCOPE_API_KEY not set. Returning mock frames.")
             return self._mock_storyboard_frames(text)
         
@@ -664,54 +639,35 @@ Props:
 """
 
         try:
-            import dashscope
-            dashscope.api_key = self.api_key
-            
-            response = dashscope.Generation.call(
-                model='qwen3.5-plus',
+            content = self.llm.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。"}
                 ],
-                result_format='message',
-                # response_format={'type': 'json_object'} # Removed to allow freer generation
+            ).strip()
+            logger.debug(f"Storyboard Analysis Raw Response: {content[:500]}...")
+
+            frames = self._parse_storyboard_json(content)
+            if frames is not None:
+                return frames
+
+            # First parse failed — retry once with response_format constraint
+            logger.warning("Storyboard JSON parse failed, retrying with response_format=json_object...")
+            retry_content = self.llm.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。请务必输出合法的JSON格式。"}
+                ],
+                response_format={'type': 'json_object'},
+            ).strip()
+            logger.debug(f"Storyboard Analysis Retry Response: {retry_content[:500]}...")
+            frames = self._parse_storyboard_json(retry_content)
+            if frames is not None:
+                return frames
+
+            raise RuntimeError(
+                "AI 模型输出的 JSON 格式不合规，自动重试后仍然失败。请重新点击生成按钮再试一次。"
             )
-            
-            if response.status_code == 200:
-                content = response.output.choices[0].message.content.strip()
-                logger.debug(f"Storyboard Analysis Raw Response: {content[:500]}...")
-
-                frames = self._parse_storyboard_json(content)
-                if frames is not None:
-                    return frames
-
-                # First parse failed — retry once with response_format constraint
-                logger.warning("Storyboard JSON parse failed, retrying with response_format=json_object...")
-                retry_response = dashscope.Generation.call(
-                    model='qwen3.5-plus',
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。请务必输出合法的JSON格式。"}
-                    ],
-                    result_format='message',
-                    response_format={'type': 'json_object'},
-                )
-
-                if retry_response.status_code == 200:
-                    retry_content = retry_response.output.choices[0].message.content.strip()
-                    logger.debug(f"Storyboard Analysis Retry Response: {retry_content[:500]}...")
-                    frames = self._parse_storyboard_json(retry_content)
-                    if frames is not None:
-                        return frames
-
-                raise RuntimeError(
-                    "AI 模型输出的 JSON 格式不合规，自动重试后仍然失败。请重新点击生成按钮再试一次。"
-                )
-            else:
-                logger.error(f"LLM Call Failed: {response.code} - {response.message}")
-                raise RuntimeError(
-                    f"AI 模型调用失败 (错误码: {response.code})，请稍后重试。"
-                )
 
         except RuntimeError:
             raise  # Re-raise our own descriptive errors
@@ -762,7 +718,7 @@ Props:
         
         fallback_result = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
         
-        if not self.api_key:
+        if not self.is_configured:
              return fallback_result
 
         # Construct context about assets
@@ -817,37 +773,26 @@ Return STRICTLY a JSON object:
 """
 
         try:
-            import dashscope
-            dashscope.api_key = self.api_key
-            
-            response = dashscope.Generation.call(
-                model='qwen3.5-plus',
-                prompt=system_prompt,
-                result_format='message',
-                response_format={'type': 'json_object'}
-            )
-            
-            if response.status_code == 200:
-                content = response.output.choices[0].message.content.strip()
-                logger.debug(f"Polished Prompt Raw: {content}")
-                
-                # Parse JSON response
-                content = _strip_markdown_json(content)
-                
-                try:
-                    result = json.loads(content.strip())
-                    if "prompt_cn" in result and "prompt_en" in result:
-                        logger.debug(f"Polished Prompt CN: {result['prompt_cn'][:100]}...")
-                        logger.debug(f"Polished Prompt EN: {result['prompt_en'][:100]}...")
-                        return result
-                    else:
-                        logger.warning("LLM response missing prompt_cn or prompt_en")
-                        return fallback_result
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse polish response JSON: {e}")
+            content = self.llm.chat(
+                messages=[{"role": "user", "content": system_prompt}],
+                response_format={'type': 'json_object'},
+            ).strip()
+            logger.debug(f"Polished Prompt Raw: {content}")
+
+            # Parse JSON response
+            content = _strip_markdown_json(content)
+
+            try:
+                result = json.loads(content.strip())
+                if "prompt_cn" in result and "prompt_en" in result:
+                    logger.debug(f"Polished Prompt CN: {result['prompt_cn'][:100]}...")
+                    logger.debug(f"Polished Prompt EN: {result['prompt_en'][:100]}...")
+                    return result
+                else:
+                    logger.warning("LLM response missing prompt_cn or prompt_en")
                     return fallback_result
-            else:
-                logger.error(f"LLM Call Failed: {response.code} - {response.message}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse polish response JSON: {e}")
                 return fallback_result
                 
         except Exception as e:
@@ -860,7 +805,7 @@ Return STRICTLY a JSON object:
         """
         fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
         
-        if not self.api_key:
+        if not self.is_configured:
             return fallback
 
         system_prompt = """You are an expert video prompt engineer. Your task is to optimize a draft prompt for an Image-to-Video generation model.
@@ -888,38 +833,27 @@ Return STRICTLY a JSON object:
 """
 
         try:
-            import dashscope
-            dashscope.api_key = self.api_key
-
-            response = dashscope.Generation.call(
-                model='qwen3.5-plus',
+            content = self.llm.chat(
                 messages=[
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': draft_prompt}
                 ],
-                result_format='message',
-                response_format={'type': 'json_object'}
-            )
+                response_format={'type': 'json_object'},
+            ).strip()
+            logger.debug(f"Video Prompt Polish Raw: {content[:200]}...")
 
-            if response.status_code == 200:
-                content = response.output.choices[0].message.content.strip()
-                logger.debug(f"Video Prompt Polish Raw: {content[:200]}...")
+            # Parse JSON
+            content = _strip_markdown_json(content)
 
-                # Parse JSON
-                content = _strip_markdown_json(content)
-                
-                try:
-                    result = json.loads(content.strip())
-                    if "prompt_cn" in result and "prompt_en" in result:
-                        return result
-                    else:
-                        logger.warning("Video polish missing bilingual keys")
-                        return fallback
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse video polish JSON: {e}")
+            try:
+                result = json.loads(content.strip())
+                if "prompt_cn" in result and "prompt_en" in result:
+                    return result
+                else:
+                    logger.warning("Video polish missing bilingual keys")
                     return fallback
-            else:
-                logger.error(f"DashScope API Error: {response.code} - {response.message}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse video polish JSON: {e}")
                 return fallback
 
         except Exception:
@@ -934,7 +868,7 @@ Return STRICTLY a JSON object:
         """
         fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
         
-        if not self.api_key:
+        if not self.is_configured:
             return fallback
 
         # Build slot context - using character1/2/3 format
@@ -983,38 +917,27 @@ OUTPUT:
 """
 
         try:
-            import dashscope
-            dashscope.api_key = self.api_key
-
-            response = dashscope.Generation.call(
-                model='qwen3.5-plus',
+            content = self.llm.chat(
                 messages=[
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': draft_prompt}
                 ],
-                result_format='message',
-                response_format={'type': 'json_object'}
-            )
+                response_format={'type': 'json_object'},
+            ).strip()
+            logger.debug(f"R2V Polished Raw: {content[:200]}...")
 
-            if response.status_code == 200:
-                content = response.output.choices[0].message.content.strip()
-                logger.debug(f"R2V Polished Raw: {content[:200]}...")
+            # Parse JSON
+            content = _strip_markdown_json(content)
 
-                # Parse JSON
-                content = _strip_markdown_json(content)
-                
-                try:
-                    result = json.loads(content.strip())
-                    if "prompt_cn" in result and "prompt_en" in result:
-                        return result
-                    else:
-                        logger.warning("R2V polish missing bilingual keys")
-                        return fallback
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse R2V polish JSON: {e}")
+            try:
+                result = json.loads(content.strip())
+                if "prompt_cn" in result and "prompt_en" in result:
+                    return result
+                else:
+                    logger.warning("R2V polish missing bilingual keys")
                     return fallback
-            else:
-                logger.error(f"DashScope API Error: {response.code} - {response.message}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse R2V polish JSON: {e}")
                 return fallback
 
         except Exception:
