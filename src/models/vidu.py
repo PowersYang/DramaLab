@@ -63,7 +63,9 @@ class ViduModel(VideoGenModel):
                 model=kwargs.get("model"),
                 duration=duration,
                 resolution=resolution,
-                **kwargs,
+                seed=kwargs.get("seed", 0),
+                movement_amplitude=kwargs.get("movement_amplitude", "auto"),
+                audio=kwargs.get("audio", True),
             )
         else:
             task_id, used_model = self._submit_t2v(
@@ -72,7 +74,9 @@ class ViduModel(VideoGenModel):
                 duration=duration,
                 resolution=resolution,
                 aspect_ratio=aspect_ratio,
-                **kwargs,
+                seed=kwargs.get("seed", 0),
+                style=kwargs.get("style", "general"),
+                bgm=kwargs.get("bgm", True),
             )
 
         logger.info(f"[Vidu] Task submitted: {task_id} (model={used_model})")
@@ -116,7 +120,8 @@ class ViduModel(VideoGenModel):
 
     def _submit_t2v(self, *, prompt: str, model: str = None, duration: int = 5,
                     resolution: str = "720p", aspect_ratio: str = "16:9",
-                    **kwargs) -> Tuple[str, str]:
+                    seed: int = 0, style: str = "general", bgm: bool = True,
+                    ) -> Tuple[str, str]:
         """Submit a text-to-video task. Returns (task_id, model_used)."""
         used_model = model or DEFAULT_T2V_MODEL
 
@@ -126,9 +131,9 @@ class ViduModel(VideoGenModel):
             "duration": duration,
             "resolution": resolution,
             "aspect_ratio": aspect_ratio,
-            "seed": kwargs.get("seed", 0),
-            "style": kwargs.get("style", "general"),
-            "bgm": kwargs.get("bgm", True),
+            "seed": seed,
+            "style": style,
+            "bgm": bgm,
         }
 
         submit_url = f"{BASE_URL}/text2video"
@@ -147,7 +152,8 @@ class ViduModel(VideoGenModel):
 
     def _submit_i2v(self, *, prompt: str, image_url: str, model: str = None,
                     duration: int = 5, resolution: str = "720p",
-                    **kwargs) -> Tuple[str, str]:
+                    seed: int = 0, movement_amplitude: str = "auto", audio: bool = True,
+                    ) -> Tuple[str, str]:
         """Submit an image-to-video task. Returns (task_id, model_used)."""
         if not image_url:
             raise ValueError("image_url is required for i2v mode")
@@ -160,9 +166,9 @@ class ViduModel(VideoGenModel):
             "prompt": prompt or "",
             "duration": duration,
             "resolution": resolution,
-            "seed": kwargs.get("seed", 0),
-            "movement_amplitude": kwargs.get("movement_amplitude", "auto"),
-            "audio": kwargs.get("audio", True),
+            "seed": seed,
+            "movement_amplitude": movement_amplitude,
+            "audio": audio,
         }
 
         submit_url = f"{BASE_URL}/img2video"
