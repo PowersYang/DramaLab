@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, FileText, Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, ArrowLeft, Settings, Key, MessageSquareCode } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
+import type { BreadcrumbSegment } from "@/components/layout/BreadcrumbBar";
 import PropertiesPanel from "@/components/modules/PropertiesPanel";
 import ScriptProcessor from "@/components/modules/ScriptProcessor";
 import AssetGrid from "@/components/modules/AssetGrid";
@@ -24,7 +25,7 @@ import dynamic from "next/dynamic";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
-export default function ProjectClient({ id }: { id: string }) {
+export default function ProjectClient({ id, breadcrumbSegments }: { id: string; breadcrumbSegments?: BreadcrumbSegment[] }) {
     const [activeStep, setActiveStep] = useState("script");
     const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
     const [envDialogOpen, setEnvDialogOpen] = useState(false);
@@ -35,7 +36,6 @@ export default function ProjectClient({ id }: { id: string }) {
     const updateProject = useProjectStore((state) => state.updateProject);
 
     const handleBackToHome = () => {
-        // 使用 Hash 路由返回主页
         window.location.hash = '';
     };
 
@@ -71,6 +71,34 @@ export default function ProjectClient({ id }: { id: string }) {
         );
     }
 
+    const segments = breadcrumbSegments || [{ label: "LumenX", hash: "#/" }, { label: currentProject.title }];
+
+    const settingsActions = (
+        <>
+            <button
+                onClick={() => setEnvDialogOpen(true)}
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
+                title="API Key & OSS 配置"
+            >
+                <Key size={16} className="text-gray-400 group-hover:text-green-400 transition-colors" />
+            </button>
+            <button
+                onClick={() => setPromptConfigOpen(true)}
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
+                title="Prompt Configuration"
+            >
+                <MessageSquareCode size={16} className="text-gray-400 group-hover:text-purple-400 transition-colors" />
+            </button>
+            <button
+                onClick={() => setModelSettingsOpen(true)}
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
+                title="Model Settings"
+            >
+                <Settings size={16} className="text-gray-400 group-hover:text-white transition-colors" />
+            </button>
+        </>
+    );
+
     return (
         <main className="flex h-screen w-screen bg-background overflow-hidden relative">
             {/* Background Canvas */}
@@ -78,47 +106,14 @@ export default function ProjectClient({ id }: { id: string }) {
                 <CreativeCanvas />
             </div>
 
-            {/* Left Sidebar */}
+            {/* Left Sidebar — unified PipelineSidebar with integrated breadcrumb */}
             <div className="relative z-20 h-full flex flex-col overflow-hidden">
-                {/* Back Button & Settings */}
-                <div className="p-4 border-b border-glass-border bg-black/40 backdrop-blur-xl flex justify-between items-center">
-                    <button
-                        onClick={handleBackToHome}
-                        className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm"
-                    >
-                        <ArrowLeft size={16} />
-                        返回项目列表
-                    </button>
-
-                    <div className="flex gap-1">
-                        <button
-                            onClick={() => setEnvDialogOpen(true)}
-                            className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                            title="API Key & OSS 配置"
-                        >
-                            <Key size={18} className="text-gray-400 group-hover:text-green-400 transition-colors" />
-                        </button>
-                        <button
-                            onClick={() => setPromptConfigOpen(true)}
-                            className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                            title="Prompt Configuration"
-                        >
-                            <MessageSquareCode size={18} className="text-gray-400 group-hover:text-purple-400 transition-colors" />
-                        </button>
-                        <button
-                            onClick={() => setModelSettingsOpen(true)}
-                            className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                            title="Model Settings"
-                        >
-                            <Settings size={18} className="text-gray-400 group-hover:text-white transition-colors" />
-                        </button>
-                    </div>
-                </div>
-
                 <PipelineSidebar
                     activeStep={activeStep}
                     onStepChange={setActiveStep}
                     steps={steps}
+                    breadcrumbSegments={segments}
+                    headerActions={settingsActions}
                 />
             </div>
 

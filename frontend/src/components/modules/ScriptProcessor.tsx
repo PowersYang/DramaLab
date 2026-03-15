@@ -127,7 +127,7 @@ export default function ScriptProcessor() {
     };
 
     return (
-        <div className="flex h-full w-full bg-background overflow-hidden">
+        <div className="flex h-full w-full overflow-hidden">
             {/* Left: Script Editor */}
             <div className={`flex-1 flex flex-col transition-all duration-300 ${showPanel ? 'mr-0' : 'mr-0'}`}>
                 <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20">

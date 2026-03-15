@@ -622,6 +622,13 @@ export const api = {
         return response.data;
     },
 
+    // Helper: create a project and add it as an episode to a series
+    createEpisodeForSeries: async (seriesId: string, title: string, episodeNumber: number) => {
+        const project = await api.createProject(title, "", true);
+        await api.addEpisodeToSeries(seriesId, project.id, episodeNumber);
+        return project;
+    },
+
     // File Import
     importFilePreview: async (file: File, suggestedEpisodes: number = 3) => {
         const formData = new FormData();

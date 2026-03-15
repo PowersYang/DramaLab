@@ -2,82 +2,95 @@
 
 import { motion } from "framer-motion";
 import {
-    FileText,
-    LayoutGrid,
-    Palette,
-    Film,
-    Music,
-    Download,
-    ChevronRight
+    ChevronRight,
+    ChevronLeft
 } from "lucide-react";
 import clsx from "clsx";
-
-import { LucideIcon } from "lucide-react";
+import LumenXBranding from "./LumenXBranding";
+import type { BreadcrumbSegment } from "./BreadcrumbBar";
 
 interface Step {
     id: string;
     label: string;
-    icon: any; // Using any for LucideIcon to avoid type strictness issues with different versions
-    comingSoon?: boolean; // Mark step as under development
+    icon: any;
+    comingSoon?: boolean;
 }
 
 interface PipelineSidebarProps {
     activeStep: string;
     onStepChange: (stepId: string) => void;
     steps: Step[];
+    breadcrumbSegments?: BreadcrumbSegment[];
+    headerActions?: React.ReactNode;
 }
 
-export default function PipelineSidebar({ activeStep, onStepChange, steps }: PipelineSidebarProps) {
+export default function PipelineSidebar({ activeStep, onStepChange, steps, breadcrumbSegments, headerActions }: PipelineSidebarProps) {
+    const handleBack = () => {
+        if (!breadcrumbSegments) return;
+        if (breadcrumbSegments.length >= 2 && breadcrumbSegments[breadcrumbSegments.length - 2].hash) {
+            window.location.hash = breadcrumbSegments[breadcrumbSegments.length - 2].hash!;
+        } else if (breadcrumbSegments[0]?.hash) {
+            window.location.hash = breadcrumbSegments[0].hash;
+        } else {
+            window.location.hash = "";
+        }
+    };
+
     return (
         <motion.aside
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             className="w-64 flex-1 min-h-0 border-r border-glass-border bg-black/40 backdrop-blur-xl flex flex-col z-50"
         >
+            {/* Header: breadcrumb navigation or branding */}
             <div className="p-5 border-b border-glass-border">
-                <div className="flex gap-4 items-center">
-                    {/* Left Column: Large Logo */}
-                    <div className="flex-shrink-0">
-                        <img
-                            src={process.env.NODE_ENV === 'production' ? '/static/LumenX.png' : '/LumenX.png'}
-                            alt="LumenX"
-                            className="w-16 h-16 object-contain"
-                        />
-                    </div>
-
-                    {/* Right Column: LumenX / Studio */}
-                    <div className="flex flex-col flex-1 justify-center h-full gap-1">
-                        {/* LumenX (Top Left) */}
-                        <div className="flex items-center justify-start -mb-1">
-                            <span className="font-display text-3xl font-bold tracking-tight text-primary">
-                                Lumen
-                            </span>
-                            <span
-                                className="font-display text-4xl font-black tracking-tighter ml-1"
-                                style={{
-                                    background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #ec4899 100%)',
-                                    WebkitBackgroundClip: 'text',
-                                    WebkitTextFillColor: 'transparent',
-                                    backgroundClip: 'text',
-                                }}
+                {breadcrumbSegments ? (
+                    <div className="space-y-3">
+                        {/* Breadcrumb row */}
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={handleBack}
+                                className="flex-shrink-0 text-gray-400 hover:text-white transition-colors"
+                                title="返回"
                             >
-                                X
-                            </span>
+                                <ChevronLeft size={16} />
+                            </button>
+                            <nav className="flex items-center gap-1 text-xs min-w-0 flex-1">
+                                {breadcrumbSegments.map((seg, i) => {
+                                    const isLast = i === breadcrumbSegments.length - 1;
+                                    return (
+                                        <span key={i} className="flex items-center gap-1 min-w-0">
+                                            {i > 0 && <span className="text-gray-600 flex-shrink-0">&rsaquo;</span>}
+                                            {seg.hash && !isLast ? (
+                                                <a
+                                                    href={seg.hash}
+                                                    className="text-gray-500 hover:text-white transition-colors truncate"
+                                                >
+                                                    {seg.label}
+                                                </a>
+                                            ) : (
+                                                <span className={clsx(
+                                                    "truncate",
+                                                    isLast ? "text-white font-medium" : "text-gray-500"
+                                                )}>
+                                                    {seg.label}
+                                                </span>
+                                            )}
+                                        </span>
+                                    );
+                                })}
+                            </nav>
                         </div>
-
-                        {/* Studio (Bottom Right) */}
-                        <div className="flex justify-end -mt-1 pr-2">
-                            <span className="font-display text-3xl font-bold tracking-tight text-white">
-                                Studio
-                            </span>
-                        </div>
+                        {/* Actions row */}
+                        {headerActions && (
+                            <div className="flex items-center gap-1">
+                                {headerActions}
+                            </div>
+                        )}
                     </div>
-                </div>
-
-                {/* Slogan */}
-                <p className="text-[9px] text-gray-500 tracking-wide text-center mt-3">
-                    Render Noise into Narrative
-                </p>
+                ) : (
+                    <LumenXBranding size="sm" />
+                )}
             </div>
 
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">

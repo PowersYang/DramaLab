@@ -35,7 +35,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             whileHover={{ scale: 1.02 }}
-            className="glass-panel p-6 rounded-xl cursor-pointer group relative"
+            className="glass-panel p-6 rounded-xl cursor-pointer group relative border-l-2 border-l-gray-600"
             onClick={handleOpen}
         >
             <div className="flex items-start justify-between mb-4">
@@ -59,19 +59,12 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
                 </div>
             </div>
 
-            <div className="space-y-2 mb-4">
-                <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">角色</span>
-                    <span className="text-white font-medium">{project.characters?.length || 0}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">场景</span>
-                    <span className="text-white font-medium">{project.scenes?.length || 0}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">分镜</span>
-                    <span className="text-white font-medium">{project.frames?.length || 0}</span>
-                </div>
+            <div className="flex items-center gap-3 text-xs text-gray-400 mb-4">
+                <span>角色 <span className="text-white font-medium">{project.characters?.length || 0}</span></span>
+                <span className="text-gray-600">·</span>
+                <span>场景 <span className="text-white font-medium">{project.scenes?.length || 0}</span></span>
+                <span className="text-gray-600">·</span>
+                <span>分镜 <span className="text-white font-medium">{project.frames?.length || 0}</span></span>
             </div>
 
             <div className="flex items-center justify-between">

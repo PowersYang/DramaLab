@@ -33,6 +33,7 @@ export default function StoryboardComposer() {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [insertIndex, setInsertIndex] = useState<number | null>(null);
     const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
+    const [showScriptOverlay, setShowScriptOverlay] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadTargetFrameId, setUploadTargetFrameId] = useState<string | null>(null);
@@ -331,49 +332,41 @@ export default function StoryboardComposer() {
     };
 
     return (
-        <div className="flex h-full bg-[#0a0a0a] text-white overflow-hidden">
-            {/* Left Column: Script Viewer */}
-            <div className="w-1/3 min-w-[300px] max-w-[500px] border-r border-white/10 flex flex-col bg-[#111]">
-                <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                    <h3 className="font-bold text-sm flex items-center gap-2">
-                        <FileText size={16} className="text-primary" /> Original Script
-                    </h3>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleAnalyzeToStoryboard}
-                            disabled={isAnalyzing}
-                            className="flex items-center gap-1 text-[10px] bg-primary/80 hover:bg-primary px-2 py-1 rounded text-white transition-colors disabled:opacity-50"
-                            title="从剧本生成分镜帧"
-                        >
-                            {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                            {isAnalyzing ? "生成中..." : "⚡ 生成分镜"}
-                        </button>
-
-                    </div>
-                </div>
-                <div className="flex-1 p-4 overflow-hidden flex flex-col">
-                    <textarea
-                        className="flex-1 w-full h-full bg-black/20 border border-white/10 rounded-lg p-4 text-sm text-gray-300 resize-none focus:outline-none focus:border-primary/50 leading-relaxed"
-                        value={currentProject?.originalText || ""}
-                        onChange={(e) => updateProject(currentProject!.id, { originalText: e.target.value })}
-                        placeholder="Paste your script here..."
-                    />
+        <div className="flex flex-col h-full text-white overflow-hidden">
+            {/* Top Toolbar */}
+            <div className="flex-shrink-0 p-4 border-b border-white/10 flex items-center justify-between bg-black/20">
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                    <Layout size={16} className="text-primary" /> Storyboard Frames
+                </h3>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setShowScriptOverlay(true)}
+                        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white px-2.5 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                        title="查看原始脚本"
+                    >
+                        <FileText size={14} />
+                        查看脚本
+                    </button>
+                    <div className="w-px h-4 bg-white/10" />
+                    <button
+                        onClick={handleAnalyzeToStoryboard}
+                        disabled={isAnalyzing}
+                        className="flex items-center gap-1.5 text-xs bg-primary/80 hover:bg-primary px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-50"
+                        title="从剧本生成分镜帧"
+                    >
+                        {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                        {isAnalyzing ? "生成中..." : "生成分镜"}
+                    </button>
+                    <div className="w-px h-4 bg-white/10" />
+                    <span className="text-xs text-gray-500 font-mono">
+                        {currentProject?.frames?.length || 0} Frames
+                    </span>
                 </div>
             </div>
 
-            {/* Center Column: Frame List */}
-            <div className="flex-1 flex flex-col bg-[#0a0a0a] relative">
-                <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#111]">
-                    <h3 className="font-bold text-sm flex items-center gap-2">
-                        <Layout size={16} className="text-primary" /> Storyboard Frames
-                    </h3>
-                    <div className="text-xs text-gray-500">
-                        {currentProject?.frames?.length || 0} Frames
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-8">
-                    <div className="max-w-4xl mx-auto space-y-6">
+            {/* Frame List — full width */}
+            <div className="flex-1 overflow-y-auto p-8">
+                <div className="max-w-4xl mx-auto space-y-6">
                         {/* Add Frame Button (Top) */}
                         <div className="flex justify-center">
                             <button
@@ -570,9 +563,50 @@ export default function StoryboardComposer() {
                                 </div>
                             </>
                         ))}
-                    </div >
                 </div>
             </div>
+
+            {/* Script Overlay */}
+            <AnimatePresence>
+                {showScriptOverlay && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+                        onClick={() => setShowScriptOverlay(false)}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 16 }}
+                            transition={{ duration: 0.25, ease: [0.25, 1, 0.5, 1] }}
+                            className="w-full max-w-2xl max-h-[80vh] bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20">
+                                <div className="flex items-center gap-3">
+                                    <FileText size={18} className="text-primary" />
+                                    <h3 className="text-sm font-bold text-white">原始脚本</h3>
+                                </div>
+                                <button
+                                    onClick={() => setShowScriptOverlay(false)}
+                                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <X size={16} className="text-gray-400" />
+                                </button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-6">
+                                <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">
+                                    {currentProject?.originalText || "暂无脚本内容"}
+                                </pre>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Storyboard Frame Editor Modal */}
             <AnimatePresence>
                 {editingFrameId && currentProject?.frames?.find((f: any) => f.id === editingFrameId) && (

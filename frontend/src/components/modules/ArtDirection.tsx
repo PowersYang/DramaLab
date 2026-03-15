@@ -163,7 +163,7 @@ export default function ArtDirection() {
     };
 
     return (
-        <div className="flex flex-col h-full bg-background overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden">
             {/* Header */}
             <div className="h-20 border-b border-white/10 bg-black/20 flex items-center px-8 justify-between">
                 <div className="flex items-center gap-4">

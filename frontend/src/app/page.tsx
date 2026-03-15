@@ -1,19 +1,23 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Plus, FolderOpen, Key, RefreshCw, Library, Calendar, Play, Trash2, FileUp, X } from "lucide-react";
+import { Plus, FolderOpen, RefreshCw, Library, Calendar, Play, Trash2, FileUp, X, ChevronDown, FileText } from "lucide-react";
 import { useProjectStore, Series, Project } from "@/store/projectStore";
 import ProjectCard from "@/components/project/ProjectCard";
 import CreateProjectDialog from "@/components/project/CreateProjectDialog";
 import EnvConfigDialog from "@/components/project/EnvConfigDialog";
 import CreativeCanvas from "@/components/canvas/CreativeCanvas";
+import AppShell from "@/components/layout/AppShell";
+import type { GlobalTab } from "@/components/layout/GlobalSidebar";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 
 const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
 const SeriesDetailPage = dynamic(() => import("@/components/series/SeriesDetailPage"), { ssr: false });
 const ImportFileDialog = dynamic(() => import("@/components/series/ImportFileDialog"), { ssr: false });
+const SettingsPage = dynamic(() => import("@/components/settings/SettingsPage"), { ssr: false });
+const AssetLibraryPage = dynamic(() => import("@/components/library/AssetLibraryPage"), { ssr: false });
 
 // ── Create Series Dialog ──
 function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -98,8 +102,24 @@ function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   );
 }
 
-// ── Series Card ──
-function SeriesCard({ series, onDelete }: { series: Series; onDelete: (id: string) => void }) {
+// ── Series Card (col-span-2 + episode preview strip) ──
+function SeriesCard({
+  series,
+  onDelete,
+  episodes,
+  episodesLoading,
+  onEpisodesChange,
+}: {
+  series: Series;
+  onDelete: (id: string) => void;
+  episodes: Project[] | undefined;
+  episodesLoading: boolean;
+  onEpisodesChange: (seriesId: string) => void;
+}) {
+  const [inlineTitle, setInlineTitle] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+  const [showInlineInput, setShowInlineInput] = useState(false);
+
   const handleOpen = () => {
     window.location.hash = `#/series/${series.id}`;
   };
@@ -111,27 +131,54 @@ function SeriesCard({ series, onDelete }: { series: Series; onDelete: (id: strin
     }
   };
 
+  const handleInlineAddEpisode = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!inlineTitle.trim()) return;
+    setIsAdding(true);
+    try {
+      const nextEpNum = (episodes?.length || 0) + 1;
+      await api.createEpisodeForSeries(series.id, inlineTitle.trim(), nextEpNum);
+      setInlineTitle("");
+      setShowInlineInput(false);
+      onEpisodesChange(series.id);
+    } catch (error) {
+      console.error("Failed to add episode inline:", error);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const sortedEpisodes = episodes
+    ? [...episodes].sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0))
+    : [];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ scale: 1.02 }}
-      className="glass-panel p-6 rounded-xl cursor-pointer group relative"
+      whileHover={{ scale: 1.01 }}
+      className="glass-panel p-6 rounded-xl cursor-pointer group relative border-l-2 border-l-blue-500"
       onClick={handleOpen}
     >
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-lg font-display font-bold text-white">
-              {series.title}
-            </h3>
             <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium">
               系列
             </span>
+            <h3 className="text-lg font-display font-bold text-white">
+              {series.title}
+            </h3>
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <Calendar size={12} />
-            <span>{new Date(series.created_at * 1000).toLocaleDateString('zh-CN')}</span>
+          {series.description && (
+            <p className="text-sm text-gray-400 mb-2 line-clamp-1">{series.description}</p>
+          )}
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            <span>集数 <span className="text-white font-medium">{series.episode_ids?.length || 0}</span></span>
+            <span className="text-gray-600">·</span>
+            <span>角色 <span className="text-white font-medium">{series.characters?.length || 0}</span></span>
+            <span className="text-gray-600">·</span>
+            <span>场景 <span className="text-white font-medium">{series.scenes?.length || 0}</span></span>
           </div>
         </div>
 
@@ -145,26 +192,81 @@ function SeriesCard({ series, onDelete }: { series: Series; onDelete: (id: strin
         </div>
       </div>
 
-      {series.description && (
-        <p className="text-sm text-gray-400 mb-3 line-clamp-2">{series.description}</p>
-      )}
+      {/* Episode preview strip */}
+      <div className="mt-4 -mx-1">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin" onClick={(e) => e.stopPropagation()}>
+          {episodesLoading ? (
+            <>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex-shrink-0 w-28 h-16 rounded-lg bg-white/5 animate-pulse" />
+              ))}
+            </>
+          ) : (
+            <>
+              {sortedEpisodes.map((ep) => (
+                <button
+                  key={ep.id}
+                  onClick={() => { window.location.hash = `#/series/${series.id}/episode/${ep.id}`; }}
+                  className="flex-shrink-0 w-28 p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-gray-700/50 hover:border-gray-500/50 transition-colors text-left"
+                >
+                  <span className="text-[10px] text-primary font-mono font-bold block">EP{ep.episode_number || "?"}</span>
+                  <span className="text-xs text-white truncate block mt-0.5">{ep.title}</span>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">{ep.frames?.length || 0} 分镜</span>
+                </button>
+              ))}
 
-      <div className="space-y-2 mb-4">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-gray-400">集数</span>
-          <span className="text-white font-medium">{series.episode_ids?.length || 0}</span>
-        </div>
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-gray-400">角色</span>
-          <span className="text-white font-medium">{series.characters?.length || 0}</span>
-        </div>
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-gray-400">场景</span>
-          <span className="text-white font-medium">{series.scenes?.length || 0}</span>
+              {/* Inline add episode */}
+              {showInlineInput ? (
+                <div className="flex-shrink-0 w-36 p-2 rounded-lg bg-white/5 border border-primary/30 flex flex-col gap-1">
+                  <input
+                    type="text"
+                    value={inlineTitle}
+                    onChange={(e) => setInlineTitle(e.target.value)}
+                    placeholder="集数标题..."
+                    className="w-full bg-transparent border-none text-xs text-white placeholder-gray-500 focus:outline-none"
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleInlineAddEpisode(e as unknown as React.MouseEvent);
+                      if (e.key === "Escape") { setShowInlineInput(false); setInlineTitle(""); }
+                    }}
+                  />
+                  <div className="flex gap-1">
+                    <button
+                      onClick={handleInlineAddEpisode}
+                      disabled={!inlineTitle.trim() || isAdding}
+                      className="flex-1 text-[10px] text-primary hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      {isAdding ? "..." : "确定"}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowInlineInput(false); setInlineTitle(""); }}
+                      className="text-[10px] text-gray-500 hover:text-white transition-colors"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowInlineInput(true); }}
+                  className="flex-shrink-0 w-28 p-2 rounded-lg border border-dashed border-gray-600 hover:border-gray-400 bg-white/[0.02] hover:bg-white/5 transition-colors flex flex-col items-center justify-center gap-1"
+                >
+                  <Plus size={14} className="text-gray-500" />
+                  <span className="text-[10px] text-gray-500">添加集数</span>
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center justify-end">
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700/30">
+        <div className="flex items-center gap-2 text-xs text-gray-400">
+          <Calendar size={12} />
+          <span>{new Date(series.created_at * 1000).toLocaleDateString('zh-CN')}</span>
+        </div>
         <div className="flex items-center gap-1 text-primary text-xs font-medium">
           <Play size={14} />
           <span>打开系列</span>
@@ -174,18 +276,36 @@ function SeriesCard({ series, onDelete }: { series: Series; onDelete: (id: strin
   );
 }
 
-// ── Hybrid List Item (for projects in mixed list) ──
-function StandaloneProjectCard({ project, onDelete }: { project: Project; onDelete: (id: string) => void }) {
+// ── Episode Breadcrumb Wrapper ──
+function EpisodeBreadcrumbWrapper({ seriesId, episodeId }: { seriesId: string; episodeId: string }) {
+  const [seriesTitle, setSeriesTitle] = useState<string>("");
+  const [episodeNumber, setEpisodeNumber] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchInfo = async () => {
+      try {
+        const series = await api.getSeries(seriesId);
+        setSeriesTitle(series.title || "");
+        const episodes = await api.getSeriesEpisodes(seriesId);
+        const ep = episodes.find((e: Project) => e.id === episodeId);
+        if (ep) {
+          setEpisodeNumber(ep.episode_number ?? null);
+        }
+      } catch (error) {
+        console.error("Failed to fetch series info for breadcrumb:", error);
+      }
+    };
+    fetchInfo();
+  }, [seriesId, episodeId]);
+
+  const segments = [
+    { label: "LumenX", hash: "#/" },
+    { label: seriesTitle || "系列", hash: `#/series/${seriesId}` },
+    { label: episodeNumber != null ? `第${episodeNumber}集` : "集数" },
+  ];
+
   return (
-    <div className="relative">
-      {/* Type badge overlay */}
-      <div className="absolute top-4 left-4 z-10">
-        <span className="text-xs px-2 py-0.5 rounded bg-gray-500/20 text-gray-400 font-medium">
-          项目
-        </span>
-      </div>
-      <ProjectCard project={project} onDelete={onDelete} />
-    </div>
+    <ProjectClient id={episodeId} breadcrumbSegments={segments} />
   );
 }
 
@@ -194,12 +314,15 @@ export default function Home() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSeriesDialogOpen, setIsSeriesDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [isEnvDialogOpen, setIsEnvDialogOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [currentView, setCurrentView] = useState<'home' | 'project' | 'series' | 'series-episode'>('home');
+  const [showCreateDropdown, setShowCreateDropdown] = useState(false);
+  const [currentView, setCurrentView] = useState<'home' | 'project' | 'series' | 'series-episode' | 'library' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<GlobalTab>("workspace");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [episodeId, setEpisodeId] = useState<string | null>(null);
+  const [seriesEpisodes, setSeriesEpisodes] = useState<Record<string, Project[]>>({});
+  const [episodesLoading, setEpisodesLoading] = useState(false);
   const projects = useProjectStore((state) => state.projects);
   const seriesList = useProjectStore((state) => state.seriesList);
   const deleteProject = useProjectStore((state) => state.deleteProject);
@@ -213,6 +336,43 @@ export default function Home() {
     fetchSeriesList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load episodes for all series when seriesList changes
+  useEffect(() => {
+    if (seriesList.length === 0) return;
+    loadAllSeriesEpisodes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesList]);
+
+  const loadAllSeriesEpisodes = async () => {
+    setEpisodesLoading(true);
+    try {
+      const results = await Promise.all(
+        seriesList.map(async (s) => {
+          const eps = await api.getSeriesEpisodes(s.id);
+          return [s.id, eps] as const;
+        })
+      );
+      const map: Record<string, Project[]> = {};
+      for (const [id, eps] of results) {
+        map[id] = eps;
+      }
+      setSeriesEpisodes(map);
+    } catch (error) {
+      console.error("Failed to load series episodes:", error);
+    } finally {
+      setEpisodesLoading(false);
+    }
+  };
+
+  const refreshSeriesEpisodes = async (sid: string) => {
+    try {
+      const eps = await api.getSeriesEpisodes(sid);
+      setSeriesEpisodes((prev) => ({ ...prev, [sid]: eps }));
+    } catch (error) {
+      console.error("Failed to refresh series episodes:", error);
+    }
+  };
 
   const syncProjects = async () => {
     setIsSyncing(true);
@@ -231,6 +391,14 @@ export default function Home() {
   const syncAll = async () => {
     await Promise.all([syncProjects(), fetchSeriesList()]);
   };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showCreateDropdown) return;
+    const handleClick = () => setShowCreateDropdown(false);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [showCreateDropdown]);
 
   // 监听 hash 变化
   useEffect(() => {
@@ -260,12 +428,30 @@ export default function Home() {
         setSeriesId(null);
         setEpisodeId(null);
         setCurrentView('project');
-      } else {
-        setCurrentView('home');
+        return;
+      }
+      if (hash === '#/library') {
+        setCurrentView('library');
+        setActiveTab('library');
         setProjectId(null);
         setSeriesId(null);
         setEpisodeId(null);
+        return;
       }
+      if (hash === '#/settings') {
+        setCurrentView('settings');
+        setActiveTab('settings');
+        setProjectId(null);
+        setSeriesId(null);
+        setEpisodeId(null);
+        return;
+      }
+      // Default: workspace
+      setCurrentView('home');
+      setActiveTab('workspace');
+      setProjectId(null);
+      setSeriesId(null);
+      setEpisodeId(null);
     };
 
     handleHashChange();
@@ -273,17 +459,17 @@ export default function Home() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 如果是项目详情页，渲染项目详情组件
+  // 项目详情页 — 全屏，无 GlobalSidebar
   if (currentView === 'project' && projectId) {
     return <ProjectClient id={projectId} />;
   }
 
-  // Series episode view - render ProjectClient with breadcrumb
+  // 系列集数编辑 — 全屏，BreadcrumbBar 内嵌在 ProjectClient
   if (currentView === 'series-episode' && seriesId && episodeId) {
     return <EpisodeBreadcrumbWrapper seriesId={seriesId} episodeId={episodeId} />;
   }
 
-  // Series detail page
+  // 系列详情页 — 全屏，自带 BreadcrumbBar
   if (currentView === 'series' && seriesId) {
     return <SeriesDetailPage seriesId={seriesId} />;
   }
@@ -300,6 +486,146 @@ export default function Home() {
 
   const totalCount = mixedList.length;
 
+  const handleTabChange = (tab: GlobalTab) => {
+    setActiveTab(tab);
+  };
+
+  // Determine content based on activeTab
+  const renderContent = () => {
+    if (currentView === 'library') {
+      return <AssetLibraryPage />;
+    }
+    if (currentView === 'settings') {
+      return <SettingsPage />;
+    }
+
+    // Workspace view
+    return (
+      <div className="container mx-auto px-6 py-8">
+        {/* Content Section */}
+        {totalCount === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-col items-center justify-center py-20"
+          >
+            <FolderOpen size={64} className="text-gray-600 mb-4" />
+            <h3 className="text-xl font-medium text-gray-400 mb-2">还没有项目</h3>
+            <p className="text-gray-500 mb-8">选择一种方式开始创作</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-xl w-full">
+              <button
+                onClick={() => setIsSeriesDialogOpen(true)}
+                className="glass-panel p-6 rounded-xl border border-blue-500/30 hover:border-blue-500/60 transition-all group text-left"
+              >
+                <Library size={32} className="text-blue-400 mb-3" />
+                <h4 className="text-lg font-display font-bold text-white mb-1 group-hover:text-blue-400 transition-colors">创建系列</h4>
+                <p className="text-sm text-gray-400">适合多集连续故事</p>
+              </button>
+              <button
+                onClick={() => setIsDialogOpen(true)}
+                className="glass-panel p-6 rounded-xl border border-gray-600/30 hover:border-gray-500/60 transition-all group text-left"
+              >
+                <FileText size={32} className="text-gray-400 mb-3" />
+                <h4 className="text-lg font-display font-bold text-white mb-1 group-hover:text-primary transition-colors">创建独立项目</h4>
+                <p className="text-sm text-gray-400">适合单个短视频</p>
+              </button>
+            </div>
+            <button
+              onClick={syncAll}
+              disabled={isSyncing}
+              className="mt-6 bg-white/10 hover:bg-white/20 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50 text-sm"
+            >
+              <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
+              从后端同步
+            </button>
+          </motion.div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-display font-bold text-white">
+                我的工作区 ({totalCount})
+              </h2>
+              <div className="flex gap-3">
+                <button
+                  onClick={syncAll}
+                  disabled={isSyncing}
+                  className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm disabled:opacity-50"
+                >
+                  <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
+                  同步
+                </button>
+                <button
+                  onClick={() => setIsImportDialogOpen(true)}
+                  className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
+                >
+                  <FileUp size={16} />
+                  导入文件
+                </button>
+                {/* Unified create dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowCreateDropdown((v) => !v); }}
+                    className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
+                  >
+                    <Plus size={16} />
+                    新建
+                    <ChevronDown size={14} />
+                  </button>
+                  {showCreateDropdown && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="absolute right-0 top-full mt-1 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20 overflow-hidden"
+                    >
+                      <button
+                        onClick={() => { setIsSeriesDialogOpen(true); setShowCreateDropdown(false); }}
+                        className="w-full px-4 py-2.5 text-sm text-left text-white hover:bg-white/10 transition-colors flex items-center gap-2"
+                      >
+                        <Library size={16} className="text-blue-400" />
+                        新建系列
+                      </button>
+                      <button
+                        onClick={() => { setIsDialogOpen(true); setShowCreateDropdown(false); }}
+                        className="w-full px-4 py-2.5 text-sm text-left text-white hover:bg-white/10 transition-colors flex items-center gap-2"
+                      >
+                        <FileText size={16} className="text-gray-400" />
+                        新建独立项目
+                      </button>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-12">
+              {mixedList.map((item, i) => (
+                <motion.div
+                  key={item.type === 'series' ? `s-${item.data.id}` : `p-${(item.data as Project).id}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(i * 0.03, 0.3) }}
+                  className={item.type === 'series' ? 'col-span-1 md:col-span-2' : ''}
+                >
+                  {item.type === 'series' ? (
+                    <SeriesCard
+                      series={item.data as Series}
+                      onDelete={deleteSeries}
+                      episodes={seriesEpisodes[(item.data as Series).id]}
+                      episodesLoading={episodesLoading}
+                      onEpisodesChange={refreshSeriesEpisodes}
+                    />
+                  ) : (
+                    <ProjectCard project={item.data as Project} onDelete={deleteProject} />
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <main className="relative h-screen w-screen bg-background flex flex-col">
       {/* Background Canvas */}
@@ -307,161 +633,11 @@ export default function Home() {
         <CreativeCanvas />
       </div>
 
-      {/* Scrollable Content */}
-      <div className="relative z-10 flex-1 overflow-y-auto">
-        <div className="container mx-auto px-6 py-8">
-          {/* Header with LumenX Branding */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8"
-          >
-            <div className="flex gap-4 items-center">
-              {/* Logo */}
-              <div className="flex-shrink-0">
-                <img
-                  src="LumenX.png"
-                  alt="LumenX"
-                  className="w-16 h-16 object-contain"
-                />
-              </div>
-
-              {/* LumenX / Studio - Matching PipelineSidebar style */}
-              <div className="flex flex-col gap-1">
-                {/* LumenX (Top) */}
-                <div className="flex items-center -mb-2">
-                  <span className="font-display text-3xl font-bold tracking-tight text-primary">
-                    Lumen
-                  </span>
-                  <span
-                    className="font-display text-4xl font-black tracking-tighter ml-1"
-                    style={{
-                      background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #ec4899 100%)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                      backgroundClip: 'text',
-                    }}
-                  >
-                    X
-                  </span>
-                </div>
-
-                {/* Studio (Bottom Right aligned) */}
-                <div className="flex justify-end -mt-1 pl-9">
-                  <span className="font-display text-3xl font-bold tracking-tight text-white">
-                    Studio
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsEnvDialogOpen(true)}
-                  className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
-                  title="API Key & OSS 配置"
-                >
-                  <Key size={18} />
-                  API 配置
-                </button>
-              </div>
-            </div>
-
-            {/* Slogan */}
-            <p className="text-xs text-gray-500 tracking-wide mt-3 ml-10">
-              Render Noise into Narrative
-            </p>
-          </motion.div>
-
-          {/* Content Section */}
-          {totalCount === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col items-center justify-center py-20"
-            >
-              <FolderOpen size={64} className="text-gray-600 mb-4" />
-              <h3 className="text-xl font-medium text-gray-400 mb-2">还没有项目</h3>
-              <p className="text-gray-500 mb-6">创建第一个项目或系列开始吧！</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setIsDialogOpen(true)}
-                  className="bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors"
-                >
-                  <Plus size={20} />
-                  创建新项目
-                </button>
-                <button
-                  onClick={() => setIsSeriesDialogOpen(true)}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors"
-                >
-                  <Library size={20} />
-                  新建系列
-                </button>
-                <button
-                  onClick={syncAll}
-                  disabled={isSyncing}
-                  className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw size={20} className={isSyncing ? "animate-spin" : ""} />
-                  从后端同步
-                </button>
-              </div>
-            </motion.div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-display font-bold text-white">
-                  我的工作区 ({totalCount})
-                </h2>
-                <div className="flex gap-3">
-                  <button
-                    onClick={syncAll}
-                    disabled={isSyncing}
-                    className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm disabled:opacity-50"
-                  >
-                    <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
-                    同步
-                  </button>
-                  <button
-                    onClick={() => setIsImportDialogOpen(true)}
-                    className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
-                  >
-                    <FileUp size={16} />
-                    导入文件
-                  </button>
-                  <button
-                    onClick={() => setIsSeriesDialogOpen(true)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
-                  >
-                    <Library size={16} />
-                    新建系列
-                  </button>
-                  <button
-                    onClick={() => setIsDialogOpen(true)}
-                    className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
-                  >
-                    <Plus size={16} />
-                    新建项目
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-12">
-                {mixedList.map((item, i) => (
-                  <motion.div
-                    key={item.type === 'series' ? `s-${item.data.id}` : `p-${(item.data as Project).id}`}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(i * 0.03, 0.3) }}
-                  >
-                    {item.type === 'series' ? (
-                      <SeriesCard series={item.data as Series} onDelete={deleteSeries} />
-                    ) : (
-                      <StandaloneProjectCard project={item.data as Project} onDelete={deleteProject} />
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+      {/* AppShell with GlobalSidebar + content */}
+      <div className="relative z-10 flex-1 overflow-hidden">
+        <AppShell activeTab={activeTab} onTabChange={handleTabChange}>
+          {renderContent()}
+        </AppShell>
       </div>
 
       {/* Create Project Dialog */}
@@ -476,10 +652,10 @@ export default function Home() {
         onClose={() => setIsSeriesDialogOpen(false)}
       />
 
-      {/* Environment Configuration Dialog */}
+      {/* Environment Configuration Dialog (kept for EnvConfigChecker) */}
       <EnvConfigDialog
-        isOpen={isEnvDialogOpen}
-        onClose={() => setIsEnvDialogOpen(false)}
+        isOpen={false}
+        onClose={() => {}}
         isRequired={false}
       />
 
@@ -490,62 +666,5 @@ export default function Home() {
         onSuccess={() => fetchSeriesList()}
       />
     </main>
-  );
-}
-
-// ── Episode Breadcrumb Wrapper (D3) ──
-function EpisodeBreadcrumbWrapper({ seriesId, episodeId }: { seriesId: string; episodeId: string }) {
-  const [seriesTitle, setSeriesTitle] = useState<string>("");
-  const [episodeNumber, setEpisodeNumber] = useState<number | null>(null);
-
-  useEffect(() => {
-    const fetchInfo = async () => {
-      try {
-        const series = await api.getSeries(seriesId);
-        setSeriesTitle(series.title || "");
-        // Find episode number from projects
-        const episodes = await api.getSeriesEpisodes(seriesId);
-        const ep = episodes.find((e: Project) => e.id === episodeId);
-        if (ep) {
-          setEpisodeNumber(ep.episode_number ?? null);
-        }
-      } catch (error) {
-        console.error("Failed to fetch series info for breadcrumb:", error);
-      }
-    };
-    fetchInfo();
-  }, [seriesId, episodeId]);
-
-  return (
-    <div className="flex flex-col h-screen w-screen">
-      {/* Breadcrumb bar */}
-      <div className="relative z-30 flex items-center gap-3 px-4 py-2.5 bg-gray-900/80 backdrop-blur-sm border-b border-gray-700/50">
-        <button
-          onClick={() => { window.location.hash = `#/series/${seriesId}`; }}
-          className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          <span className="text-lg leading-none">&larr;</span>
-          <span>返回系列</span>
-        </button>
-        <span className="text-gray-600">|</span>
-        <nav className="flex items-center gap-1.5 text-sm">
-          <a
-            href={`#/series/${seriesId}`}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
-            {seriesTitle || "系列"}
-          </a>
-          <span className="text-gray-600">&gt;</span>
-          <span className="text-white font-medium">
-            {episodeNumber != null ? `第${episodeNumber}集` : "集数"}
-          </span>
-        </nav>
-      </div>
-
-      {/* ProjectClient fills the rest */}
-      <div className="flex-1 overflow-hidden">
-        <ProjectClient id={episodeId} />
-      </div>
-    </div>
   );
 }
