@@ -37,6 +37,8 @@ dist_*/
 .env.local
 .venv
 venv/
+backend/.env
+backend/.venv/
 
 # IDE
 .idea/
@@ -85,9 +87,8 @@ logs/
 !*.pub.key
 
 # Project outputs
-static/output/
-output/
-static/
+backend/output/
+backend/static/
 
 # Internal development tools (not for public repo)
 .agent/
@@ -99,7 +100,6 @@ demand/
 # Build/packaging configs (keep templates only)
 *.spec
 !build.spec.template
-
 
 
 

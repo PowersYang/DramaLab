@@ -53,10 +53,10 @@ We follow **PEP 8** style guide:
 
 ```bash
 # Format code with black
-black src/
+black backend/src/
 
 # Check with flake8
-flake8 src/
+flake8 backend/src/
 ```
 
 **Key Points**:
@@ -147,16 +147,16 @@ Before submitting your PR:
 
 ```bash
 # Run tests
-pytest  # Python tests
+cd backend && pytest  # Python tests
 cd frontend && npm test  # Frontend tests
 
 # Check linting
-black --check src/
-flake8 src/
+black --check backend/src/
+flake8 backend/src/
 cd frontend && npm run lint
 
 # Verify builds
-./build_mac.sh  # or build_windows.ps1 on Windows
+./backend/build_mac.sh  # or backend/build_windows.ps1 on Windows
 ```
 
 ### 2. Update Documentation
@@ -199,13 +199,13 @@ Your PR should:
 
 ```bash
 # Run all tests
-pytest
+cd backend && pytest
 
 # Run specific test file
-pytest tests/test_pipeline.py
+cd backend && pytest tests/test_pipeline.py
 
 # Run with coverage
-pytest --cov=src tests/
+cd backend && pytest --cov=src tests/
 ```
 
 ### Frontend Tests

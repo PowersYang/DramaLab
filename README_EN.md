@@ -11,7 +11,7 @@
 **Render Noise into Narrative**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/node-18%2B-green)](https://nodejs.org/)
 [![GitHub Stars](https://img.shields.io/github/stars/alibaba/lumenx?style=social)](https://github.com/alibaba/lumenx)
 
@@ -26,6 +26,17 @@ LumenX Studio is an **all-in-one AI motion comic production platform**. It autom
 LumenX Studio naturally integrates the full-link SOP of **Asset Extraction -> Style Definition -> Asset Generation -> Storyboard Construction -> Storyboard Generation -> Video Generation**. It incorporates industry know-how on top of comprehensive features, allowing creators to quickly produce high-quality AI short films with greatly improved efficiency.
 
 The platform natively integrates Alibaba's Qwen & Wanx series model capabilities, dedicated to providing an intelligent, convenient, and flexible flexible creation experience, enabling creators to complete motion comic production in one stop without frequent switching between web pages or apps.
+
+---
+
+## 🧭 Glossary
+
+- **Series**: A top-level container for a group of episode projects. It usually manages shared characters, scenes, props, and series-level model/prompt settings.
+- **Project**: A single project, usually corresponding to one episode or one standalone creation task. It contains text, characters, scenes, props, storyboards, video tasks, and export results.
+- **Asset**: A reusable visual asset such as a character, scene, or prop. Each asset usually has a description, a selected image, candidate variants, and a lock state.
+- **Storyboard**: A structured shot plan created by breaking script text into frame-by-frame visual units. Each frame can reference characters, scenes, props, prompts, dialogue, and candidate images/videos.
+
+In short: a `Series` contains multiple `Project`s, and each `Project` manages its own `Asset`s and `Storyboard`s before moving into video generation and final export.
 
 ---
 
@@ -95,7 +106,7 @@ LumenX Studio utilizes a modern separated frontend/backend architecture for scal
 
 **Tech Stack:**
 - **Frontend**: Next.js 14 + React 18 + TypeScript + Tailwind CSS
-- **Backend**: FastAPI + Python 3.11+
+- **Backend**: FastAPI + Python 3.12+
 - **AI Core**: Alibaba Cloud Qwen (Logic) + Wanx (Visuals)
 - **Render**: Three.js (Canvas) + FFmpeg (Video Processing)
 
@@ -105,7 +116,7 @@ LumenX Studio utilizes a modern separated frontend/backend architecture for scal
 
 ### 1. Prerequisites
 
-- **Python**: 3.11+
+- **Python**: 3.12+
 - **Node.js**: 18+
 - **FFmpeg**: Required (for video processing)
 
@@ -121,20 +132,21 @@ cd lumenx
 Copy the configuration template and fill in your API Key (Alibaba Cloud Model Studio / Bailian service required):
 
 ```bash
-cp .env.example .env
-# Edit .env and fill in DASHSCOPE_API_KEY
+cp backend/.env.example backend/.env
+# Edit backend/.env and fill in DASHSCOPE_API_KEY
 ```
 
 ### 4. Start Backend
 
 ```bash
 # Install dependencies
+cd backend
 pip install -r requirements.txt
 
 # Create output directories
 mkdir -p output/uploads
 
-# Start service (http://localhost:8000)
+# Start service (http://localhost:17177)
 ./start_backend.sh
 ```
 
@@ -152,7 +164,7 @@ npm install && npm run dev
 ## 📖 Documentation
 
 - **[User Manual](USER_MANUAL.md)**: **Must-read** for first-time users.
-- **[API Documentation](http://localhost:8000/docs)**: Backend Swagger UI.
+- **[API Documentation](http://localhost:17177/docs)**: Backend Swagger UI.
 
 ---
 
@@ -173,7 +185,7 @@ For security and performance, it is recommended to configure Alibaba Cloud OSS f
    ```
 
 ### Config File Locations
-- **Development**: `.env` in project root
+- **Development**: `backend/.env`
 - **Packaged App**: `~/.lumen-x/config.json` in user home directory
 
 </details>
@@ -184,12 +196,13 @@ For security and performance, it is recommended to configure Alibaba Cloud OSS f
 
 ```
 lumenx/
+├── backend/           # Python backend workspace
+│   ├── src/          # Core backend code
+│   ├── tests/        # Python tests
+│   ├── scripts/      # Backend utility scripts
+│   └── output/       # (Auto-generated) backend outputs
 ├── frontend/          # Next.js Frontend
-├── src/               # Python Backend Core
-│   ├── apps/         # Business Logic
-│   ├── models/       # AI Model Interfaces
-│   └── utils/        # Utilities
-├── output/            # (Auto-generated) Output Directory
+├── docs/              # Documentation and images
 ```
 
 ---

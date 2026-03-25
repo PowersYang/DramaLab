@@ -6,7 +6,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:17177';
 
 const nextConfig = {
     output: isProd ? 'export' : undefined,
-    distDir: isProd ? (isDocker ? 'out' : '../static') : undefined,
+    distDir: isProd ? (isDocker ? 'out' : '../backend/static') : undefined,
     basePath: isProd && !isDocker ? '/static' : undefined,
     assetPrefix: isProd && !isDocker ? '/static' : undefined,
     // Dev-only: proxy /api-proxy/* to backend to avoid CORS issues (e.g. file downloads)

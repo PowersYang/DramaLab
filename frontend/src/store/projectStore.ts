@@ -433,8 +433,8 @@ export const useProjectStore = create<ProjectStore>()(
                 // Then fetch latest data from backend
                 try {
                     const API_URL = typeof window !== 'undefined'
-                        ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
-                        : 'http://localhost:8000';
+                        ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:17177')
+                        : 'http://localhost:17177';
                     const response = await fetch(`${API_URL}/projects/${id}`);
                     if (response.ok) {
                         const rawData = await response.json();
