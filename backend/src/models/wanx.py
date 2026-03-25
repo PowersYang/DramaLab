@@ -1,14 +1,17 @@
 import os
 import time
-import requests
 from http import HTTPStatus
-from dashscope import VideoSynthesis
+from typing import Tuple
+
 import dashscope
+import requests
+from dashscope import VideoSynthesis
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
 from .base import VideoGenModel
 from ..utils import get_logger
 from ..utils.endpoints import get_provider_base_url
-
-from typing import Tuple
 
 from ..utils.oss_utils import OSSImageUploader
 
@@ -485,9 +488,6 @@ class WanxModel(VideoGenModel):
 
     def _download_video(self, url: str, path: str):
         logger.info(f"Downloading video to {path}...")
-
-        from requests.adapters import HTTPAdapter
-        from requests.packages.urllib3.util.retry import Retry
 
         session = requests.Session()
         retry = Retry(connect=3, backoff_factor=0.5)

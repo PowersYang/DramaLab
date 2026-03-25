@@ -4,6 +4,11 @@ import base64
 import time
 from typing import Tuple
 
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
 from ..utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
@@ -52,9 +57,7 @@ class QwenVLModel:
     def _get_client(self):
         """按需创建并缓存 OpenAI 兼容客户端。"""
         if self._client is None:
-            try:
-                from openai import OpenAI
-            except ImportError:
+            if OpenAI is None:
                 raise RuntimeError("openai package not installed. Run: pip install openai>=1.0.0")
             self._client = OpenAI(
                 api_key=self.api_key,

@@ -3,6 +3,9 @@ import time
 import logging
 import base64
 from typing import Tuple, Optional
+
+import requests
+
 from .base import VideoGenModel
 
 # 尝试加载 Ark SDK；若环境未安装则延后在运行时报错
@@ -115,7 +118,6 @@ class DoubaoModel(VideoGenModel):
         return output_path, api_duration
 
     def _download_video(self, url: str, output_path: str):
-        import requests
         logger.info(f"Downloading video from {url} to {output_path}...")
         response = requests.get(url, stream=True)
         response.raise_for_status()

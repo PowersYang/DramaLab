@@ -1,14 +1,19 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple
 import os
 import time
-import requests
+import traceback
 from http import HTTPStatus
+from typing import Any, Dict, Tuple
+
 import dashscope
+import requests
 from dashscope import ImageSynthesis
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
 from ..utils import get_logger
 from ..utils.endpoints import get_provider_base_url
-from ..utils.oss_utils import OSSImageUploader
+from ..utils.oss_utils import OSSImageUploader, is_object_key
 
 logger = get_logger(__name__)
 
@@ -103,7 +108,6 @@ class WanxImageModel(ImageGenModel):
             return output_path, api_duration
 
         except Exception as e:
-            import traceback
             logger.error(f"Error during generation: {e}")
             logger.error(traceback.format_exc())
             raise
@@ -213,7 +217,6 @@ class WanxImageModel(ImageGenModel):
                     content.append({"image": path})
                 else:
                     # 也兼容直接传对象键的情况
-                    from ..utils.oss_utils import is_object_key
                     if is_object_key(path):
                         uploader = OSSImageUploader()
                         if uploader.is_configured:
@@ -375,7 +378,6 @@ class WanxImageModel(ImageGenModel):
                     ref_image_urls.append(path)
                 else:
                     # 兼容直接传对象键
-                    from ..utils.oss_utils import is_object_key
                     if is_object_key(path):
                         if uploader.is_configured:
                             signed_url = uploader.sign_url_for_api(path)
@@ -432,9 +434,6 @@ class WanxImageModel(ImageGenModel):
         logger.info(f"Downloading image to {output_path}...")
         
         # 给下载请求加重试策略，降低偶发网络错误影响
-        from requests.adapters import HTTPAdapter
-        from requests.packages.urllib3.util.retry import Retry
-        
         retry_strategy = Retry(
             total=5,
             backoff_factor=1,

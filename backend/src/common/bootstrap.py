@@ -3,6 +3,7 @@ import os
 
 from dotenv import load_dotenv
 
+from ..db import init_database
 from ..utils import setup_logging
 
 
@@ -22,6 +23,7 @@ def bootstrap_api_environment(logger: logging.Logger) -> None:
         os.getenv("OSS_BASE_PATH"),
     )
 
+    init_database()
     os.makedirs("output", exist_ok=True)
     os.makedirs("output/uploads", exist_ok=True)
     os.makedirs("output/video", exist_ok=True)

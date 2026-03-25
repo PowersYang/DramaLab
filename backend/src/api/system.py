@@ -10,20 +10,22 @@ import sys
 import uuid
 from functools import partial
 
-from dotenv import set_key
+from dotenv import set_key, unset_key
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from ..service.llm import (
+from ..application.services import SystemService
+from ..providers import ScriptProcessor
+from ..providers.text.default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
     DEFAULT_STORYBOARD_POLISH_PROMPT,
     DEFAULT_VIDEO_POLISH_PROMPT,
-    ScriptProcessor,
 )
+from ..utils import get_user_data_dir
 from ..utils.endpoints import PROVIDER_DEFAULTS
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.system_check import run_system_checks
-from ..common import logger, pipeline, signed_response
-from ..schema.requests import (
+from ..common import logger, signed_response
+from ..schemas.requests import (
     AnalyzeStyleRequest,
     ConfirmImportRequest,
     EnvConfig,
@@ -34,6 +36,8 @@ from ..schema.requests import (
 
 
 router = APIRouter()
+system_service = SystemService()
+text_provider = ScriptProcessor()
 
 
 @router.get("/debug/config")
@@ -98,18 +102,14 @@ async def import_file_preview(
             raise HTTPException(status_code=400, detail="文件内容为空")
 
         loop = asyncio.get_event_loop()
-        episodes = await loop.run_in_executor(
+        result = await loop.run_in_executor(
             None,
-            partial(pipeline.import_file_and_split, text, suggested_episodes),
+            partial(system_service.preview_import, text, suggested_episodes),
         )
-        import_id = str(uuid.uuid4())
-        pipeline._import_cache[import_id] = text
         return {
             "filename": file.filename,
             "text_length": len(text),
-            "suggested_episodes": suggested_episodes,
-            "episodes": episodes,
-            "import_id": import_id,
+            **result,
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -124,7 +124,7 @@ async def import_file_confirm(request: ConfirmImportRequest):
     try:
         text = None
         if request.import_id:
-            text = pipeline._import_cache.pop(request.import_id, None)
+            text = system_service.pop_import_text(request.import_id)
         if not text:
             text = request.text
         if not text:
@@ -134,7 +134,7 @@ async def import_file_confirm(request: ConfirmImportRequest):
         result = await loop.run_in_executor(
             None,
             partial(
-                pipeline.create_series_from_import,
+                system_service.create_series_from_import,
                 request.title,
                 text,
                 request.episodes,
@@ -156,8 +156,6 @@ def get_user_config_path() -> str:
     开发环境使用后端根目录下的 `.env`；
     打包应用使用用户目录下的 `config.json`。
     """
-    from ..utils import get_user_data_dir
-
     is_packaged = os.getenv("LUMEN_X_PACKAGED", "false").lower() == "true" or getattr(
         sys, "frozen", False
     )
@@ -228,8 +226,6 @@ def remove_user_config_keys(keys: list):
             except Exception as exc:
                 logger.warning("Failed to remove keys from config: %s", exc)
         return
-
-    from dotenv import unset_key
 
     for key in keys:
         try:
@@ -332,19 +328,18 @@ async def get_env_config():
 async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest):
     """分析剧本内容，并用 LLM 推荐视觉风格。"""
     try:
-        script = pipeline.get_script(script_id)
-        if not script:
-            raise HTTPException(status_code=404, detail="Script not found")
-
         loop = asyncio.get_event_loop()
         recommendations = await loop.run_in_executor(
             None,
             partial(
-                pipeline.script_processor.analyze_script_for_styles,
+                system_service.analyze_script_for_styles,
+                script_id,
                 request.script_text,
             ),
         )
         return {"recommendations": recommendations}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:
         raise
     except Exception as exc:
@@ -356,7 +351,7 @@ async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest
 async def save_art_direction(script_id: str, request: SaveArtDirectionRequest):
     """把美术指导配置保存到项目。"""
     try:
-        updated_script = pipeline.save_art_direction(
+        updated_script = system_service.save_art_direction(
             script_id,
             request.selected_style_id,
             request.style_config,
@@ -377,7 +372,7 @@ async def get_style_presets():
     try:
         preset_file = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "service/style_presets.json",
+            "assets/style_presets.json",
         )
         logger.debug("Loading presets from %s", preset_file)
         if not os.path.exists(preset_file):
@@ -400,19 +395,7 @@ def _get_custom_prompt(script_id: str, field: str) -> str:
     """
     if not script_id:
         return ""
-    script = pipeline.get_script(script_id)
-    if not script:
-        return ""
-    series = pipeline.get_series(script.series_id) if script.series_id else None
-    effective = pipeline.get_effective_prompt(field, script, series)
-    defaults = {
-        "storyboard_polish": DEFAULT_STORYBOARD_POLISH_PROMPT,
-        "video_polish": DEFAULT_VIDEO_POLISH_PROMPT,
-        "r2v_polish": DEFAULT_R2V_POLISH_PROMPT,
-    }
-    if effective == defaults.get(field, ""):
-        return ""
-    return effective
+    return system_service.get_effective_prompt(script_id, field)
 
 
 @router.post("/video/polish_prompt")
@@ -420,8 +403,7 @@ async def polish_video_prompt(request: PolishVideoPromptRequest):
     """调用 LLM 润色视频提示词，并返回中英文结果。"""
     try:
         custom_prompt = _get_custom_prompt(request.script_id, "video_polish")
-        processor = ScriptProcessor()
-        result = processor.polish_video_prompt(
+        result = text_provider.polish_video_prompt(
             request.draft_prompt,
             request.feedback,
             custom_prompt,
@@ -440,9 +422,8 @@ async def polish_r2v_prompt(request: PolishR2VPromptRequest):
     """调用 LLM 润色 R2V 提示词，并返回中英文结果。"""
     try:
         custom_prompt = _get_custom_prompt(request.script_id, "r2v_polish")
-        processor = ScriptProcessor()
         slot_info = [{"description": slot.description} for slot in request.slots]
-        result = processor.polish_r2v_prompt(
+        result = text_provider.polish_r2v_prompt(
             request.draft_prompt,
             slot_info,
             request.feedback,

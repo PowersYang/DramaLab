@@ -4,9 +4,11 @@
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from backend.src.schema.models import Script, VideoTask
-from ..common import logger, pipeline, signed_response
-from ..schema.requests import (
+from ..application.services import ProjectService, VideoTaskService
+from ..application.workflows import MediaWorkflow
+from backend.src.schemas.models import Script, VideoTask
+from ..common import logger, signed_response
+from ..schemas.requests import (
     BindVoiceRequest,
     CreateVideoTaskRequest,
     ExportRequest,
@@ -16,13 +18,16 @@ from ..schema.requests import (
 
 
 router = APIRouter()
+video_task_service = VideoTaskService()
+media_workflow = MediaWorkflow()
+project_service = ProjectService()
 
 
 @router.post("/projects/{script_id}/generate_video", response_model=Script)
 async def generate_video(script_id: str):
     """触发视频生成。"""
     try:
-        return signed_response(pipeline.generate_video(script_id))
+        return signed_response(media_workflow.generate_video(script_id))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -31,7 +36,7 @@ async def generate_video(script_id: str):
 async def generate_audio(script_id: str):
     """触发音频生成。"""
     try:
-        return signed_response(pipeline.generate_audio(script_id))
+        return signed_response(media_workflow.generate_audio(script_id))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -44,37 +49,31 @@ async def create_video_task(
 ):
     """创建一个或多个视频生成任务。"""
     try:
-        tasks = []
-        for _ in range(request.batch_size):
-            script, task_id = pipeline.create_video_task(
-                script_id=script_id,
-                image_url=request.image_url,
-                prompt=request.prompt,
-                frame_id=request.frame_id,
-                duration=request.duration,
-                seed=request.seed,
-                resolution=request.resolution,
-                generate_audio=request.generate_audio,
-                audio_url=request.audio_url,
-                prompt_extend=request.prompt_extend,
-                negative_prompt=request.negative_prompt,
-                model=request.model,
-                shot_type=request.shot_type,
-                generation_mode=request.generation_mode,
-                reference_video_urls=request.reference_video_urls,
-                mode=request.mode,
-                sound=request.sound,
-                cfg_scale=request.cfg_scale,
-                vidu_audio=request.vidu_audio,
-                movement_amplitude=request.movement_amplitude,
-            )
-            created_task = next(
-                (task for task in script.video_tasks if task.id == task_id),
-                None,
-            )
-            if created_task:
-                tasks.append(created_task)
-            background_tasks.add_task(pipeline.process_video_task, script_id, task_id)
+        tasks = video_task_service.create_tasks(
+            script_id=script_id,
+            image_url=request.image_url,
+            prompt=request.prompt,
+            frame_id=request.frame_id,
+            duration=request.duration,
+            seed=request.seed,
+            resolution=request.resolution,
+            generate_audio=request.generate_audio,
+            audio_url=request.audio_url,
+            prompt_extend=request.prompt_extend,
+            negative_prompt=request.negative_prompt,
+            batch_size=request.batch_size,
+            model=request.model,
+            shot_type=request.shot_type,
+            generation_mode=request.generation_mode,
+            reference_video_urls=request.reference_video_urls,
+            mode=request.mode,
+            sound=request.sound,
+            cfg_scale=request.cfg_scale,
+            vidu_audio=request.vidu_audio,
+            movement_amplitude=request.movement_amplitude,
+        )
+        for task in tasks:
+            background_tasks.add_task(media_workflow.process_video_task, script_id, task.id)
         return signed_response(tasks)
     except Exception as exc:
         logger.exception("An error occurred")
@@ -85,12 +84,7 @@ async def create_video_task(
 async def bind_voice(script_id: str, char_id: str, request: BindVoiceRequest):
     """给角色绑定语音。"""
     try:
-        updated_script = pipeline.bind_voice(
-            script_id,
-            char_id,
-            request.voice_id,
-            request.voice_name,
-        )
+        updated_script = video_task_service.bind_voice(script_id, char_id, request.voice_id, request.voice_name)
         return signed_response(updated_script)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -106,23 +100,17 @@ async def update_voice_params(
     request: UpdateVoiceParamsRequest,
 ):
     """更新角色语音参数。"""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Script not found")
-    character = next((char for char in script.characters if char.id == char_id), None)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
-    character.voice_speed = request.speed
-    character.voice_pitch = request.pitch
-    character.voice_volume = request.volume
-    pipeline._save_data()
-    return signed_response(script)
+    try:
+        updated_script = video_task_service.update_voice_params(script_id, char_id, request.speed, request.pitch, request.volume)
+        return signed_response(updated_script)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/voices")
 async def get_voices():
     """返回当前可用语音列表。"""
-    return pipeline.audio_generator.get_available_voices()
+    return media_workflow.get_available_voices()
 
 
 @router.post("/projects/{script_id}/frames/{frame_id}/audio", response_model=Script)
@@ -133,13 +121,7 @@ async def generate_line_audio(
 ):
     """按指定参数为某一帧生成对白音频。"""
     try:
-        updated_script = pipeline.generate_dialogue_line(
-            script_id,
-            frame_id,
-            request.speed,
-            request.pitch,
-            request.volume,
-        )
+        updated_script = media_workflow.generate_dialogue_line(script_id, frame_id, request.speed, request.pitch, request.volume)
         return signed_response(updated_script)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -149,7 +131,7 @@ async def generate_line_audio(
 async def generate_mix_sfx(script_id: str):
     """为全片触发音效生成流程。"""
     try:
-        return signed_response(pipeline.generate_audio(script_id))
+        return signed_response(media_workflow.generate_audio(script_id))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -158,7 +140,7 @@ async def generate_mix_sfx(script_id: str):
 async def generate_mix_bgm(script_id: str):
     """触发背景音乐生成。"""
     try:
-        return signed_response(pipeline.generate_audio(script_id))
+        return signed_response(media_workflow.generate_audio(script_id))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -167,7 +149,7 @@ async def generate_mix_bgm(script_id: str):
 async def merge_videos(script_id: str):
     """把所有已选中的分镜视频合成为最终成片。"""
     try:
-        return signed_response(pipeline.merge_videos(script_id))
+        return signed_response(media_workflow.merge_videos(script_id))
     except ValueError as exc:
         logger.error("[MERGE ERROR] Validation failed: %s", exc)
         logger.exception("An error occurred")
@@ -193,13 +175,12 @@ async def export_project(script_id: str, request: ExportRequest):
     """
     _ = request
     try:
-        script = pipeline.get_script(script_id)
+        script = project_service.get_project(script_id)
         if not script:
             raise HTTPException(status_code=404, detail="Project not found")
         if script.merged_video_url:
             return signed_response({"url": script.merged_video_url})
-        merged_script = pipeline.merge_videos(script_id)
-        return signed_response({"url": merged_script.merged_video_url})
+        return signed_response(media_workflow.export_project(script_id, request.model_dump()))
     except HTTPException:
         raise
     except ValueError as exc:

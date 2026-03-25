@@ -4,14 +4,16 @@
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from ..service.llm import (
+from ..application.services import SeriesService
+from ..application.workflows import AssetWorkflow, SeriesWorkflow
+from ..providers.text.default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
     DEFAULT_STORYBOARD_POLISH_PROMPT,
     DEFAULT_VIDEO_POLISH_PROMPT,
 )
-from backend.src.schema.models import PromptConfig
-from ..common import pipeline, signed_response
-from ..schema.requests import (
+from backend.src.schemas.models import PromptConfig
+from ..common import signed_response
+from ..schemas.requests import (
     AddEpisodeRequest,
     CreateSeriesRequest,
     GenerateAssetRequest,
@@ -25,29 +27,32 @@ from ..schema.requests import (
 
 
 router = APIRouter()
+series_service = SeriesService()
+series_workflow = SeriesWorkflow()
+asset_workflow = AssetWorkflow()
 
 
 @router.post("/series")
 async def create_series(request: CreateSeriesRequest):
     """创建一个新的系列。"""
-    series = pipeline.create_series(request.title, request.description)
+    series = series_service.create_series(request.title, request.description)
     return signed_response(series)
 
 
 @router.get("/series")
 async def list_series():
     """列出所有系列。"""
-    return signed_response(pipeline.list_series())
+    return signed_response(series_service.list_series())
 
 
 @router.get("/series/{series_id}")
 async def get_series(series_id: str):
     """获取系列详情，包括共享素材和分集列表。"""
-    series = pipeline.get_series(series_id)
+    series = series_service.get_series(series_id)
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    episodes = pipeline.get_series_episodes(series_id)
+    episodes = series_service.get_episodes(series_id)
     result = series.model_dump()
     result["episodes"] = [
         {
@@ -69,7 +74,7 @@ async def update_series(series_id: str, request: UpdateSeriesRequest):
         updates = {
             key: value for key, value in request.model_dump().items() if value is not None
         }
-        series = pipeline.update_series(series_id, updates)
+        series = series_service.update_series(series_id, updates)
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -79,7 +84,7 @@ async def update_series(series_id: str, request: UpdateSeriesRequest):
 async def delete_series(series_id: str):
     """删除系列，并解除与各分集的关联。"""
     try:
-        pipeline.delete_series(series_id)
+        series_service.delete_series(series_id)
         return {"status": "deleted"}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -89,11 +94,7 @@ async def delete_series(series_id: str):
 async def add_episode_to_series(series_id: str, request: AddEpisodeRequest):
     """把一个已有项目挂到系列里，作为某一集。"""
     try:
-        series = pipeline.add_episode_to_series(
-            series_id,
-            request.script_id,
-            request.episode_number,
-        )
+        series = series_service.add_episode(series_id, request.script_id, request.episode_number)
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -103,7 +104,7 @@ async def add_episode_to_series(series_id: str, request: AddEpisodeRequest):
 async def remove_episode_from_series(series_id: str, script_id: str):
     """把某一集从系列里移除，但不删除项目本身。"""
     try:
-        series = pipeline.remove_episode_from_series(series_id, script_id)
+        series = series_service.remove_episode(series_id, script_id)
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -113,7 +114,7 @@ async def remove_episode_from_series(series_id: str, script_id: str):
 async def get_series_episodes(series_id: str):
     """获取某个系列下的全部分集。"""
     try:
-        episodes = pipeline.get_series_episodes(series_id)
+        episodes = series_service.get_episodes(series_id)
         return signed_response(episodes)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -122,7 +123,7 @@ async def get_series_episodes(series_id: str):
 @router.get("/series/{series_id}/prompt_config")
 async def get_series_prompt_config(series_id: str):
     """读取系列级提示词配置，并带上系统默认值。"""
-    series = pipeline.get_series(series_id)
+    series = series_service.get_series(series_id)
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
     return {
@@ -139,7 +140,7 @@ async def get_series_prompt_config(series_id: str):
 async def update_series_prompt_config(series_id: str, config: PromptConfig):
     """更新系列级提示词配置。"""
     try:
-        series = pipeline.update_series(series_id, {"prompt_config": config})
+        series = series_service.update_prompt_config(series_id, config)
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -148,7 +149,7 @@ async def update_series_prompt_config(series_id: str, config: PromptConfig):
 @router.get("/series/{series_id}/model_settings")
 async def get_series_model_settings(series_id: str):
     """读取系列级模型配置。"""
-    series = pipeline.get_series(series_id)
+    series = series_service.get_series(series_id)
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
     return series.model_settings.model_dump()
@@ -164,20 +165,17 @@ async def update_series_model_settings(
         key: value for key, value in settings.model_dump().items() if value is not None
     }
     if not updates:
-        series = pipeline.get_series(series_id)
+        series = series_service.get_series(series_id)
         if not series:
             raise HTTPException(status_code=404, detail="Series not found")
         return signed_response(series)
 
     try:
-        current_series = pipeline.get_series(series_id)
+        current_series = series_service.get_series(series_id)
         if not current_series:
             raise HTTPException(status_code=404, detail="Series not found")
         model_settings = current_series.model_settings.model_copy(update=updates)
-        series = pipeline.update_series(
-            series_id,
-            {"model_settings": model_settings},
-        )
+        series = series_service.update_model_settings(series_id, model_settings.model_dump())
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -186,7 +184,7 @@ async def update_series_model_settings(
 @router.get("/series/{series_id}/assets")
 async def get_series_assets(series_id: str):
     """读取系列下的全部共享素材。"""
-    series = pipeline.get_series(series_id)
+    series = series_service.get_series(series_id)
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
     return signed_response(
@@ -206,7 +204,7 @@ async def generate_series_asset(
 ):
     """为系列异步生成单个共享素材。"""
     try:
-        series, task_id = pipeline.generate_series_asset(
+        series, task_id = series_workflow.generate_series_asset(
             series_id,
             request.asset_id,
             request.asset_type,
@@ -220,7 +218,7 @@ async def generate_series_asset(
             request.batch_size,
             request.model_name,
         )
-        background_tasks.add_task(pipeline.process_asset_generation_task, task_id)
+        background_tasks.add_task(asset_workflow.process_asset_generation_task, task_id)
         response_data = series.model_dump()
         response_data["_task_id"] = task_id
         return signed_response(response_data)
@@ -234,11 +232,7 @@ async def generate_series_asset(
 async def toggle_series_asset_lock(series_id: str, request: ToggleLockRequest):
     """切换系列素材的锁定状态。"""
     try:
-        series = pipeline.toggle_series_asset_lock(
-            series_id,
-            request.asset_id,
-            request.asset_type,
-        )
+        series = series_service.toggle_asset_lock(series_id, request.asset_id, request.asset_type)
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -253,12 +247,7 @@ async def update_series_asset_image(
 ):
     """手动更新系列素材的图片地址。"""
     try:
-        series = pipeline.update_series_asset_image(
-            series_id,
-            request.asset_id,
-            request.asset_type,
-            request.image_url,
-        )
+        series = series_service.update_asset_image(series_id, request.asset_id, request.asset_type, request.image_url)
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -273,12 +262,7 @@ async def update_series_asset_attributes(
 ):
     """批量更新系列素材上的任意字段。"""
     try:
-        series = pipeline.update_series_asset_attributes(
-            series_id,
-            request.asset_id,
-            request.asset_type,
-            request.attributes,
-        )
+        series = series_service.update_asset_attributes(series_id, request.asset_id, request.asset_type, request.attributes)
         return signed_response(series)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -290,7 +274,7 @@ async def update_series_asset_attributes(
 async def import_series_assets(series_id: str, request: ImportAssetsRequest):
     """把另一个系列中的素材深拷贝导入当前系列。"""
     try:
-        series, imported_ids, skipped_ids = pipeline.import_assets_from_series(
+        series, imported_ids, skipped_ids = series_workflow.import_assets_from_series(
             series_id,
             request.source_series_id,
             request.asset_ids,

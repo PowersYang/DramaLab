@@ -4,9 +4,17 @@
 
 兼容 `cosyvoice-v2` 与 `cosyvoice-v3-flash/v3-plus` 系列模型。
 """
-import os
 import logging
+import os
+import time
 from typing import Optional, Tuple
+
+try:
+    import dashscope
+    from dashscope.audio.tts_v2 import SpeechSynthesizer
+except ImportError:
+    dashscope = None
+    SpeechSynthesizer = None
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +71,8 @@ class TTSProcessor:
 
         未显式传 `api_key` 时，会自动读取 `DASHSCOPE_API_KEY`。
         """
-        import dashscope
+        if dashscope is None:
+            raise RuntimeError("dashscope package not installed. Run: pip install dashscope")
 
         self.api_key = api_key or os.getenv('DASHSCOPE_API_KEY')
         if self.api_key:
@@ -88,8 +97,8 @@ class TTSProcessor:
 
         返回值为 `(输出路径, 首包延迟毫秒, request_id)`。
         """
-        import time
-        from dashscope.audio.tts_v2 import SpeechSynthesizer
+        if SpeechSynthesizer is None:
+            raise RuntimeError("dashscope package not installed. Run: pip install dashscope")
 
         start_time = time.time()
         voice = voice or self.voice

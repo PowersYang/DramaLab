@@ -8,9 +8,12 @@ import uuid
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from backend.src.schema.models import Script
-from ..common import logger, pipeline, signed_response
-from ..schema.requests import (
+from ..application.services import StoryboardFrameService
+from ..application.services import AssetService
+from ..application.workflows import StoryboardWorkflow
+from backend.src.schemas.models import Script
+from ..common import logger, signed_response
+from ..schemas.requests import (
     AddFrameRequest,
     AnalyzeToStoryboardRequest,
     CopyFrameRequest,
@@ -25,6 +28,9 @@ from ..schema.requests import (
 
 
 router = APIRouter()
+storyboard_frame_service = StoryboardFrameService()
+storyboard_workflow = StoryboardWorkflow()
+asset_service = AssetService()
 
 
 @router.post("/projects/{script_id}/storyboard/analyze")
@@ -34,7 +40,7 @@ async def analyze_to_storyboard(
 ):
     """调用 AI 分析脚本文本并重建分镜帧。"""
     try:
-        updated_script = pipeline.analyze_text_to_frames(script_id, request.text)
+        updated_script = storyboard_workflow.analyze_to_storyboard(script_id, request.text)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -47,13 +53,7 @@ async def analyze_to_storyboard(
 async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest):
     """把原始分镜提示词润色成中英文双语版本。"""
     try:
-        return pipeline.refine_frame_prompt(
-            script_id,
-            request.frame_id,
-            request.raw_prompt,
-            request.assets,
-            request.feedback,
-        )
+        return storyboard_workflow.refine_prompt(script_id, request.frame_id, request.raw_prompt, request.assets, request.feedback)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
@@ -65,7 +65,7 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
 async def generate_storyboard(script_id: str):
     """触发分镜图生成。"""
     try:
-        return signed_response(pipeline.generate_storyboard(script_id))
+        return signed_response(storyboard_workflow.generate_storyboard(script_id))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -74,7 +74,7 @@ async def generate_storyboard(script_id: str):
 async def toggle_frame_lock(script_id: str, request: ToggleFrameLockRequest):
     """切换分镜帧锁定状态。"""
     try:
-        updated_script = pipeline.toggle_frame_lock(script_id, request.frame_id)
+        updated_script = storyboard_frame_service.toggle_lock(script_id, request.frame_id)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -86,7 +86,7 @@ async def toggle_frame_lock(script_id: str, request: ToggleFrameLockRequest):
 async def update_frame(script_id: str, request: UpdateFrameRequest):
     """更新分镜帧信息，如提示词、场景、角色等。"""
     try:
-        updated_script = pipeline.update_frame(
+        updated_script = storyboard_frame_service.update_frame(
             script_id,
             request.frame_id,
             image_prompt=request.image_prompt,
@@ -107,7 +107,7 @@ async def update_frame(script_id: str, request: UpdateFrameRequest):
 async def add_frame(script_id: str, request: AddFrameRequest):
     """新增分镜帧。"""
     try:
-        updated_script = pipeline.add_frame(
+        updated_script = storyboard_frame_service.add_frame(
             script_id,
             request.scene_id,
             request.action_description,
@@ -125,7 +125,7 @@ async def add_frame(script_id: str, request: AddFrameRequest):
 async def delete_frame(script_id: str, frame_id: str):
     """删除分镜帧。"""
     try:
-        updated_script = pipeline.delete_frame(script_id, frame_id)
+        updated_script = storyboard_frame_service.delete_frame(script_id, frame_id)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -137,7 +137,7 @@ async def delete_frame(script_id: str, frame_id: str):
 async def copy_frame(script_id: str, request: CopyFrameRequest):
     """复制一帧分镜。"""
     try:
-        updated_script = pipeline.copy_frame(
+        updated_script = storyboard_frame_service.copy_frame(
             script_id,
             request.frame_id,
             request.insert_at,
@@ -153,7 +153,7 @@ async def copy_frame(script_id: str, request: CopyFrameRequest):
 async def reorder_frames(script_id: str, request: ReorderFramesRequest):
     """重排分镜帧顺序。"""
     try:
-        updated_script = pipeline.reorder_frames(script_id, request.frame_ids)
+        updated_script = storyboard_frame_service.reorder_frames(script_id, request.frame_ids)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -166,13 +166,7 @@ async def render_frame(script_id: str, request: RenderFrameRequest):
     """根据构图数据重绘指定分镜帧。"""
     try:
         logger.info("Rendering frame %s", request.frame_id)
-        updated_script = pipeline.generate_storyboard_render(
-            script_id,
-            request.frame_id,
-            request.composition_data,
-            request.prompt,
-            request.batch_size,
-        )
+        updated_script = storyboard_workflow.render_frame(script_id, request.frame_id, request.composition_data, request.prompt, request.batch_size)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -188,11 +182,7 @@ async def render_frame(script_id: str, request: RenderFrameRequest):
 async def select_video(script_id: str, frame_id: str, request: SelectVideoRequest):
     """为某一帧切换当前选中的视频版本。"""
     try:
-        updated_script = pipeline.select_video_for_frame(
-            script_id,
-            frame_id,
-            request.video_id,
-        )
+        updated_script = asset_service.select_video_for_frame(script_id, frame_id, request.video_id)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -208,11 +198,7 @@ async def extract_last_frame(
 ):
     """从已完成视频里抽最后一帧，并加入该帧的渲染图候选列表。"""
     try:
-        updated_script = pipeline.extract_last_frame(
-            script_id,
-            frame_id,
-            request.video_task_id,
-        )
+        updated_script = storyboard_workflow.extract_last_frame(script_id, frame_id, request.video_task_id)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -238,7 +224,7 @@ async def upload_frame_image(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        updated_script = pipeline.upload_frame_image(script_id, frame_id, file_path)
+        updated_script = asset_service.upload_frame_image(script_id, frame_id, file_path)
         return signed_response(updated_script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

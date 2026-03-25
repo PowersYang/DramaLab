@@ -8,9 +8,11 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
-from backend.src.schema.models import Script
-from ..common import logger, pipeline, signed_response
-from ..schema.requests import (
+from ..application.services import AssetService, ProjectService
+from ..application.workflows import AssetWorkflow, MediaWorkflow
+from backend.src.schemas.models import Script
+from ..common import logger, signed_response
+from ..schemas.requests import (
     DeleteVariantRequest,
     FavoriteVariantRequest,
     GenerateAssetRequest,
@@ -26,6 +28,10 @@ from ..utils.oss_utils import OSSImageUploader
 
 
 router = APIRouter()
+asset_service = AssetService()
+asset_workflow = AssetWorkflow()
+project_service = ProjectService()
+media_workflow = MediaWorkflow()
 
 
 @router.post("/projects/{script_id}/assets/generate_motion_ref")
@@ -36,7 +42,7 @@ async def generate_motion_ref(
 ):
     """为指定素材生成动作参考视频。"""
     try:
-        script, task_id = pipeline.create_motion_ref_task(
+        script, task_id = asset_workflow.generate_motion_ref_task(
             script_id=script_id,
             asset_id=request.asset_id,
             asset_type=request.asset_type,
@@ -45,7 +51,7 @@ async def generate_motion_ref(
             duration=request.duration,
             batch_size=request.batch_size,
         )
-        background_tasks.add_task(pipeline.process_motion_ref_task, script_id, task_id)
+        background_tasks.add_task(asset_workflow.process_motion_ref_task, script_id, task_id)
         response_data = script.model_dump()
         response_data["_task_id"] = task_id
         return signed_response(response_data)
@@ -63,7 +69,7 @@ async def generate_single_asset(
 ):
     """按指定参数生成单个素材。"""
     try:
-        script, task_id = pipeline.create_asset_generation_task(
+        script, task_id = asset_workflow.create_asset_generation_task(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -77,7 +83,7 @@ async def generate_single_asset(
             request.batch_size,
             request.model_name,
         )
-        background_tasks.add_task(pipeline.process_asset_generation_task, task_id)
+        background_tasks.add_task(asset_workflow.process_asset_generation_task, task_id)
         response_data = script.model_dump()
         response_data["_task_id"] = task_id
         return signed_response(response_data)
@@ -90,11 +96,11 @@ async def generate_single_asset(
 @router.get("/tasks/{task_id}")
 async def get_task_status(task_id: str):
     """返回素材生成任务的当前状态。"""
-    status = pipeline.get_asset_generation_task_status(task_id)
+    status = asset_workflow.get_task_status(task_id)
     if not status:
         raise HTTPException(status_code=404, detail="Task not found")
     if status["status"] == "completed":
-        script = pipeline.get_script(status["script_id"])
+        script = project_service.get_project(status["script_id"])
         if script:
             status["script"] = signed_response(script).body.decode("utf-8")
     return status
@@ -113,7 +119,7 @@ async def generate_asset_video(
 ):
     """为指定素材生成 I2V 视频。"""
     try:
-        script, task_id = pipeline.create_asset_video_task(
+        script, task_id = asset_workflow.create_asset_video_task(
             script_id,
             asset_id,
             asset_type,
@@ -121,7 +127,7 @@ async def generate_asset_video(
             request.duration,
             request.aspect_ratio,
         )
-        background_tasks.add_task(pipeline.process_video_task, script_id, task_id)
+        background_tasks.add_task(media_workflow.process_video_task, script_id, task_id)
         return signed_response(script)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -141,7 +147,7 @@ async def delete_asset_video(
 ):
     """删除某个素材下的一条视频记录。"""
     try:
-        updated_script = pipeline.delete_asset_video(
+        updated_script = asset_service.delete_asset_video(
             script_id,
             asset_id,
             asset_type,
@@ -158,7 +164,7 @@ async def delete_asset_video(
 async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
     """切换素材锁定状态。"""
     try:
-        updated_script = pipeline.toggle_asset_lock(
+        updated_script = asset_service.toggle_lock(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -174,7 +180,7 @@ async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
 async def update_asset_image(script_id: str, request: UpdateAssetImageRequest):
     """手动更新素材图片地址。"""
     try:
-        updated_script = pipeline.update_asset_image(
+        updated_script = asset_service.update_image(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -194,7 +200,7 @@ async def update_asset_attributes(
 ):
     """批量更新素材任意字段。"""
     try:
-        updated_script = pipeline.update_asset_attributes(
+        updated_script = asset_service.update_attributes(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -214,7 +220,7 @@ async def update_asset_description(
 ):
     """更新素材描述。"""
     try:
-        updated_script = pipeline.update_asset_description(
+        updated_script = asset_service.update_description(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -231,7 +237,7 @@ async def update_asset_description(
 async def select_asset_variant(script_id: str, request: SelectVariantRequest):
     """把某张候选图设为素材当前选中项。"""
     try:
-        updated_script = pipeline.select_asset_variant(
+        updated_script = asset_service.select_variant(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -249,7 +255,7 @@ async def select_asset_variant(script_id: str, request: SelectVariantRequest):
 async def delete_asset_variant(script_id: str, request: DeleteVariantRequest):
     """删除素材下的某张候选图。"""
     try:
-        updated_script = pipeline.delete_asset_variant(
+        updated_script = asset_service.delete_variant(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -266,7 +272,7 @@ async def delete_asset_variant(script_id: str, request: DeleteVariantRequest):
 async def toggle_variant_favorite(script_id: str, request: FavoriteVariantRequest):
     """切换候选图收藏状态；已收藏图片不会被自动清理。"""
     try:
-        updated_script = pipeline.toggle_variant_favorite(
+        updated_script = asset_service.toggle_variant_favorite(
             script_id,
             request.asset_id,
             request.asset_type,
@@ -303,7 +309,7 @@ async def upload_asset(
         if not oss_url:
             oss_url = f"uploads/{filename}"
 
-        updated_script = pipeline.add_uploaded_asset_variant(
+        updated_script = asset_service.upload_variant(
             script_id=script_id,
             asset_type=asset_type,
             asset_id=asset_id,
