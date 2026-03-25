@@ -20,12 +20,15 @@ from .video.video_generation_provider import VideoGenerator
 
 
 class VideoModelProvider:
+    """Stable facade for video generation with provider-specific routing."""
+
     def __init__(self):
         self._video_generator = VideoGenerator()
         self._kling_model = None
         self._vidu_model = None
 
     def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str | None = None):
+        """Generate a motion-reference video from a still image."""
         return self._video_generator.generate_i2v(
             image_url=image_url,
             prompt=prompt,
@@ -34,6 +37,7 @@ class VideoModelProvider:
         )
 
     def generate_clip(self, frame):
+        """Generate a standard clip for a storyboard frame."""
         return self._video_generator.generate_clip(frame)
 
     def generate_task_video(self, task, output_path: str, img_path: str | None = None, img_url: str | None = None):
@@ -45,6 +49,8 @@ class VideoModelProvider:
         model_prefix = (task.model or "").split("-")[0] if task.model else ""
 
         if model_prefix in ("kling",):
+            # Lazy-init optional providers so environments without these
+            # dependencies can still use the default video stack.
             if self._kling_model is None:
                 if KlingModel is None:
                     raise RuntimeError("KlingModel is unavailable. Check Kling dependencies and configuration.")
@@ -84,6 +90,8 @@ class VideoModelProvider:
 
         final_audio_url = None
         final_generate_audio = False
+        # Wanx keeps the older split between explicit audio_url input and
+        # boolean "generate audio" behavior, so normalize it here once.
         if task.audio_url:
             final_audio_url = task.audio_url
         elif task.generate_audio:
@@ -109,6 +117,7 @@ class VideoModelProvider:
         )
 
     def build_output_path(self, task_id: str) -> str:
+        """Build and create the default output path for a video task."""
         output_filename = f"video_{task_id}.mp4"
         output_path = os.path.join("output", "video", output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

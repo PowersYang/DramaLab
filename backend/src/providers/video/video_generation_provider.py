@@ -1,3 +1,5 @@
+"""Concrete video generation implementation backed by the Wanx model."""
+
 import os
 import uuid
 from typing import Any, Dict
@@ -30,6 +32,8 @@ class VideoGenerator:
 
         img_path = None
         if image_url and not image_url.startswith("http"):
+            # Local paths are usually stored relative to the output directory,
+            # but callers may occasionally pass an absolute path as well.
             potential_path = os.path.join("output", image_url)
             if os.path.exists(potential_path):
                 img_path = os.path.abspath(potential_path)
@@ -77,6 +81,8 @@ class VideoGenerator:
         img_path = None
 
         if img_url and not img_url.startswith("http"):
+            # Frame image URLs may already point at OSS or other remote sources.
+            # Only resolve to disk when the value is a local output path.
             potential_path = os.path.join("output", img_url)
             if os.path.exists(potential_path):
                 img_path = os.path.abspath(potential_path)

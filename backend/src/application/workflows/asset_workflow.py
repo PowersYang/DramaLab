@@ -538,12 +538,14 @@ class AssetWorkflow:
         return target
 
     def _get_project(self, script_id: str):
+        """Load a project aggregate or raise a not-found error."""
         project = self.project_repository.get(script_id)
         if not project:
             raise ValueError("Script not found")
         return project
 
     def _get_series(self, series_id: str):
+        """Load a series aggregate or raise a not-found error."""
         series = self.series_repository.get(series_id)
         if not series:
             raise ValueError("Series not found")

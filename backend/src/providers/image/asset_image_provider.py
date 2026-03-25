@@ -1,3 +1,5 @@
+"""Concrete image generation implementation for characters, scenes, and props."""
+
 import os
 import time
 import uuid
@@ -58,6 +60,7 @@ class AssetGenerator:
         self.output_dir = self.config.get("output_dir", "output/assets")
 
     def generate_character(self, character: Character, generation_type: str = "all", prompt: str = "", positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, i2i_model_name: str = None, size: str = None) -> Character:
+        """Generate character asset variants for one or more asset slots."""
         character.status = GenerationStatus.PROCESSING
         style_suffix = positive_prompt if positive_prompt is not None else "cinematic lighting, movie still, 8k, highly detailed, realistic"
         effective_size = size or "576*1024"
@@ -109,6 +112,8 @@ class AssetGenerator:
                         effective_model_name = model_name
                         effective_generation_prompt = generation_prompt
                         if ref_image_path:
+                            # When a reference exists, switch to the image-to-image
+                            # model so the generated appearance stays consistent.
                             effective_model_name = i2i_model_name or "wan2.6-image"
                             reverse_enhancement = "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, skin tone, and clothing as the reference image. "
                             if reverse_enhancement.strip() not in effective_generation_prompt:
@@ -308,6 +313,7 @@ class AssetGenerator:
         return character
 
     def generate_scene(self, scene: Scene, positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, size: str = None) -> Scene:
+        """Generate image variants for a scene asset."""
         scene.status = GenerationStatus.PROCESSING
         if positive_prompt is None:
             positive_prompt = "cinematic lighting, movie still, 8k, highly detailed, realistic"
@@ -346,6 +352,7 @@ class AssetGenerator:
         return scene
 
     def generate_prop(self, prop: Prop, positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, size: str = None) -> Prop:
+        """Generate image variants for a prop asset."""
         prop.status = GenerationStatus.PROCESSING
         if positive_prompt is None:
             positive_prompt = "cinematic lighting, movie still, 8k, highly detailed, realistic"

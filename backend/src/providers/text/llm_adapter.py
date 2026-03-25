@@ -26,11 +26,13 @@ class LLMAdapter:
 
     @property
     def is_configured(self) -> bool:
+        """Return whether the selected provider has the required API key."""
         if self.provider == "openai":
             return bool(os.getenv("OPENAI_API_KEY"))
         return bool(os.getenv("DASHSCOPE_API_KEY"))
 
     def _get_client(self):
+        """Lazily construct the OpenAI-compatible client for the active provider."""
         if self._client is None:
             if OpenAI is None:
                 raise RuntimeError("openai package not installed. Run: pip install openai>=1.0.0")
@@ -48,6 +50,7 @@ class LLMAdapter:
         return self._client
 
     def _get_default_model(self) -> str:
+        """Return the default chat model name for the active provider."""
         if self.provider == "openai":
             return os.getenv("OPENAI_MODEL", "gpt-4o")
         return "qwen3.5-plus"
@@ -58,6 +61,7 @@ class LLMAdapter:
         model: Optional[str] = None,
         response_format: Optional[Dict[str, str]] = None,
     ) -> str:
+        """Send a chat completion request and return plain text content."""
         client = self._get_client()
         model = model or self._get_default_model()
 

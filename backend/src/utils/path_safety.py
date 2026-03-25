@@ -22,7 +22,12 @@ def validate_safe_id(value: str, label: str = "id") -> str:
 
 
 def safe_resolve_path(base_dir: str, untrusted_rel: str) -> str:
-    """在给定基目录下解析相对路径，并确保结果不会逃逸出基目录。"""
+    """
+    在给定基目录下解析相对路径，并确保结果不会逃逸出基目录。
+
+    这个辅助函数主要保护上传、导出、FFmpeg 等文件系统操作，
+    避免把不可信的相对路径拼接成越权访问。
+    """
     base = os.path.realpath(base_dir)
     resolved = os.path.realpath(os.path.join(base, untrusted_rel))
     if not resolved.startswith(base + os.sep) and resolved != base:

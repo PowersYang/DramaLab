@@ -21,6 +21,8 @@ logger = get_logger(__name__)
 
 
 class MediaWorkflow:
+    """Coordinate video generation, audio generation, and export flows."""
+
     def __init__(self):
         self.project_repository = ProjectRepository()
         self.video_task_repository = VideoTaskRepository()
@@ -29,9 +31,11 @@ class MediaWorkflow:
         self.export_manager = ExportManager()
 
     def get_available_voices(self):
+        """Expose available TTS voice metadata to the API layer."""
         return self.audio_provider.get_available_voices()
 
     def generate_video(self, script_id: str):
+        """Generate clip videos for frames that do not already have outputs."""
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.status == "completed" and frame.video_url:
@@ -42,6 +46,7 @@ class MediaWorkflow:
         return self._get_project(script_id)
 
     def generate_audio(self, script_id: str):
+        """Generate dialogue, SFX, and BGM for each frame in the project."""
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.dialogue and frame.character_ids:
@@ -64,6 +69,7 @@ class MediaWorkflow:
         return self._get_project(script_id)
 
     def process_video_task(self, script_id: str, task_id: str):
+        """Execute a persisted video task and mirror results back to the project."""
         project = self._get_project(script_id)
         task = self.video_task_repository.get(script_id, task_id)
         if not task:
@@ -97,6 +103,7 @@ class MediaWorkflow:
         self.project_repository.save(project)
 
     def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float, pitch: float, volume: int):
+        """Generate dialogue audio for a single frame on demand."""
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -110,6 +117,7 @@ class MediaWorkflow:
         return self._get_project(script_id)
 
     def merge_videos(self, script_id: str):
+        """Merge selected frame videos into a single output using FFmpeg."""
         validate_safe_id(script_id, "script_id")
         project = self._get_project(script_id)
         ffmpeg_path = get_ffmpeg_path()
@@ -128,6 +136,8 @@ class MediaWorkflow:
 
         video_paths = []
         for frame in project.frames:
+            # Prefer the user-selected video. Fall back to the first completed
+            # task for compatibility with older projects and partial edits.
             if frame.selected_video_id:
                 video = next((item for item in project.video_tasks if item.id == frame.selected_video_id), None)
                 if video and video.video_url:
@@ -197,6 +207,7 @@ class MediaWorkflow:
             raise RuntimeError(self._extract_ffmpeg_error_message(stderr_msg))
 
     def export_project(self, script_id: str, options: dict):
+        """Run the export provider and persist the resulting output URL."""
         project = self._get_project(script_id)
         export_url = self.export_manager.render_project(project, options)
         project.merged_video_url = export_url
@@ -205,6 +216,7 @@ class MediaWorkflow:
         return {"url": export_url}
 
     def _sync_asset_video_task(self, project, task):
+        """Mirror task updates into aggregate fields still consumed by the UI."""
         if not task.asset_id:
             return
         target_asset = next((item for item in project.characters if item.id == task.asset_id), None)
@@ -230,6 +242,7 @@ class MediaWorkflow:
             project.video_tasks.append(task)
 
     def _download_temp_image(self, url: str):
+        """Resolve a local image URL into an on-disk file path when possible."""
         if not url:
             return None
         if not url.startswith("http"):
@@ -240,6 +253,7 @@ class MediaWorkflow:
         return None
 
     def _extract_ffmpeg_error_message(self, stderr: str):
+        """Map common FFmpeg failures to more actionable user-facing messages."""
         if not stderr:
             return "FFmpeg merge failed with no error output. Please check the log files."
         stderr_lower = stderr.lower()
@@ -254,6 +268,7 @@ class MediaWorkflow:
         return f"FFmpeg merge failed: {stderr.strip().splitlines()[-1]}"
 
     def _get_project(self, script_id: str):
+        """Load a project aggregate or raise a not-found error."""
         project = self.project_repository.get(script_id)
         if not project:
             raise ValueError("Script not found")

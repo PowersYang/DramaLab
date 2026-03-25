@@ -1,3 +1,5 @@
+"""Concrete image generation implementation for storyboard rendering."""
+
 import os
 import time
 import uuid
@@ -25,6 +27,7 @@ class StoryboardGenerator:
         self.output_dir = self.config.get("output_dir", "output/storyboard")
 
     def generate_storyboard(self, script: Any) -> Any:
+        """Generate images for all incomplete frames in a script."""
         logger.info("Generating storyboard for script: %s", script.title)
         total_frames = len(script.frames)
         for index, frame in enumerate(script.frames):
@@ -47,6 +50,7 @@ class StoryboardGenerator:
         size: str = None,
         model_name: str = None,
     ) -> StoryboardFrame:
+        """Generate one or more image variants for a single storyboard frame."""
         frame.status = GenerationStatus.PROCESSING
         effective_size = size or "1024*576"
         char_descriptions = []
@@ -54,12 +58,14 @@ class StoryboardGenerator:
         use_frontend_refs = (ref_image_paths and len(ref_image_paths) > 0) or ref_image_path
 
         if use_frontend_refs:
+            # Prefer explicit frontend composition references when present.
             if ref_image_paths:
                 asset_ref_paths.extend(ref_image_paths)
             if ref_image_path:
                 asset_ref_paths.append(ref_image_path)
             logger.info("[Storyboard] Using %s frontend-provided reference images", len(asset_ref_paths))
         else:
+            # Fall back to selected character and scene assets from the project.
             for char_id in frame.character_ids:
                 char = next((item for item in characters if item.id == char_id), None)
                 if not char:
@@ -156,6 +162,8 @@ class StoryboardGenerator:
             try:
                 uploader = OSSImageUploader()
                 if uploader.is_configured and selected_variant:
+                    # Upload only the selected variant so external references
+                    # stay aligned with the image currently shown in the UI.
                     local_path = os.path.join("output", selected_variant.url)
                     if os.path.exists(local_path):
                         object_key = uploader.upload_file(local_path, sub_path="storyboard")

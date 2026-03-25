@@ -1,3 +1,5 @@
+"""Concrete export implementation for project rendering outputs."""
+
 import os
 import time
 from typing import Any, Dict, List
@@ -43,10 +45,13 @@ class ExportManager:
             raise
 
     def _stitch_video(self, frames: List[Any], output_path: str):
+        """Placeholder for future multi-clip stitching implementation."""
         pass
 
     def _mix_audio(self, audio_tracks: List[Any], output_path: str):
+        """Placeholder for future audio mixdown implementation."""
         pass
 
     def _add_subtitles(self, video_path: str, subtitles: List[Any]):
+        """Placeholder for subtitle burn-in or sidecar generation."""
         pass

@@ -1,3 +1,5 @@
+"""Concrete audio generation implementation for dialogue, SFX, and BGM."""
+
 import os
 import time
 from typing import Any, Dict, List
@@ -79,6 +81,7 @@ class AudioGenerator:
         return self._real_generate_dialogue(frame, character, text, speed, pitch, volume)
 
     def _real_generate_dialogue(self, frame: StoryboardFrame, character: Character, text: str, speed: float, pitch: float, volume: int) -> StoryboardFrame:
+        """Run the actual TTS request once validation has passed."""
         try:
             output_path = os.path.join(self.output_dir, "dialogue", f"{frame.id}.mp3")
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -112,6 +115,8 @@ class AudioGenerator:
         if not frame.video_url:
             return frame
         logger.info("Generating SFX from video for frame %s", frame.id)
+        # This remains a stub implementation for now; the workflow contract is
+        # already stable, so the backing provider can be replaced later.
         time.sleep(1)
         output_path = os.path.join(self.output_dir, "sfx", f"{frame.id}_v2a.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -123,6 +128,8 @@ class AudioGenerator:
     def generate_bgm(self, frame: StoryboardFrame) -> StoryboardFrame:
         """基于分镜上下文生成背景音乐。"""
         logger.info("Generating BGM for frame %s", frame.id)
+        # This remains a stub implementation for now; output path conventions
+        # are kept real so downstream export logic can already rely on them.
         time.sleep(1)
         output_path = os.path.join(self.output_dir, "bgm", f"{frame.id}.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
