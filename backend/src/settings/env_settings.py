@@ -11,7 +11,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values, set_key, unset_key
 
-from src.utils import get_user_data_dir
+from src.common.log import get_user_data_dir
 
 
 _ENV_PATH_OVERRIDE: Path | None = None

@@ -1,4 +1,3 @@
-import os
 import tempfile
 import time
 import unittest
@@ -9,11 +8,14 @@ class RepositoryPersistenceTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(self.temp_dir.name) / "repo-test.db"
-        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+        self.env_path = Path(self.temp_dir.name) / ".env"
+        self.env_path.write_text(f"DATABASE_URL=sqlite:///{db_path}\n", encoding="utf-8")
 
         from src.db.base import Base
+        from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory, init_database
 
+        override_env_path_for_tests(self.env_path)
         get_engine.cache_clear()
         get_session_factory.cache_clear()
         engine = get_engine()
@@ -22,11 +24,13 @@ class RepositoryPersistenceTest(unittest.TestCase):
 
     def tearDown(self):
         from src.db.base import Base
+        from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory
 
         Base.metadata.drop_all(bind=get_engine())
         get_engine.cache_clear()
         get_session_factory.cache_clear()
+        override_env_path_for_tests(None)
         self.temp_dir.cleanup()
 
     def test_project_repository_round_trip_and_delete(self):

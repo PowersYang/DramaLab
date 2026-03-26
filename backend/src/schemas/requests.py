@@ -91,6 +91,7 @@ class EnvConfig(BaseModel):
     POSTGRES_HOST: Optional[str] = None
     POSTGRES_PORT: Optional[str] = None
     POSTGRES_DB: Optional[str] = None
+    POSTGRES_SCHEMA: Optional[str] = None
     POSTGRES_USER: Optional[str] = None
     POSTGRES_PASSWORD: Optional[str] = None
     LLM_PROVIDER: Optional[str] = None

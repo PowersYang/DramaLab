@@ -3,7 +3,7 @@ import os
 
 from ..db import init_database
 from src.settings.env_settings import get_env, get_env_path, reload_env_settings
-from ..utils import setup_logging
+from .log import setup_logging
 
 
 def bootstrap_api_environment(logger: logging.Logger) -> None:

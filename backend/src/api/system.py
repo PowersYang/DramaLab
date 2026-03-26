@@ -259,6 +259,7 @@ async def get_env_config():
             "POSTGRES_HOST": get_env("POSTGRES_HOST", ""),
             "POSTGRES_PORT": get_env("POSTGRES_PORT", ""),
             "POSTGRES_DB": get_env("POSTGRES_DB", ""),
+            "POSTGRES_SCHEMA": get_env("POSTGRES_SCHEMA", ""),
             "POSTGRES_USER": get_env("POSTGRES_USER", ""),
             "POSTGRES_PASSWORD": get_env("POSTGRES_PASSWORD", ""),
             "DATABASE_URL": get_env("DATABASE_URL", ""),

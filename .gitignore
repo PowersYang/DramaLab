@@ -34,6 +34,8 @@ dist_*/
 
 # Environment
 .env
+.env.*
+!.env.example
 .env.local
 .venv
 venv/
@@ -53,8 +55,15 @@ backend/.venv/
 *.db
 *.sqlite3
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
 .coverage
+.coverage.*
 htmlcov/
+coverage.xml
+test-results/
+pytestdebug.log
 
 # Build outputs
 dist_mac/
@@ -90,6 +99,12 @@ logs/
 backend/output/
 backend/static/
 
+# Test artifacts
+backend/tests/__pycache__/
+backend/tests/.pytest_cache/
+backend/tests/.coverage
+backend/tests/.coverage.*
+
 # Internal development tools (not for public repo)
 .agent/
 .claude/
@@ -100,6 +115,5 @@ demand/
 # Build/packaging configs (keep templates only)
 *.spec
 !build.spec.template
-
 
 
