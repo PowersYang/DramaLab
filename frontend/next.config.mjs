@@ -13,6 +13,14 @@ const nextConfig = {
     async rewrites() {
         return isProd ? [] : [
             {
+                source: '/api-proxy/projects/',
+                destination: `${BACKEND_URL}/projects/`,
+            },
+            {
+                source: '/api-proxy/projects',
+                destination: `${BACKEND_URL}/projects`,
+            },
+            {
                 source: '/api-proxy/:path*',
                 destination: `${BACKEND_URL}/:path*`,
             },

@@ -61,6 +61,7 @@ async def reparse_project(script_id: str, request: ReparseProjectRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@router.get("/projects", response_model=list[dict])
 @router.get("/projects/", response_model=list[dict])
 async def list_projects():
     """列出后端当前保存的全部项目。"""

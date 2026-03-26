@@ -481,7 +481,11 @@ export default function Home() {
   type ListItem = { type: 'series'; data: Series; sortTime: number } | { type: 'project'; data: Project; sortTime: number };
   const mixedList: ListItem[] = [
     ...seriesList.map((s) => ({ type: 'series' as const, data: s, sortTime: s.created_at * 1000 })),
-    ...standaloneProjects.map((p) => ({ type: 'project' as const, data: p, sortTime: new Date(p.createdAt).getTime() })),
+    ...standaloneProjects.map((p) => ({
+      type: 'project' as const,
+      data: p,
+      sortTime: p.createdAt ? new Date(p.createdAt).getTime() : ((p.created_at || 0) * 1000),
+    })),
   ].sort((a, b) => b.sortTime - a.sortTime);
 
   const totalCount = mixedList.length;

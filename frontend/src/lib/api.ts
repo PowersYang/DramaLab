@@ -10,6 +10,10 @@ const getApiUrl = (): string => {
     }
 
     if (typeof window !== "undefined") {
+        if (process.env.NODE_ENV !== "production") {
+            return "/api-proxy";
+        }
+
         const { protocol, hostname, port } = window.location;
 
         if (port === "3000" || port === "3001") {

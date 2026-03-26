@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { api } from '@/lib/api';
+import { api, API_URL } from '@/lib/api';
 
 export interface ImageVariant {
     id: string;
@@ -291,6 +291,8 @@ export interface Project {
     id: string;
     title: string;
     originalText: string;
+    created_at?: number;
+    updated_at?: number;
     characters: Character[];
     scenes: Scene[];
     props: Prop[];
@@ -432,9 +434,6 @@ export const useProjectStore = create<ProjectStore>()(
 
                 // Then fetch latest data from backend
                 try {
-                    const API_URL = typeof window !== 'undefined'
-                        ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:17177')
-                        : 'http://localhost:17177';
                     const response = await fetch(`${API_URL}/projects/${id}`);
                     if (response.ok) {
                         const rawData = await response.json();

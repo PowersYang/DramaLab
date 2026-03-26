@@ -12,6 +12,9 @@ interface ProjectCardProps {
 
 export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
     const router = useRouter();
+    const createdDate = project.createdAt
+        ? new Date(project.createdAt)
+        : (project.created_at ? new Date(project.created_at * 1000) : null);
 
     const handleOpen = () => {
         window.location.hash = `#/project/${project.id}`;
@@ -45,7 +48,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
                     </h3>
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                         <Calendar size={12} />
-                        <span>{new Date(project.createdAt).toLocaleDateString('zh-CN')}</span>
+                        <span>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString('zh-CN') : '-'}</span>
                     </div>
                 </div>
 
