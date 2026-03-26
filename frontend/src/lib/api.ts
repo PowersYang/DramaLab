@@ -4,24 +4,24 @@ import axios from "axios";
 // 1. In packaged app (Electron): Frontend is served by backend, use same origin
 // 2. In development (port 3000/3001): Use backend port 17177
 const getApiUrl = (): string => {
-    // If running in browser
-    if (typeof window !== 'undefined') {
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (envUrl && envUrl.trim()) {
+        return envUrl.trim().replace(/\/$/, "");
+    }
+
+    if (typeof window !== "undefined") {
         const { protocol, hostname, port } = window.location;
 
-        // In development mode (port 3000/3001 = Next.js dev server)
-        // Backend is on a different port
-        if (port === '3000' || port === '3001') {
+        if (port === "3000" || port === "3001") {
             return `${protocol}//${hostname}:17177`;
         }
 
-        // In production/packaged mode: Frontend is served by backend
-        // Use same origin
-        return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+        return `${protocol}//${hostname}${port ? ":" + port : ""}`;
     }
 
-    // SSR fallback
-    return 'http://localhost:17177';
+    return "http://localhost:17177";
 };
+
 
 export const API_URL = getApiUrl();
 
