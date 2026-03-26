@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 
 class StoryboardWorkflow:
-    """Coordinate storyboard analysis, prompt refinement, rendering, and extraction."""
+    """负责分镜分析、提示词润色、渲染和抽帧流程。"""
 
     def __init__(self):
         self.project_repository = ProjectRepository()
@@ -34,7 +34,7 @@ class StoryboardWorkflow:
         self.storage_provider = StorageProvider()
 
     def analyze_to_storyboard(self, script_id: str, text: str):
-        """Generate structured storyboard frames from script text."""
+        """根据剧本文本生成结构化分镜帧。"""
         project = self._get_project(script_id)
         resolved = self._resolve_episode_assets(project)
         entities_json = {
@@ -75,7 +75,7 @@ class StoryboardWorkflow:
         return self._get_project(script_id)
 
     def refine_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: list, feedback: str = ""):
-        """Refine a frame image prompt with optional series-level prompt overrides."""
+        """结合可选系列级覆写，对分镜帧图片提示词进行润色。"""
         project = self._get_project(script_id)
         series = self.series_repository.get(project.series_id) if project.series_id else None
         custom_prompt = self._get_effective_prompt("storyboard_polish", project, series)
@@ -110,7 +110,7 @@ class StoryboardWorkflow:
         }
 
     def generate_storyboard(self, script_id: str):
-        """Render all pending frames for a project storyboard."""
+        """为项目分镜中所有待处理帧批量渲染图片。"""
         project = self._get_project(script_id)
         self.image_provider.generate_storyboard(project)
         project.updated_at = time.time()
@@ -118,7 +118,7 @@ class StoryboardWorkflow:
         return self._get_project(script_id)
 
     def render_frame(self, script_id: str, frame_id: str, composition_data, prompt: str, batch_size: int = 1):
-        """Render a single storyboard frame using explicit composition inputs."""
+        """使用显式构图输入渲染单个分镜帧。"""
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -132,8 +132,7 @@ class StoryboardWorkflow:
         self.project_repository.save(project)
 
         try:
-            # The frontend may pass OSS object keys, external URLs, or local
-            # output-relative paths. Normalize them before calling the model.
+            # 前端可能传来 OSS 对象键、外部 URL 或 output 相对路径，调用模型前先统一归一化。
             ref_image_urls = composition_data.get("reference_image_urls", []) if composition_data else []
             ref_image_url = composition_data.get("reference_image_url") if composition_data else None
             ref_image_paths = []
@@ -183,7 +182,7 @@ class StoryboardWorkflow:
             raise
 
     def extract_last_frame(self, script_id: str, frame_id: str, video_task_id: str):
-        """Extract the last video frame and attach it as a storyboard variant."""
+        """提取视频最后一帧，并把它挂成分镜候选图。"""
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -249,7 +248,7 @@ class StoryboardWorkflow:
         return self._get_project(script_id)
 
     def _resolve_episode_assets(self, episode):
-        """Merge episode-local assets with shared series assets for analysis."""
+        """合并分集本地资产与系列共享资产，供分镜分析使用。"""
         if not episode.series_id:
             return {
                 "characters": episode.characters,
@@ -275,7 +274,7 @@ class StoryboardWorkflow:
         }
 
     def _resolve_scene_id(self, scene_name: str, scenes: list):
-        """Resolve a scene name produced by the LLM into an existing scene id."""
+        """把 LLM 产出的场景名解析成现有场景 id。"""
         for scene in scenes:
             if scene.name == scene_name or scene_name in scene.name:
                 return scene.id
@@ -284,7 +283,7 @@ class StoryboardWorkflow:
         return str(uuid.uuid4())
 
     def _resolve_entity_ids(self, names: list[str], items: list):
-        """Resolve entity names produced by the LLM into known item ids."""
+        """把 LLM 产出的实体名解析成已知实体 id。"""
         entity_ids = []
         for name in names:
             for item in items:
@@ -294,7 +293,7 @@ class StoryboardWorkflow:
         return entity_ids
 
     def _get_effective_prompt(self, prompt_type: str, episode, series=None):
-        """Resolve storyboard prompt overrides using episode then series fallback."""
+        """按分集优先、系列回退的规则解析分镜提示词覆写。"""
         if prompt_type == "storyboard_polish":
             episode_prompt = episode.prompt_config.storyboard_polish.strip()
             if episode_prompt:
@@ -307,7 +306,7 @@ class StoryboardWorkflow:
         raise ValueError(f"Unsupported prompt type: {prompt_type}")
 
     def _get_project(self, script_id: str):
-        """Load a project aggregate or raise a not-found error."""
+        """加载项目聚合，缺失时抛出未找到错误。"""
         project = self.project_repository.get(script_id)
         if not project:
             raise ValueError("Script not found")

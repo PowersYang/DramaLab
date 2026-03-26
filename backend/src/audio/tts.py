@@ -9,13 +9,14 @@ import os
 import time
 from typing import Optional, Tuple
 
+from src.settings.env_settings import get_env
+
 try:
     import dashscope
     from dashscope.audio.tts_v2 import SpeechSynthesizer
 except ImportError:
     dashscope = None
     SpeechSynthesizer = None
-
 logger = logging.getLogger(__name__)
 
 
@@ -69,12 +70,12 @@ class TTSProcessor:
         """
         初始化 TTS 处理器。
 
-        未显式传 `api_key` 时，会自动读取 `DASHSCOPE_API_KEY`。
+        未显式传 `api_key` 时，会自动从 `.env` 读取 `DASHSCOPE_API_KEY`。
         """
         if dashscope is None:
             raise RuntimeError("dashscope package not installed. Run: pip install dashscope")
 
-        self.api_key = api_key or os.getenv('DASHSCOPE_API_KEY')
+        self.api_key = api_key or get_env('DASHSCOPE_API_KEY')
         if self.api_key:
             dashscope.api_key = self.api_key
 

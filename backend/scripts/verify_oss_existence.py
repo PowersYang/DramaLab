@@ -1,15 +1,12 @@
 import os
 import json
 import oss2
-from dotenv import load_dotenv
 
 import sys
 BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BACKEND_ROOT)
 
 from src.utils.oss_utils import OSSImageUploader
-
-load_dotenv(os.path.join(BACKEND_ROOT, ".env"))
 
 uploader = OSSImageUploader()
 if not uploader.is_configured:

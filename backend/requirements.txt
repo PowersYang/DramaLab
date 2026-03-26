@@ -3,19 +3,20 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
 
-# AI/ML Models
+# AI/ML Models and API Clients
 dashscope>=1.20.0
+openai>=1.0.0
 pywebview>=5.0.0
+volcengine-python-sdk[ark]>=4.0.0
 
 # Data Validation & Processing
 pydantic>=2.0.0
-pydantic-settings>=2.0.0
 SQLAlchemy>=2.0.0
 
 # Utilities
 python-dotenv>=1.0.0
 requests>=2.31.0
-pyyaml>=6.0
+PyYAML>=6.0
 PyJWT>=2.8.0
 PyMySQL>=1.1.0
 
@@ -25,8 +26,10 @@ alibabacloud-tea-openapi>=0.3.0
 alibabacloud-tea-util>=0.3.0
 oss2>=2.18.0
 
+# Testing
+pytest>=8.0.0
+
 # Optional Dependencies
-# Uncomment if needed:
+# Uncomment if needed by future image-processing features:
 # numpy>=1.24.0
 # pillow>=10.0.0
-# openai>=1.0.0  # Required when LLM_PROVIDER=openai

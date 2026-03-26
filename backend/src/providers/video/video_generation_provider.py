@@ -1,10 +1,10 @@
-"""Concrete video generation implementation backed by the Wanx model."""
+"""基于 Wanx 模型的具体视频生成实现。"""
 
 import os
 import uuid
 from typing import Any, Dict
 
-from backend.src.schemas.models import GenerationStatus, StoryboardFrame
+from ...schemas.models import GenerationStatus, StoryboardFrame
 
 from ...models.wanx import WanxModel
 from ...utils import get_logger
@@ -32,8 +32,7 @@ class VideoGenerator:
 
         img_path = None
         if image_url and not image_url.startswith("http"):
-            # Local paths are usually stored relative to the output directory,
-            # but callers may occasionally pass an absolute path as well.
+            # 本地路径通常是 output 相对路径，但调用方偶尔也会直接传绝对路径。
             potential_path = os.path.join("output", image_url)
             if os.path.exists(potential_path):
                 img_path = os.path.abspath(potential_path)
@@ -81,8 +80,7 @@ class VideoGenerator:
         img_path = None
 
         if img_url and not img_url.startswith("http"):
-            # Frame image URLs may already point at OSS or other remote sources.
-            # Only resolve to disk when the value is a local output path.
+            # 分镜图片地址可能已经是 OSS 或其它远程地址；只有本地 output 路径才去落盘解析。
             potential_path = os.path.join("output", img_url)
             if os.path.exists(potential_path):
                 img_path = os.path.abspath(potential_path)

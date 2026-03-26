@@ -1,11 +1,19 @@
-"""Concrete image generation implementation for characters, scenes, and props."""
+"""角色、场景、道具资产的具体图片生成实现。"""
 
 import os
 import time
 import uuid
 from typing import Any, Dict
 
-from backend.src.schemas.models import Character, GenerationStatus, ImageAsset, ImageVariant, MAX_VARIANTS_PER_ASSET, Prop, Scene
+from ...schemas.models import (
+    Character,
+    GenerationStatus,
+    ImageAsset,
+    ImageVariant,
+    MAX_VARIANTS_PER_ASSET,
+    Prop,
+    Scene,
+)
 
 from ...models.image import WanxImageModel
 from ...utils import get_logger
@@ -60,7 +68,7 @@ class AssetGenerator:
         self.output_dir = self.config.get("output_dir", "output/assets")
 
     def generate_character(self, character: Character, generation_type: str = "all", prompt: str = "", positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, i2i_model_name: str = None, size: str = None) -> Character:
-        """Generate character asset variants for one or more asset slots."""
+        """为角色的一个或多个资产槽位生成图片候选。"""
         character.status = GenerationStatus.PROCESSING
         style_suffix = positive_prompt if positive_prompt is not None else "cinematic lighting, movie still, 8k, highly detailed, realistic"
         effective_size = size or "576*1024"
@@ -112,8 +120,7 @@ class AssetGenerator:
                         effective_model_name = model_name
                         effective_generation_prompt = generation_prompt
                         if ref_image_path:
-                            # When a reference exists, switch to the image-to-image
-                            # model so the generated appearance stays consistent.
+                            # 一旦存在参考图，就切到图生图模型，尽量保持生成外观一致。
                             effective_model_name = i2i_model_name or "wan2.6-image"
                             reverse_enhancement = "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, skin tone, and clothing as the reference image. "
                             if reverse_enhancement.strip() not in effective_generation_prompt:
@@ -313,7 +320,7 @@ class AssetGenerator:
         return character
 
     def generate_scene(self, scene: Scene, positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, size: str = None) -> Scene:
-        """Generate image variants for a scene asset."""
+        """为场景资产生成图片候选。"""
         scene.status = GenerationStatus.PROCESSING
         if positive_prompt is None:
             positive_prompt = "cinematic lighting, movie still, 8k, highly detailed, realistic"
@@ -352,7 +359,7 @@ class AssetGenerator:
         return scene
 
     def generate_prop(self, prop: Prop, positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, size: str = None) -> Prop:
-        """Generate image variants for a prop asset."""
+        """为道具资产生成图片候选。"""
         prop.status = GenerationStatus.PROCESSING
         if positive_prompt is None:
             positive_prompt = "cinematic lighting, movie still, 8k, highly detailed, realistic"

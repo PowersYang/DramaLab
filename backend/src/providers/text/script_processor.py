@@ -1,4 +1,4 @@
-"""Text generation and parsing provider for script-related workflows."""
+"""服务于剧本流程的文本生成与解析 provider。"""
 
 import json
 import re
@@ -6,7 +6,7 @@ import time
 import uuid
 from typing import Any, Dict, List
 
-from backend.src.schemas.models import Character, GenerationStatus, Prop, Scene, Script, StoryboardFrame
+from ...schemas.models import Character, GenerationStatus, Prop, Scene, Script, StoryboardFrame
 
 from ...utils import get_logger
 from .default_prompts import (
@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 
 class ScriptProcessor:
-    """High-level text provider for parsing, analysis, and prompt polishing."""
+    """负责解析、分析与提示词润色的高层文本 provider。"""
 
     def __init__(self, api_key: str = None):
         self._api_key = api_key
@@ -38,11 +38,11 @@ class ScriptProcessor:
 
     @property
     def is_configured(self):
-        """Expose whether the underlying LLM adapter is configured."""
+        """暴露底层 LLM 适配器是否已完成配置。"""
         return self.llm.is_configured
 
     def parse_novel(self, title: str, text: str) -> Script:
-        """Parse raw story text into the project's structured script model."""
+        """把原始故事文本解析成项目内部结构化剧本模型。"""
         logger.info("Parsing novel: %s...", title)
         if not self.is_configured:
             logger.error("LLM API key not configured.")
@@ -67,7 +67,7 @@ class ScriptProcessor:
             raise RuntimeError(error_msg)
 
     def _create_script_from_data(self, title: str, original_text: str, data: Dict[str, Any]) -> Script:
-        """Transform parsed LLM JSON into the internal script aggregate."""
+        """把 LLM 解析结果转换成内部剧本聚合对象。"""
         script_id = str(uuid.uuid4())
         characters = []
         name_to_char = {}
@@ -182,7 +182,7 @@ class ScriptProcessor:
         )
 
     def create_draft_script(self, title: str, text: str) -> Script:
-        """Create a minimal script shell without running full analysis."""
+        """在不执行完整分析的情况下创建最小草稿剧本。"""
         return Script(
             id=str(uuid.uuid4()),
             title=title,
@@ -196,7 +196,7 @@ class ScriptProcessor:
         )
 
     def split_into_episodes(self, text: str, suggested_episodes: int = 3) -> List[Dict[str, Any]]:
-        """Split long source text into draft episode segments."""
+        """把长文本切分成候选分集片段。"""
         if not self.is_configured:
             raise ValueError("LLM API Key 未配置。请在 API 配置中设置对应的 API Key 后重试。")
 
@@ -248,7 +248,7 @@ class ScriptProcessor:
             raise RuntimeError(f"分集划分失败: {str(exc)}")
 
     def _construct_prompt(self, text: str) -> str:
-        """Build the parser prompt sent to the LLM."""
+        """构造发送给 LLM 的解析提示词。"""
         return f"""
         You are a professional storyboard artist and scriptwriter.
         Analyze the following novel text and extract structured data for a comic/video production.
@@ -292,7 +292,7 @@ class ScriptProcessor:
         """
 
     def analyze_script_for_styles(self, script_text: str) -> List[Dict[str, Any]]:
-        """Recommend visual styles for a script."""
+        """为剧本推荐可选视觉风格。"""
         logger.info("Analyzing script for visual style recommendations...")
         if not self.is_configured:
             logger.warning("DASHSCOPE_API_KEY not set. Returning default recommendations.")
@@ -406,7 +406,7 @@ CRITICAL STYLE GUIDELINES:
             return self._mock_style_recommendations()
 
     def _mock_style_recommendations(self) -> List[Dict[str, Any]]:
-        """Return fallback style recommendations when LLM analysis is unavailable."""
+        """在 LLM 分析不可用时返回兜底风格推荐。"""
         return [
             {
                 "id": f"mock-cinematic-{str(uuid.uuid4())[:8]}",
@@ -438,7 +438,7 @@ CRITICAL STYLE GUIDELINES:
         ]
 
     def analyze_to_storyboard(self, text: str, entities_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Convert script text plus entities into storyboard frame plans."""
+        """把剧本文本和实体上下文转换成分镜帧规划。"""
         logger.info("Analyzing text to storyboard: %s...", text[:100])
         if not self.is_configured:
             logger.warning("DASHSCOPE_API_KEY not set. Returning mock frames.")
@@ -542,7 +542,7 @@ Props:
             raise RuntimeError(f"分镜分析过程出错: {str(exc)}")
 
     def _parse_storyboard_json(self, content: str):
-        """Parse storyboard JSON and normalize common fenced-code responses."""
+        """解析分镜 JSON，并兼容常见代码块包裹格式。"""
         content = _strip_markdown_json(content)
         try:
             result = json.loads(content.strip())
@@ -557,7 +557,7 @@ Props:
             return None
 
     def _mock_storyboard_frames(self, text: str) -> List[Dict[str, Any]]:
-        """Return fallback storyboard frames for local development and failures."""
+        """为本地开发或异常场景提供兜底分镜帧。"""
         _ = text
         return [
             {
@@ -576,7 +576,7 @@ Props:
         ]
 
     def polish_storyboard_prompt(self, draft_prompt: str, assets: List[Dict[str, Any]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
-        """Polish a storyboard image prompt into CN and EN variants."""
+        """把分镜图片提示词润色成中英文双语结果。"""
         fallback_result = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
         if not self.is_configured:
             return fallback_result
@@ -619,7 +619,7 @@ Props:
             return fallback_result
 
     def polish_video_prompt(self, draft_prompt: str, feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
-        """Polish a video generation prompt into CN and EN variants."""
+        """把视频生成提示词润色成中英文双语结果。"""
         fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
         if not self.is_configured:
             return fallback
@@ -654,7 +654,7 @@ Props:
             return fallback
 
     def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
-        """Polish an image-to-video prompt with reference-slot context."""
+        """结合参考槽位上下文润色图生视频提示词。"""
         fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
         if not self.is_configured:
             return fallback

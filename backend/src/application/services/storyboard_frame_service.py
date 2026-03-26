@@ -1,7 +1,8 @@
-"""Storyboard frame application service.
+"""
+分镜帧应用服务。
 
-This service owns frame-level CRUD, ordering, and local metadata updates.
-It keeps storyboard editing out of the legacy project-wide save path.
+这里负责分镜帧级别的 CRUD、排序和局部元数据更新，
+避免分镜编辑再走旧的项目整体保存路径。
 """
 
 import time
@@ -12,14 +13,14 @@ from ...schemas.models import StoryboardFrame
 
 
 class StoryboardFrameService:
-    """Application service for storyboard frame mutations."""
+    """负责分镜帧相关变更操作。"""
 
     def __init__(self):
         self.frame_repository = StoryboardFrameRepository()
         self.project_repository = ProjectRepository()
 
     def toggle_lock(self, project_id: str, frame_id: str):
-        """Toggle manual edit lock state for a frame."""
+        """切换分镜帧的人工编辑锁定状态。"""
         frame = self.frame_repository.get(project_id, frame_id)
         if not frame:
             raise ValueError(f"Frame {frame_id} not found")
@@ -29,7 +30,7 @@ class StoryboardFrameService:
         return self.project_repository.get(project_id)
 
     def update_frame(self, project_id: str, frame_id: str, **kwargs):
-        """Patch mutable frame fields with non-null values."""
+        """增量更新分镜帧的可变字段。"""
         frame = self.frame_repository.get(project_id, frame_id)
         if not frame:
             raise ValueError(f"Frame {frame_id} not found")
@@ -41,7 +42,7 @@ class StoryboardFrameService:
         return self.project_repository.get(project_id)
 
     def add_frame(self, project_id: str, scene_id: str | None = None, action_description: str = "", camera_angle: str = "medium_shot", insert_at: int | None = None):
-        """Create a new frame, optionally inserting it at a specific position."""
+        """创建新分镜帧，并可选择插入到指定位置。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
@@ -60,7 +61,7 @@ class StoryboardFrameService:
         return self.project_repository.get(project_id)
 
     def delete_frame(self, project_id: str, frame_id: str):
-        """Delete a frame from the project storyboard."""
+        """从项目分镜中删除一帧。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
@@ -68,7 +69,7 @@ class StoryboardFrameService:
         return self.project_repository.get(project_id)
 
     def copy_frame(self, project_id: str, frame_id: str, insert_at: int | None = None):
-        """Deep-copy a frame so local edits and variants can diverge safely."""
+        """深拷贝一帧，便于后续局部编辑和素材分叉。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
@@ -89,7 +90,7 @@ class StoryboardFrameService:
         return self.project_repository.get(project_id)
 
     def reorder_frames(self, project_id: str, frame_ids: list[str]):
-        """Persist a caller-provided frame ordering."""
+        """按调用方给定顺序重排并持久化分镜帧。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
@@ -100,7 +101,7 @@ class StoryboardFrameService:
         return self.project_repository.get(project_id)
 
     def _save_full_order(self, project):
-        """Rewrite frame rows in order because frame order is stored separately."""
+        """按顺序重写分镜帧记录，因为顺序信息是单独存储的。"""
         for frame in list(project.frames):
             self.frame_repository.delete(project.id, frame.id)
         for index, frame in enumerate(project.frames):

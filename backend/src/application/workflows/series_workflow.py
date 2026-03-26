@@ -13,20 +13,20 @@ from .asset_workflow import AssetWorkflow
 
 
 class SeriesWorkflow:
-    """Coordinate shared-series generation and cross-series asset reuse."""
+    """负责系列共享资产生成与跨系列资产复用流程。"""
 
     def __init__(self):
         self.series_repository = SeriesRepository()
         self.asset_workflow = AssetWorkflow()
 
     def generate_series_asset(self, *args, **kwargs):
-        """Forward shared asset generation into the common asset workflow."""
+        """把系列共享资产生成转发到通用资产工作流。"""
         # 系列共享素材和项目素材共用同一套异步任务注册表，
         # 这样现有 API 的后台处理入口无需改变。
         return self.asset_workflow.create_series_asset_generation_task(*args, **kwargs)
 
     def import_assets_from_series(self, target_series_id: str, source_series_id: str, asset_ids: list[str]):
-        """Copy selected shared assets from one series into another."""
+        """把选中的共享资产从一个系列复制到另一个系列。"""
         target = self.series_repository.get(target_series_id)
         if not target:
             raise ValueError("Target series not found")

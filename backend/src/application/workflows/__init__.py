@@ -9,9 +9,9 @@ __all__ = [
     "SeriesWorkflow",
     "StoryboardWorkflow",
 ]
-"""Application workflow entry points.
+"""
+应用工作流导出入口。
 
-Workflows coordinate multi-step generation, analysis, and export
-operations. They compose repositories and providers without owning
-core state in memory.
+workflow 负责串联分析、生成、导出这类多步骤流程，
+通过 repository 和 provider 组织执行，而不再持有核心内存状态。
 """

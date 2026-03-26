@@ -3,17 +3,17 @@ import time
 from http import HTTPStatus
 from typing import Tuple
 
-import dashscope
 import requests
 from dashscope import VideoSynthesis
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
 from .base import VideoGenModel
+from src.settings.env_settings import get_env
 from ..utils import get_logger
 from ..utils.endpoints import get_provider_base_url
 
-from ..utils.oss_utils import OSSImageUploader
+from ..utils.oss_utils import OSSImageUploader, is_object_key
 
 logger = get_logger(__name__)
 
@@ -26,9 +26,9 @@ class WanxModel(VideoGenModel):
 
     @property
     def api_key(self):
-        api_key = os.getenv("DASHSCOPE_API_KEY")
+        api_key = get_env("DASHSCOPE_API_KEY")
         if not api_key:
-            logger.warning("Dashscope API Key not found in config or environment variables.")
+            logger.warning("Dashscope API Key not found in .env configuration.")
         return api_key
 
     def generate(self, prompt: str, output_path: str, img_path: str = None, model_name: str = None, **kwargs) ->Tuple[str, float]:
@@ -108,12 +108,39 @@ class WanxModel(VideoGenModel):
                     raise ValueError(f"Input image not found: {img_path}")
             elif img_url:
                 # 有 img_url 但没有 img_path 时，也要兼容对象键形式
-                if not img_url.startswith("http") and "/" in img_url and not img_url.startswith("output/"):
+                if is_object_key(img_url):
                     if uploader.is_configured:
                         img_url = uploader.sign_url_for_api(img_url)
                         logger.info(f"Input image (Object Key from img_url), signed URL: {img_url[:80]}...")
                     else:
                         logger.warning(f"OSS not configured, cannot sign Object Key in img_url: {img_url}")
+
+            # 音频输入也统一整理成模型可访问的 URL
+            if audio_url:
+                local_audio_path = None
+                if os.path.exists(audio_url):
+                    local_audio_path = audio_url
+                elif not audio_url.startswith("http"):
+                    potential_path = os.path.join("output", audio_url)
+                    if os.path.exists(potential_path):
+                        local_audio_path = potential_path
+
+                if local_audio_path:
+                    if uploader.is_configured:
+                        object_key = uploader.upload_file(local_audio_path, sub_path="temp/audio_input")
+                        if object_key:
+                            audio_url = uploader.sign_url_for_api(object_key)
+                            logger.info(f"Input audio uploaded, signed URL: {audio_url[:80]}...")
+                        else:
+                            raise RuntimeError("Failed to upload input audio to OSS")
+                    else:
+                        raise RuntimeError("OSS not configured, cannot upload input audio for I2V")
+                elif is_object_key(audio_url):
+                    if uploader.is_configured:
+                        audio_url = uploader.sign_url_for_api(audio_url)
+                        logger.info(f"Input audio (Object Key), signed URL: {audio_url[:80]}...")
+                    else:
+                        logger.warning(f"OSS not configured, cannot sign Object Key in audio_url: {audio_url}")
 
             # 新版 Wan 模型走 HTTP 接口，旧型号继续走 SDK
             if final_model_name in ['wan2.6-i2v', 'wan2.6-i2v-flash', 'wan2.5-i2v']:

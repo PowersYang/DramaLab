@@ -1,4 +1,4 @@
-"""Video provider package exports."""
+"""视频 provider 子包导出。"""
 
 from .video_generation_provider import VideoGenerator
 

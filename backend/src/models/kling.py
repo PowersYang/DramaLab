@@ -17,6 +17,7 @@ import jwt
 import requests
 
 from .base import VideoGenModel
+from src.settings.env_settings import get_env
 from ..utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,8 @@ logger = logging.getLogger(__name__)
 class KlingModel(VideoGenModel):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.access_key = config.get("access_key") or os.getenv("KLING_ACCESS_KEY", "")
-        self.secret_key = config.get("secret_key") or os.getenv("KLING_SECRET_KEY", "")
+        self.access_key = config.get("access_key") or get_env("KLING_ACCESS_KEY", "")
+        self.secret_key = config.get("secret_key") or get_env("KLING_SECRET_KEY", "")
         self.model_name = config.get("params", {}).get("model_name", "kling-v3")
         self._cached_token = None
         self._token_exp = 0

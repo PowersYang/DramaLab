@@ -1,4 +1,4 @@
-"""Text provider package exports."""
+"""文本 provider 子包导出。"""
 
 from .default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,

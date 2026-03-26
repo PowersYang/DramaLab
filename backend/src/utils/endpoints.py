@@ -1,4 +1,4 @@
-import os
+from src.settings.env_settings import get_env
 
 # 提供方默认端点表：{provider_key: default_base_url}
 PROVIDER_DEFAULTS = {
@@ -17,4 +17,4 @@ def get_provider_base_url(provider: str, default: str = None) -> str:
     """
     env_key = f"{provider.upper()}_BASE_URL"
     fallback = default or PROVIDER_DEFAULTS.get(provider.upper(), "")
-    return (os.getenv(env_key) or fallback).rstrip("/")
+    return (get_env(env_key) or fallback).rstrip("/")

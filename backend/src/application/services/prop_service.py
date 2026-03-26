@@ -1,7 +1,7 @@
-"""Prop application service.
+"""
+道具应用服务。
 
-Prop mutations are isolated here so they can evolve independently from
-the project aggregate load/save cycle.
+这里承接道具相关变更，使其能独立于项目聚合整体读写周期演进。
 """
 
 import time
@@ -12,14 +12,14 @@ from ...schemas.models import GenerationStatus, Prop
 
 
 class PropService:
-    """Application service for prop resource operations."""
+    """负责道具资源相关应用操作。"""
 
     def __init__(self):
         self.prop_repository = PropRepository()
         self.project_repository = ProjectRepository()
 
     def create_prop(self, project_id: str, name: str, description: str):
-        """Create a new prop inside the target project."""
+        """在目标项目中创建一个新道具。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Project not found")
@@ -33,7 +33,7 @@ class PropService:
         return self.project_repository.get(project_id)
 
     def delete_prop(self, project_id: str, prop_id: str):
-        """Delete a prop and remove its references from frames."""
+        """删除道具，并清理分镜帧里的关联引用。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Project not found")

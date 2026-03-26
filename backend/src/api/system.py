@@ -3,24 +3,24 @@
 """
 
 import asyncio
-import json
 import os
 import shutil
 import sys
 import uuid
 from functools import partial
 
-from dotenv import set_key, unset_key
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from ..application.services import SystemService
-from ..providers import ScriptProcessor
-from ..providers.text.default_prompts import (
-    DEFAULT_R2V_POLISH_PROMPT,
-    DEFAULT_STORYBOARD_POLISH_PROMPT,
-    DEFAULT_VIDEO_POLISH_PROMPT,
+from src.settings.env_settings import (
+    get_env,
+    get_env_path,
+    has_env,
+    reload_env_settings,
+    remove_env_keys,
+    save_env_values,
 )
-from ..utils import get_user_data_dir
+from ..providers import ScriptProcessor
 from ..utils.endpoints import PROVIDER_DEFAULTS
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.system_check import run_system_checks
@@ -47,16 +47,14 @@ async def debug_config():
     return {
         "oss_configured": uploader.is_configured,
         "oss_bucket_initialized": uploader.bucket is not None,
-        "oss_base_path": os.getenv("OSS_BASE_PATH", "lumenx"),
+        "oss_base_path": get_env("OSS_BASE_PATH", "lumenx"),
         "output_dir_exists": os.path.exists("output"),
         "output_contents": os.listdir("output") if os.path.exists("output") else [],
         "cwd": os.getcwd(),
         "env_vars_present": {
-            "OSS_ENDPOINT": bool(os.getenv("OSS_ENDPOINT")),
-            "OSS_BUCKET_NAME": bool(os.getenv("OSS_BUCKET_NAME")),
-            "ALIBABA_CLOUD_ACCESS_KEY_ID": bool(
-                os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
-            ),
+            "OSS_ENDPOINT": has_env("OSS_ENDPOINT"),
+            "OSS_BUCKET_NAME": has_env("OSS_BUCKET_NAME"),
+            "ALIBABA_CLOUD_ACCESS_KEY_ID": has_env("ALIBABA_CLOUD_ACCESS_KEY_ID"),
         },
     }
 
@@ -156,82 +154,27 @@ def get_user_config_path() -> str:
     开发环境使用后端根目录下的 `.env`；
     打包应用使用用户目录下的 `config.json`。
     """
-    is_packaged = os.getenv("LUMEN_X_PACKAGED", "false").lower() == "true" or getattr(
-        sys, "frozen", False
-    )
-
-    if is_packaged:
-        config_dir = get_user_data_dir()
-        os.makedirs(config_dir, exist_ok=True)
-        return os.path.join(config_dir, "config.json")
-
-    project_root = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
-    return os.path.join(project_root, ".env")
+    return str(get_env_path())
 
 
 def load_user_config():
-    """从配置文件加载用户设置，并写入当前进程环境变量。"""
-    config_path = get_user_config_path()
-
-    if config_path.endswith(".json") and os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as file:
-                config = json.load(file)
-            for key, value in config.items():
-                if value:
-                    os.environ[key] = value
-        except Exception as exc:
-            logger.warning("Failed to load config from %s: %s", config_path, exc)
+    """从 .env 重新加载用户配置到当前进程缓存。"""
+    try:
+        reload_env_settings()
+    except Exception as exc:
+        logger.warning("Failed to reload config from %s: %s", get_user_config_path(), exc)
 
 
 def save_user_config(config_dict: dict):
-    """把用户配置持久化到对应文件。"""
-    config_path = get_user_config_path()
-
-    if config_path.endswith(".json"):
-        existing_config = {}
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as file:
-                    existing_config = json.load(file)
-            except Exception:
-                existing_config = {}
-        existing_config.update(config_dict)
-        with open(config_path, "w", encoding="utf-8") as file:
-            json.dump(existing_config, file, indent=2)
-        return
-
-    for key, value in config_dict.items():
-        if value is not None:
-            set_key(config_path, key, value)
+    """把用户配置持久化到 .env 文件。"""
+    save_env_values(config_dict)
 
 
 def remove_user_config_keys(keys: list):
     """从持久化配置中删除指定键。"""
     if not keys:
         return
-
-    config_path = get_user_config_path()
-    if config_path.endswith(".json"):
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as file:
-                    existing_config = json.load(file)
-                for key in keys:
-                    existing_config.pop(key, None)
-                with open(config_path, "w", encoding="utf-8") as file:
-                    json.dump(existing_config, file, indent=2)
-            except Exception as exc:
-                logger.warning("Failed to remove keys from config: %s", exc)
-        return
-
-    for key in keys:
-        try:
-            unset_key(config_path, key)
-        except Exception as exc:
-            logger.warning("Failed to unset key %s from .env: %s", key, exc)
+    remove_env_keys(keys)
 
 
 load_user_config()
@@ -241,11 +184,8 @@ load_user_config()
 async def get_config_info():
     """返回当前配置存储模式与路径信息。"""
     config_path = get_user_config_path()
-    is_packaged = os.getenv("LUMEN_X_PACKAGED", "false").lower() == "true" or getattr(
-        sys, "frozen", False
-    )
     return {
-        "mode": "packaged" if is_packaged else "development",
+        "mode": "packaged" if getattr(sys, "frozen", False) else "development",
         "config_path": config_path,
         "config_exists": os.path.exists(config_path),
     }
@@ -268,14 +208,11 @@ async def update_env_config(config: EnvConfig):
             if value and value.strip():
                 config_dict[env_key] = value.strip()
             else:
-                os.environ.pop(env_key, None)
                 keys_to_remove.append(env_key)
-
-        for key, value in config_dict.items():
-            os.environ[key] = value
 
         save_user_config(config_dict)
         remove_user_config_keys(keys_to_remove)
+        reload_env_settings()
 
         try:
             OSSImageUploader.reset_instance()
@@ -300,24 +237,31 @@ async def get_env_config():
         endpoint_overrides = {}
         for provider in PROVIDER_DEFAULTS:
             env_key = f"{provider}_BASE_URL"
-            value = os.getenv(env_key)
+            value = get_env(env_key)
             if value:
                 endpoint_overrides[env_key] = value
 
         return {
-            "DASHSCOPE_API_KEY": os.getenv("DASHSCOPE_API_KEY", ""),
-            "ALIBABA_CLOUD_ACCESS_KEY_ID": os.getenv(
-                "ALIBABA_CLOUD_ACCESS_KEY_ID", ""
-            ),
-            "ALIBABA_CLOUD_ACCESS_KEY_SECRET": os.getenv(
-                "ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""
-            ),
-            "OSS_BUCKET_NAME": os.getenv("OSS_BUCKET_NAME", ""),
-            "OSS_ENDPOINT": os.getenv("OSS_ENDPOINT", ""),
-            "OSS_BASE_PATH": os.getenv("OSS_BASE_PATH", ""),
-            "KLING_ACCESS_KEY": os.getenv("KLING_ACCESS_KEY", ""),
-            "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
-            "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
+            "DASHSCOPE_API_KEY": get_env("DASHSCOPE_API_KEY", ""),
+            "ALIBABA_CLOUD_ACCESS_KEY_ID": get_env("ALIBABA_CLOUD_ACCESS_KEY_ID", ""),
+            "ALIBABA_CLOUD_ACCESS_KEY_SECRET": get_env("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""),
+            "OSS_BUCKET_NAME": get_env("OSS_BUCKET_NAME", ""),
+            "OSS_ENDPOINT": get_env("OSS_ENDPOINT", ""),
+            "OSS_BASE_PATH": get_env("OSS_BASE_PATH", ""),
+            "KLING_ACCESS_KEY": get_env("KLING_ACCESS_KEY", ""),
+            "KLING_SECRET_KEY": get_env("KLING_SECRET_KEY", ""),
+            "VIDU_API_KEY": get_env("VIDU_API_KEY", ""),
+            "ARK_API_KEY": get_env("ARK_API_KEY", ""),
+            "LLM_PROVIDER": get_env("LLM_PROVIDER", ""),
+            "OPENAI_API_KEY": get_env("OPENAI_API_KEY", ""),
+            "OPENAI_BASE_URL": get_env("OPENAI_BASE_URL", ""),
+            "OPENAI_MODEL": get_env("OPENAI_MODEL", ""),
+            "POSTGRES_HOST": get_env("POSTGRES_HOST", ""),
+            "POSTGRES_PORT": get_env("POSTGRES_PORT", ""),
+            "POSTGRES_DB": get_env("POSTGRES_DB", ""),
+            "POSTGRES_USER": get_env("POSTGRES_USER", ""),
+            "POSTGRES_PASSWORD": get_env("POSTGRES_PASSWORD", ""),
+            "DATABASE_URL": get_env("DATABASE_URL", ""),
             "endpoint_overrides": endpoint_overrides,
         }
     except Exception as exc:

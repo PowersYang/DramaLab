@@ -8,24 +8,24 @@ from ..utils.oss_utils import OSSImageUploader, is_object_key
 
 
 class StorageProvider:
-    """Small facade around object storage helpers used by workflows."""
+    """围绕对象存储工具的一层轻量门面。"""
 
     def __init__(self):
         self._uploader = OSSImageUploader()
 
     def is_object_key(self, value: str) -> bool:
-        """Return whether a string looks like a storage object key."""
+        """判断一个字符串是否看起来像对象存储键。"""
         return is_object_key(value)
 
     def upload_image(self, path: str):
-        """Upload an image file with the provider's default image policy."""
+        """按默认图片上传策略上传文件。"""
         return self._uploader.upload_image(path)
 
     def upload_file(self, path: str, sub_path: str):
-        """Upload a generic file under the requested logical sub-path."""
+        """按给定逻辑子路径上传通用文件。"""
         return self._uploader.upload_file(path, sub_path=sub_path)
 
     @property
     def is_configured(self) -> bool:
-        """Expose whether the underlying storage client is configured."""
+        """暴露底层存储客户端是否已完成配置。"""
         return self._uploader.is_configured

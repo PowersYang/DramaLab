@@ -2,13 +2,10 @@ import yaml
 import os
 import argparse
 import re
-from typing import Any, Dict
-from dotenv import load_dotenv
+from typing import Any
 
 from .utils import get_logger
-
-# 启动时先加载 `.env` 中的环境变量
-load_dotenv()
+from src.settings.env_settings import get_env
 
 logger = get_logger(__name__)
 
@@ -31,7 +28,7 @@ class Config:
         
         def replace_env(match):
             env_var = match.group(1)
-            return os.getenv(env_var, match.group(0))  # 没命中环境变量时保留原占位串
+            return get_env(env_var, match.group(0))  # 没命中配置项时保留原占位串
             
         content = pattern.sub(replace_env, content)
         

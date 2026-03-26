@@ -1,12 +1,12 @@
-import os
 import time
 import logging
 import base64
-from typing import Tuple, Optional
+from typing import Tuple
 
 import requests
 
 from .base import VideoGenModel
+from src.settings.env_settings import get_env
 
 # 尝试加载 Ark SDK；若环境未安装则延后在运行时报错
 try:
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class DoubaoModel(VideoGenModel):
     def __init__(self, config: dict):
         super().__init__(config)
-        self.api_key = os.getenv("ARK_API_KEY")
+        self.api_key = get_env("ARK_API_KEY")
         self.model_name = config.get('params', {}).get('model_name', 'doubao-seedance-1-0-pro-fast-251015')
         
         if not self.api_key:

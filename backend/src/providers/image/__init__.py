@@ -1,4 +1,4 @@
-"""Image provider package exports."""
+"""图片 provider 子包导出。"""
 
 from .asset_image_provider import ASPECT_RATIO_TO_SIZE, AssetGenerator, cleanup_old_variants
 from .storyboard_image_provider import StoryboardGenerator

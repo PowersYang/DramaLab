@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from ..application.services import ProjectService, VideoTaskService
 from ..application.workflows import MediaWorkflow
-from backend.src.schemas.models import Script, VideoTask
+from ..schemas.models import Script, VideoTask
 from ..common import logger, signed_response
 from ..schemas.requests import (
     BindVoiceRequest,

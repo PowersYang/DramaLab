@@ -1,11 +1,18 @@
-"""Concrete image generation implementation for storyboard rendering."""
+"""分镜渲染用的具体图片生成实现。"""
 
 import os
 import time
 import uuid
 from typing import Any, Dict, List
 
-from backend.src.schemas.models import Character, GenerationStatus, ImageAsset, ImageVariant, Scene, StoryboardFrame
+from ...schemas.models import (
+    Character,
+    GenerationStatus,
+    ImageAsset,
+    ImageVariant,
+    Scene,
+    StoryboardFrame,
+)
 
 from ...models.image import WanxImageModel
 from ...utils import get_logger
@@ -27,7 +34,7 @@ class StoryboardGenerator:
         self.output_dir = self.config.get("output_dir", "output/storyboard")
 
     def generate_storyboard(self, script: Any) -> Any:
-        """Generate images for all incomplete frames in a script."""
+        """为剧本中所有未完成分镜帧批量生成图片。"""
         logger.info("Generating storyboard for script: %s", script.title)
         total_frames = len(script.frames)
         for index, frame in enumerate(script.frames):
@@ -50,7 +57,7 @@ class StoryboardGenerator:
         size: str = None,
         model_name: str = None,
     ) -> StoryboardFrame:
-        """Generate one or more image variants for a single storyboard frame."""
+        """为单个分镜帧生成一个或多个图片候选。"""
         frame.status = GenerationStatus.PROCESSING
         effective_size = size or "1024*576"
         char_descriptions = []
@@ -58,14 +65,14 @@ class StoryboardGenerator:
         use_frontend_refs = (ref_image_paths and len(ref_image_paths) > 0) or ref_image_path
 
         if use_frontend_refs:
-            # Prefer explicit frontend composition references when present.
+            # 优先使用前端显式传入的构图参考图。
             if ref_image_paths:
                 asset_ref_paths.extend(ref_image_paths)
             if ref_image_path:
                 asset_ref_paths.append(ref_image_path)
             logger.info("[Storyboard] Using %s frontend-provided reference images", len(asset_ref_paths))
         else:
-            # Fall back to selected character and scene assets from the project.
+            # 若前端未传参考，则退回到项目中已选中的角色与场景资产。
             for char_id in frame.character_ids:
                 char = next((item for item in characters if item.id == char_id), None)
                 if not char:
@@ -162,8 +169,7 @@ class StoryboardGenerator:
             try:
                 uploader = OSSImageUploader()
                 if uploader.is_configured and selected_variant:
-                    # Upload only the selected variant so external references
-                    # stay aligned with the image currently shown in the UI.
+                    # 只上传当前选中候选，保证外部引用和 UI 正在展示的图片保持一致。
                     local_path = os.path.join("output", selected_variant.url)
                     if os.path.exists(local_path):
                         object_key = uploader.upload_file(local_path, sub_path="storyboard")

@@ -19,9 +19,9 @@ __all__ = [
     "SystemService",
     "VideoTaskService",
 ]
-"""Application service entry points.
+"""
+应用服务层导出入口。
 
-Services in this package implement CRUD-style use cases and
-small-scope business operations. Long-running, cross-resource
-flows live in ``application.workflows`` instead.
+这里的 service 负责 CRUD 风格用例和小范围业务操作；
+跨资源、长链路的流程编排则放在 ``application.workflows``。
 """

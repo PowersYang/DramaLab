@@ -34,7 +34,7 @@ class SystemService:
         self.text_provider = ScriptProcessor()
 
     def preview_import(self, text: str, suggested_episodes: int):
-        """Split imported text into tentative episode slices for preview."""
+        """把导入文本切成候选分集片段供预览。"""
         episodes = self.text_provider.split_into_episodes(text, suggested_episodes)
         import_id = str(uuid.uuid4())
         self._import_cache[import_id] = text
@@ -45,7 +45,7 @@ class SystemService:
         }
 
     def pop_import_text(self, import_id: str):
-        """Consume a previously cached import payload."""
+        """取出并消费一份已缓存的导入原文。"""
         return self._import_cache.pop(import_id, None)
 
     def create_series_from_import(
@@ -55,7 +55,7 @@ class SystemService:
         episodes_data: list[dict[str, Any]],
         description: str = "",
     ):
-        """Create a series and draft episode projects from imported text."""
+        """根据导入文本创建系列和草稿分集项目。"""
         series = SeriesService().create_series(title, description)
         episode_texts = self._split_text_by_markers(text, episodes_data)
 
@@ -90,7 +90,7 @@ class SystemService:
         }
 
     def analyze_script_for_styles(self, script_id: str, script_text: str):
-        """Return style recommendations for a stored script."""
+        """为已存储剧本返回风格推荐。"""
         script = self.project_repository.get(script_id)
         if not script:
             raise ValueError("Script not found")
@@ -104,7 +104,7 @@ class SystemService:
         custom_styles: list[dict[str, Any]] | None = None,
         ai_recommendations: list[dict[str, Any]] | None = None,
     ):
-        """Persist art direction choices on the target script."""
+        """把美术风格选择持久化到目标剧本。"""
         script = self.project_repository.get(script_id)
         if not script:
             raise ValueError("Script not found")
@@ -120,7 +120,7 @@ class SystemService:
         return self.project_repository.get(script_id)
 
     def get_effective_prompt(self, script_id: str, field: str) -> str:
-        """Resolve a prompt field using script, series, then default fallback."""
+        """按剧本、系列、默认值三级回退解析提示词字段。"""
         if not script_id:
             return ""
 
@@ -140,7 +140,7 @@ class SystemService:
         return effective
 
     def _resolve_effective_prompt(self, field: str, script, series=None) -> str:
-        """Implement the three-level prompt fallback contract."""
+        """实现提示词三级回退规则。"""
         if field not in ("storyboard_polish", "video_polish", "r2v_polish"):
             raise ValueError(f"Unsupported prompt field: {field}")
 
@@ -161,7 +161,7 @@ class SystemService:
         return defaults[field]
 
     def _split_text_by_markers(self, text: str, episodes_data: list[dict[str, Any]]):
-        """Cut imported text by LLM-provided markers with a safe fallback split."""
+        """按 LLM 给出的标记切分导入文本，并提供安全兜底。"""
         chunks = []
         search_from = 0
 
@@ -186,8 +186,7 @@ class SystemService:
             search_from = end_idx
 
         if not chunks or all(len(chunk.strip()) == 0 for chunk in chunks):
-            # Marker-based slicing is best effort. If markers are missing or
-            # unusable, fall back to even chunks so the import still succeeds.
+            # 基于标记的切分是尽力而为；如果标记不可用，则退回到平均切分，保证导入仍能完成。
             chunk_size = max(1, len(text) // max(len(episodes_data), 1))
             chunks = []
             for index in range(len(episodes_data)):

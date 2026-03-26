@@ -1,7 +1,7 @@
-"""Character application service.
+"""
+角色应用服务。
 
-This service isolates character CRUD and voice-related updates from the
-larger project aggregate write path.
+这里把角色 CRUD 和语音相关更新从项目整体写入路径里拆开。
 """
 
 import time
@@ -12,14 +12,14 @@ from ...schemas.models import Character, GenerationStatus
 
 
 class CharacterService:
-    """Application service for character resource operations."""
+    """负责角色资源相关应用操作。"""
 
     def __init__(self):
         self.character_repository = CharacterRepository()
         self.project_repository = ProjectRepository()
 
     def create_character(self, project_id: str, name: str, description: str):
-        """Create a new character inside the target project."""
+        """在目标项目中创建一个新角色。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
@@ -33,13 +33,12 @@ class CharacterService:
         return self.project_repository.get(project_id)
 
     def delete_character(self, project_id: str, character_id: str):
-        """Delete a character and remove its references from frames."""
+        """删除角色，并清理分镜帧里的关联引用。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
         self.character_repository.delete("project", project_id, character_id)
-        # Frame references are still maintained on the project aggregate,
-        # so they must be cleaned up after the child row is removed.
+        # 分镜帧上的角色引用仍然维护在项目聚合里，所以删除子对象后还要同步清理。
         for frame in project.frames:
             if character_id in frame.character_ids:
                 frame.character_ids = [cid for cid in frame.character_ids if cid != character_id]
@@ -49,7 +48,7 @@ class CharacterService:
         return project
 
     def bind_voice(self, project_id: str, character_id: str, voice_id: str, voice_name: str):
-        """Bind a TTS voice profile to a character."""
+        """为角色绑定 TTS 音色。"""
         character = self.character_repository.get("project", project_id, character_id)
         if not character:
             raise ValueError("Character not found")
@@ -59,7 +58,7 @@ class CharacterService:
         return self.project_repository.get(project_id)
 
     def update_voice_params(self, project_id: str, character_id: str, speed: float, pitch: float, volume: int):
-        """Update per-character dialogue synthesis parameters."""
+        """更新角色级对白合成参数。"""
         character = self.character_repository.get("project", project_id, character_id)
         if not character:
             raise ValueError("Character not found")

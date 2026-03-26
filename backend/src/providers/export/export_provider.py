@@ -1,10 +1,10 @@
-"""Concrete export implementation for project rendering outputs."""
+"""项目渲染导出的具体实现。"""
 
 import os
 import time
 from typing import Any, Dict, List
 
-from backend.src.schemas.models import Script
+from ...schemas.models import Script
 
 from ...utils import get_logger
 
@@ -45,13 +45,13 @@ class ExportManager:
             raise
 
     def _stitch_video(self, frames: List[Any], output_path: str):
-        """Placeholder for future multi-clip stitching implementation."""
+        """为后续多片段拼接预留占位方法。"""
         pass
 
     def _mix_audio(self, audio_tracks: List[Any], output_path: str):
-        """Placeholder for future audio mixdown implementation."""
+        """为后续音频混流预留占位方法。"""
         pass
 
     def _add_subtitles(self, video_path: str, subtitles: List[Any]):
-        """Placeholder for subtitle burn-in or sidecar generation."""
+        """为后续字幕烧录或外挂字幕生成预留占位方法。"""
         pass

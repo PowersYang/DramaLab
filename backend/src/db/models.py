@@ -1,9 +1,15 @@
 import time
 
 from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
+
+
+# Keep ORM models portable across SQLite tests and PostgreSQL production.
+# JSONB is only used when the active dialect is PostgreSQL.
+JSON_TYPE = JSON().with_variant(JSONB(), "postgresql")
 
 
 class TenantAuditMixin:
@@ -82,7 +88,7 @@ class BillingAccountRecord(Base):
     workspace_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    billing_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    billing_metadata: Mapped[dict] = mapped_column("metadata", JSON_TYPE, default=dict, nullable=False)
     created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
     updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
 
@@ -101,9 +107,9 @@ class ProjectRecord(TenantAuditMixin, Base):
     merged_video_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     series_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     episode_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    art_direction: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    model_settings: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    prompt_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    art_direction: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
 
 
 class SeriesRecord(TenantAuditMixin, Base):
@@ -115,9 +121,9 @@ class SeriesRecord(TenantAuditMixin, Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    art_direction: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    model_settings: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    prompt_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    art_direction: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
 
 
 class CharacterRecord(TenantAuditMixin, Base):
@@ -265,8 +271,8 @@ class StoryboardFrameRecord(TenantAuditMixin, Base):
     project_id: Mapped[str] = mapped_column(String(64), ForeignKey("projects.id"), nullable=False, index=True)
     frame_order: Mapped[int] = mapped_column(Integer, nullable=False)
     scene_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    character_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
-    prop_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    character_ids: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
+    prop_ids: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
     action_description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     facial_expression: Mapped[str | None] = mapped_column(Text, nullable=True)
     dialogue: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -279,7 +285,7 @@ class StoryboardFrameRecord(TenantAuditMixin, Base):
     camera_movement: Mapped[str | None] = mapped_column(String(128), nullable=True)
     composition: Mapped[str | None] = mapped_column(Text, nullable=True)
     atmosphere: Mapped[str | None] = mapped_column(Text, nullable=True)
-    composition_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    composition_data: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     image_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_prompt_cn: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_prompt_en: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -322,7 +328,7 @@ class VideoTaskRecord(TenantAuditMixin, Base):
     model: Mapped[str] = mapped_column(String(128), default="wan2.6-i2v", nullable=False)
     shot_type: Mapped[str] = mapped_column(String(64), default="single", nullable=False)
     generation_mode: Mapped[str] = mapped_column(String(64), default="i2v", nullable=False)
-    reference_video_urls: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reference_video_urls: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
     mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sound: Mapped[str | None] = mapped_column(String(16), nullable=True)
     cfg_scale: Mapped[float | None] = mapped_column(Float, nullable=True)

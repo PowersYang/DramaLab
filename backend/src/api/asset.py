@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
 from ..application.services import AssetService, ProjectService
 from ..application.workflows import AssetWorkflow, MediaWorkflow
-from backend.src.schemas.models import Script
+from ..schemas.models import Script
 from ..common import logger, signed_response
 from ..schemas.requests import (
     DeleteVariantRequest,

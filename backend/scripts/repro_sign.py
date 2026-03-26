@@ -1,16 +1,14 @@
 import os
 import json
-from dotenv import load_dotenv
 
 import sys
 BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BACKEND_ROOT)
 
+from src.settings.env_settings import get_env
 from src.utils.oss_utils import is_object_key, OSSImageUploader, get_oss_base_path
 
-load_dotenv(os.path.join(BACKEND_ROOT, ".env"))
-
-print(f"OSS_BASE_PATH from env: {os.getenv('OSS_BASE_PATH')}")
+print(f"OSS_BASE_PATH from env: {get_env('OSS_BASE_PATH')}")
 print(f"get_oss_base_path(): {get_oss_base_path()}")
 
 test_values = [

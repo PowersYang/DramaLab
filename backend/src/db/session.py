@@ -1,32 +1,38 @@
-import os
 from contextlib import contextmanager
 from functools import lru_cache
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session, sessionmaker
 
 from .base import Base
-
-
-load_dotenv()
+from src.settings.env_settings import get_env
 
 
 def _get_database_url() -> str:
-    database_url = os.getenv("DATABASE_URL")
+    database_url = get_env("DATABASE_URL")
     if database_url:
         return database_url
 
-    host = os.getenv("MYSQL_HOST")
-    port = os.getenv("MYSQL_PORT", "3306")
-    database = os.getenv("MYSQL_DATABASE")
-    user = os.getenv("MYSQL_USER")
-    password = os.getenv("MYSQL_PASSWORD")
+    host = get_env("POSTGRES_HOST")
+    port = get_env("POSTGRES_PORT", "5432")
+    database = get_env("POSTGRES_DB")
+    user = get_env("POSTGRES_USER")
+    password = get_env("POSTGRES_PASSWORD")
     if host and database and user is not None and password is not None:
-        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
+        return str(
+            URL.create(
+                "postgresql+psycopg",
+                username=user,
+                password=password,
+                host=host,
+                port=int(port),
+                database=database,
+            )
+        )
 
     raise RuntimeError(
-        "Database is not configured. Set DATABASE_URL or MYSQL_HOST/MYSQL_PORT/MYSQL_DATABASE/MYSQL_USER/MYSQL_PASSWORD."
+        "Database is not configured. Set DATABASE_URL or POSTGRES_HOST/POSTGRES_PORT/POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD."
     )
 
 

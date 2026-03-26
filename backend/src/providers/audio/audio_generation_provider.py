@@ -1,13 +1,14 @@
-"""Concrete audio generation implementation for dialogue, SFX, and BGM."""
+"""对白、音效、背景音乐的具体音频生成实现。"""
 
 import os
 import time
 from typing import Any, Dict, List
 
-from backend.src.schemas.models import Character, GenerationStatus, StoryboardFrame
+from ...schemas.models import Character, GenerationStatus, StoryboardFrame
 
 from ...audio.tts import TTSProcessor
 from ...utils import get_logger
+from ...utils.oss_utils import OSSImageUploader
 
 logger = get_logger(__name__)
 
@@ -81,12 +82,12 @@ class AudioGenerator:
         return self._real_generate_dialogue(frame, character, text, speed, pitch, volume)
 
     def _real_generate_dialogue(self, frame: StoryboardFrame, character: Character, text: str, speed: float, pitch: float, volume: int) -> StoryboardFrame:
-        """Run the actual TTS request once validation has passed."""
+        """在通过前置校验后，真正执行一次 TTS 请求。"""
         try:
             output_path = os.path.join(self.output_dir, "dialogue", f"{frame.id}.mp3")
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             self.tts.synthesize(text, output_path, voice=character.voice_id, speech_rate=speed, pitch_rate=pitch, volume=volume)
-            frame.audio_url = os.path.relpath(output_path, "output")
+            frame.audio_url = self._persist_media(output_path, "audio/dialogue")
             frame.status = GenerationStatus.COMPLETED
         except Exception as exc:
             logger.error("TTS generation failed for frame %s: %s", frame.id, exc)
@@ -103,7 +104,7 @@ class AudioGenerator:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "wb") as file_obj:
                 file_obj.write(b"dummy sfx content")
-            frame.sfx_url = os.path.relpath(output_path, "output")
+            frame.sfx_url = self._persist_media(output_path, "audio/sfx")
             frame.status = GenerationStatus.COMPLETED
         except Exception as exc:
             logger.error("Failed to generate SFX for frame %s: %s", frame.id, exc)
@@ -115,25 +116,35 @@ class AudioGenerator:
         if not frame.video_url:
             return frame
         logger.info("Generating SFX from video for frame %s", frame.id)
-        # This remains a stub implementation for now; the workflow contract is
-        # already stable, so the backing provider can be replaced later.
+        # 这里暂时仍是占位实现，但 workflow 契约已经稳定，后续可以直接替换底层 provider。
         time.sleep(1)
         output_path = os.path.join(self.output_dir, "sfx", f"{frame.id}_v2a.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "wb") as file_obj:
             file_obj.write(b"dummy v2a sfx content")
-        frame.sfx_url = os.path.relpath(output_path, "output")
+        frame.sfx_url = self._persist_media(output_path, "audio/sfx")
         return frame
 
     def generate_bgm(self, frame: StoryboardFrame) -> StoryboardFrame:
         """基于分镜上下文生成背景音乐。"""
         logger.info("Generating BGM for frame %s", frame.id)
-        # This remains a stub implementation for now; output path conventions
-        # are kept real so downstream export logic can already rely on them.
+        # 这里暂时仍是占位实现，但输出路径约定保持真实，便于下游导出逻辑继续复用。
         time.sleep(1)
         output_path = os.path.join(self.output_dir, "bgm", f"{frame.id}.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "wb") as file_obj:
             file_obj.write(b"dummy bgm content")
-        frame.bgm_url = os.path.relpath(output_path, "output")
+        frame.bgm_url = self._persist_media(output_path, "audio/bgm")
         return frame
+
+    def _persist_media(self, output_path: str, sub_path: str) -> str:
+        """优先把新生成媒体持久化到 OSS；失败时回退到本地相对路径。"""
+        try:
+            uploader = OSSImageUploader()
+            if uploader.is_configured:
+                object_key = uploader.upload_file(output_path, sub_path=sub_path)
+                if object_key:
+                    return object_key
+        except Exception as exc:
+            logger.error("Failed to upload media %s to OSS: %s", output_path, exc)
+        return os.path.relpath(output_path, "output")

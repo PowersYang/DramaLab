@@ -80,7 +80,6 @@ def create_app() -> FastAPI:
     from src.api.asset import router as project_assets_router
     from src.api.project import router as project_core_router
     from src.api.media import router as project_media_router
-    from src.api.project_settings import router as project_settings_router
     from src.api.storyboard import router as project_storyboard_router
     from src.api.series import router as series_router
     from src.api.system import router as system_router
@@ -127,7 +126,6 @@ def create_app() -> FastAPI:
     app.include_router(series_router)
     app.include_router(project_core_router)
     app.include_router(project_assets_router)
-    app.include_router(project_settings_router)
     app.include_router(project_media_router)
     app.include_router(project_storyboard_router)
     return app

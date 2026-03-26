@@ -1,4 +1,4 @@
-"""Common package exports for shared utilities and bootstrap helpers."""
+"""公共模块对外导出。"""
 
 from .bootstrap import bootstrap_api_environment
 from .log import logger

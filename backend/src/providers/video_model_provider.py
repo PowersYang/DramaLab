@@ -20,7 +20,7 @@ from .video.video_generation_provider import VideoGenerator
 
 
 class VideoModelProvider:
-    """Stable facade for video generation with provider-specific routing."""
+    """视频生成稳定门面，负责按模型类型路由到底层实现。"""
 
     def __init__(self):
         self._video_generator = VideoGenerator()
@@ -28,7 +28,7 @@ class VideoModelProvider:
         self._vidu_model = None
 
     def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str | None = None):
-        """Generate a motion-reference video from a still image."""
+        """根据静态图片生成动作参考视频。"""
         return self._video_generator.generate_i2v(
             image_url=image_url,
             prompt=prompt,
@@ -37,7 +37,7 @@ class VideoModelProvider:
         )
 
     def generate_clip(self, frame):
-        """Generate a standard clip for a storyboard frame."""
+        """为分镜帧生成标准视频片段。"""
         return self._video_generator.generate_clip(frame)
 
     def generate_task_video(self, task, output_path: str, img_path: str | None = None, img_url: str | None = None):
@@ -49,8 +49,7 @@ class VideoModelProvider:
         model_prefix = (task.model or "").split("-")[0] if task.model else ""
 
         if model_prefix in ("kling",):
-            # Lazy-init optional providers so environments without these
-            # dependencies can still use the default video stack.
+            # 可选 provider 采用延迟初始化，避免缺少依赖时影响默认视频链路。
             if self._kling_model is None:
                 if KlingModel is None:
                     raise RuntimeError("KlingModel is unavailable. Check Kling dependencies and configuration.")
@@ -90,8 +89,7 @@ class VideoModelProvider:
 
         final_audio_url = None
         final_generate_audio = False
-        # Wanx keeps the older split between explicit audio_url input and
-        # boolean "generate audio" behavior, so normalize it here once.
+        # Wanx 仍沿用 audio_url 和 generate_audio 拆开的旧接口，这里统一归一化一次。
         if task.audio_url:
             final_audio_url = task.audio_url
         elif task.generate_audio:
@@ -117,7 +115,7 @@ class VideoModelProvider:
         )
 
     def build_output_path(self, task_id: str) -> str:
-        """Build and create the default output path for a video task."""
+        """构建并创建视频任务默认输出路径。"""
         output_filename = f"video_{task_id}.mp4"
         output_path = os.path.join("output", "video", output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

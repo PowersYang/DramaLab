@@ -1,7 +1,8 @@
-"""Project application service.
+"""
+项目应用服务。
 
-This service owns project-level CRUD and lightweight settings updates.
-It replaces the old pipeline-centered write path for project resources.
+这里负责项目级 CRUD 与轻量配置更新，
+替代过去以 pipeline 为中心的项目写入路径。
 """
 
 import time
@@ -12,7 +13,7 @@ from ...schemas.models import ModelSettings, PromptConfig
 
 
 class ProjectService:
-    """Application service for project aggregate operations."""
+    """负责项目聚合相关应用操作。"""
 
     def __init__(self):
         self.project_repository = ProjectRepository()
@@ -20,7 +21,7 @@ class ProjectService:
         self.text_provider = ScriptProcessor()
 
     def create_project(self, title: str, text: str, skip_analysis: bool = False):
-        """Create and persist a project from raw text input."""
+        """根据原始文本创建并持久化项目。"""
         if skip_analysis:
             project = self.text_provider.create_draft_script(title, text)
         else:
@@ -29,14 +30,13 @@ class ProjectService:
         return project
 
     def reparse_project(self, script_id: str, text: str):
-        """Re-run script parsing while preserving stable metadata fields."""
+        """重新解析剧本，同时保留稳定元数据字段。"""
         existing = self.get_project(script_id)
         if not existing:
             raise ValueError("Script not found")
 
         reparsed = self.text_provider.parse_novel(existing.title, text)
-        # Preserve identity, tenant placeholders, and user-edited config
-        # while replacing the parsed content structure.
+        # 重新解析时只替换结构化内容，保留标识、租户占位字段和用户已编辑配置。
         reparsed.id = existing.id
         reparsed.created_at = existing.created_at
         reparsed.updated_at = time.time()
@@ -56,15 +56,15 @@ class ProjectService:
         return reparsed
 
     def list_projects(self):
-        """Return all persisted projects."""
+        """返回所有已持久化项目。"""
         return self.project_repository.list()
 
     def get_project(self, script_id: str):
-        """Load a single project aggregate."""
+        """加载单个项目聚合。"""
         return self.project_repository.get(script_id)
 
     def delete_project(self, script_id: str):
-        """Delete a project and detach it from its series if needed."""
+        """删除项目，并在需要时解除它与系列的关联。"""
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Project not found")
@@ -80,7 +80,7 @@ class ProjectService:
         return {"status": "deleted", "id": script_id, "title": project.title}
 
     def sync_descriptions(self, script_id: str):
-        """Clear cached prompts so descriptions can be regenerated consistently."""
+        """清空缓存提示词，便于后续按最新描述重新生成。"""
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Script not found")
@@ -102,7 +102,7 @@ class ProjectService:
         return project
 
     def update_style(self, script_id: str, style_preset: str, style_prompt: str | None = None):
-        """Update project-level visual style selection."""
+        """更新项目级视觉风格选择。"""
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Script not found")
@@ -113,7 +113,7 @@ class ProjectService:
         return project
 
     def update_model_settings(self, script_id: str, **updates):
-        """Patch non-null model settings fields on the project."""
+        """增量更新项目上的模型设置字段。"""
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Script not found")
@@ -123,14 +123,14 @@ class ProjectService:
         return project
 
     def get_prompt_config(self, script_id: str):
-        """Return prompt config, defaulting to an empty config object."""
+        """返回提示词配置，缺省时给出空配置对象。"""
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Project not found")
         return project.prompt_config if hasattr(project, "prompt_config") else PromptConfig()
 
     def update_prompt_config(self, script_id: str, storyboard_polish: str = "", video_polish: str = "", r2v_polish: str = ""):
-        """Replace the project prompt override configuration."""
+        """整体替换项目的提示词覆写配置。"""
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Project not found")

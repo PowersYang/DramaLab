@@ -11,7 +11,7 @@ from ..providers.text.default_prompts import (
     DEFAULT_STORYBOARD_POLISH_PROMPT,
     DEFAULT_VIDEO_POLISH_PROMPT,
 )
-from backend.src.schemas.models import PromptConfig
+from ..schemas.models import PromptConfig
 from ..common import signed_response
 from ..schemas.requests import (
     AddEpisodeRequest,

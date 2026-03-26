@@ -19,10 +19,7 @@ OUTPUT_DIR = os.path.join(BACKEND_ROOT, "output")
 # Add backend root to path
 sys.path.insert(0, BACKEND_ROOT)
 
-# Load environment variables from .env
-from dotenv import load_dotenv
-load_dotenv(os.path.join(BACKEND_ROOT, ".env"))
-
+from src.settings.env_settings import get_env
 from src.utils.oss_utils import OSSImageUploader
 
 
@@ -43,7 +40,7 @@ def is_migratable_path(value: str, uploader) -> bool:
         return True
         
     # Case 2: Already has OSS prefix but might be missing from OSS
-    base_path = os.getenv('OSS_BASE_PATH', 'lumenx').strip("'\"/")
+    base_path = get_env('OSS_BASE_PATH', 'lumenx').strip("'\"/")
     if value.startswith(f"{base_path}/"):
         if not uploader.object_exists(value):
             print(f"  ! Missing from OSS: {value}")
@@ -57,7 +54,7 @@ def migrate_value(value, uploader, output_dir, stats):
     if isinstance(value, str):
         if is_migratable_path(value, uploader):
             # Determine local path
-            base_path = os.getenv('OSS_BASE_PATH', 'lumenx').strip("'\"/")
+            base_path = get_env('OSS_BASE_PATH', 'lumenx').strip("'\"/")
             
             if value.startswith(f"{base_path}/"):
                 # Convert OSS key back to local path for upload
@@ -129,7 +126,7 @@ def main():
         sys.exit(1)
     
     print(f"OSS Bucket: {uploader.bucket.bucket_name if uploader.bucket else 'N/A'}")
-    base_path = os.getenv('OSS_BASE_PATH', 'lumenx').strip("'\"/")
+    base_path = get_env('OSS_BASE_PATH', 'lumenx').strip("'\"/")
     print(f"Base Path: {base_path}")
 
     

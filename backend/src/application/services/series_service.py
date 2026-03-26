@@ -1,7 +1,7 @@
-"""Series application service.
+"""
+系列应用服务。
 
-This service manages series metadata, episode bindings, and the subset
-of shared asset edits that belong to the series aggregate.
+这里管理系列元数据、分集绑定，以及属于系列聚合的共享资产编辑。
 """
 
 import time
@@ -12,14 +12,14 @@ from ...schemas.models import PromptConfig, Series
 
 
 class SeriesService:
-    """Application service for series-level CRUD and relationship updates."""
+    """负责系列级 CRUD 与关联关系更新。"""
 
     def __init__(self):
         self.series_repository = SeriesRepository()
         self.project_repository = ProjectRepository()
 
     def create_series(self, title: str, description: str = ""):
-        """Create and persist an empty series aggregate."""
+        """创建并持久化一个空的系列聚合。"""
         series = Series(
             id=str(uuid.uuid4()),
             title=title,
@@ -31,15 +31,15 @@ class SeriesService:
         return series
 
     def list_series(self):
-        """Return all series records."""
+        """返回所有系列记录。"""
         return self.series_repository.list()
 
     def get_series(self, series_id: str):
-        """Load a single series aggregate."""
+        """加载单个系列聚合。"""
         return self.series_repository.get(series_id)
 
     def update_series(self, series_id: str, updates: dict):
-        """Patch mutable series fields while keeping identity fields immutable."""
+        """更新系列可变字段，同时保持标识字段不可改。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -51,7 +51,7 @@ class SeriesService:
         return series
 
     def delete_series(self, series_id: str):
-        """Delete a series and detach all linked episodes."""
+        """删除系列，并解除所有已关联分集。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -65,7 +65,7 @@ class SeriesService:
         self.series_repository.delete(series_id)
 
     def add_episode(self, series_id: str, script_id: str, episode_number: int | None = None):
-        """Attach an existing project to a series, rehoming if necessary."""
+        """把现有项目挂到系列下，必要时先从旧系列迁出。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -89,7 +89,7 @@ class SeriesService:
         return series
 
     def remove_episode(self, series_id: str, script_id: str):
-        """Detach an episode from its series."""
+        """把一个分集从系列中移除。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -106,18 +106,18 @@ class SeriesService:
         return series
 
     def get_episodes(self, series_id: str):
-        """List projects currently linked to a series."""
+        """列出当前挂在该系列下的项目。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
         return [project for project in self.project_repository.list() if project.series_id == series_id]
 
     def update_prompt_config(self, series_id: str, config: PromptConfig):
-        """Replace the series-level prompt override configuration."""
+        """整体替换系列级提示词覆写配置。"""
         return self.update_series(series_id, {"prompt_config": config})
 
     def update_model_settings(self, series_id: str, updates: dict):
-        """Patch non-null model settings fields for the series."""
+        """增量更新系列级模型设置字段。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -127,7 +127,7 @@ class SeriesService:
         return series
 
     def toggle_asset_lock(self, series_id: str, asset_id: str, asset_type: str):
-        """Toggle lock state for a shared series asset."""
+        """切换系列共享资产的锁定状态。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -138,7 +138,7 @@ class SeriesService:
         return series
 
     def update_asset_image(self, series_id: str, asset_id: str, asset_type: str, image_url: str):
-        """Update the selected image URL for a shared series asset."""
+        """更新系列共享资产当前选中的图片地址。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -151,7 +151,7 @@ class SeriesService:
         return series
 
     def update_asset_attributes(self, series_id: str, asset_id: str, asset_type: str, attributes: dict):
-        """Patch mutable attributes on a shared series asset."""
+        """增量更新系列共享资产的可变属性。"""
         series = self.get_series(series_id)
         if not series:
             raise ValueError("Series not found")
@@ -164,7 +164,7 @@ class SeriesService:
         return series
 
     def _find_series_asset(self, series, asset_id: str, asset_type: str):
-        """Resolve a concrete shared asset object by logical type and id."""
+        """按逻辑类型和 id 解析系列中的共享资产对象。"""
         if asset_type == "character":
             target = next((item for item in series.characters if item.id == asset_id), None)
         elif asset_type == "scene":

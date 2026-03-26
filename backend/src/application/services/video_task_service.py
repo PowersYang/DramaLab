@@ -1,7 +1,8 @@
-"""Video task application service.
+"""
+视频任务应用服务。
 
-This service creates persistent video generation jobs and keeps the
-request-side task preparation out of controllers.
+这里负责创建持久化视频生成任务，
+并把请求侧的任务准备逻辑从控制器中拆出来。
 """
 
 import os
@@ -15,7 +16,7 @@ from .character_service import CharacterService
 
 
 class VideoTaskService:
-    """Application service for video task creation and task-side helpers."""
+    """负责视频任务创建及请求侧辅助逻辑。"""
 
     def __init__(self):
         self.project_repository = ProjectRepository()
@@ -45,7 +46,7 @@ class VideoTaskService:
         vidu_audio: bool | None = None,
         movement_amplitude: str | None = None,
     ) -> list[VideoTask]:
-        """Create one or more persisted video tasks for a project."""
+        """为项目创建一个或多个持久化视频任务。"""
         project = self.project_repository.get(script_id)
         if not project:
             raise ValueError("Script not found")
@@ -85,15 +86,15 @@ class VideoTaskService:
         return tasks
 
     def bind_voice(self, script_id: str, char_id: str, voice_id: str, voice_name: str):
-        """Delegate voice binding to the character service."""
+        """把语音绑定请求转交给角色服务。"""
         return CharacterService().bind_voice(script_id, char_id, voice_id, voice_name)
 
     def update_voice_params(self, script_id: str, char_id: str, speed: float, pitch: float, volume: int):
-        """Delegate voice parameter updates to the character service."""
+        """把语音参数更新请求转交给角色服务。"""
         return CharacterService().update_voice_params(script_id, char_id, speed, pitch, volume)
 
     def _snapshot_input_image(self, task_id: str, image_url: str) -> str:
-        """Copy local input images so later edits do not mutate task inputs."""
+        """复制本地输入图片，避免后续编辑影响已创建任务。"""
         snapshot_url = image_url
         try:
             if image_url and not image_url.startswith("http"):

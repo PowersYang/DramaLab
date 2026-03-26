@@ -1,7 +1,7 @@
-"""Scene application service.
+"""
+场景应用服务。
 
-Scene CRUD is handled here so controllers no longer need to update the
-full project aggregate through a monolithic pipeline.
+场景 CRUD 统一放在这里，避免控制器再通过单体式 pipeline 更新整个项目聚合。
 """
 
 import time
@@ -12,14 +12,14 @@ from ...schemas.models import GenerationStatus, Scene
 
 
 class SceneService:
-    """Application service for scene resource operations."""
+    """负责场景资源相关应用操作。"""
 
     def __init__(self):
         self.scene_repository = SceneRepository()
         self.project_repository = ProjectRepository()
 
     def create_scene(self, project_id: str, name: str, description: str):
-        """Create a new scene inside the target project."""
+        """在目标项目中创建一个新场景。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
@@ -33,7 +33,7 @@ class SceneService:
         return self.project_repository.get(project_id)
 
     def delete_scene(self, project_id: str, scene_id: str):
-        """Delete a scene and clear frame references that point to it."""
+        """删除场景，并清理分镜帧里指向它的引用。"""
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")

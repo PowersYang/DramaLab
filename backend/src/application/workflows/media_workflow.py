@@ -8,6 +8,7 @@
 import os
 import platform
 import subprocess
+import tempfile
 import time
 
 from ...providers import AudioGenerator, VideoModelProvider
@@ -16,12 +17,13 @@ from ...repository import ProjectRepository, VideoTaskRepository
 from ...utils.path_safety import safe_resolve_path, validate_safe_id
 from ...utils import get_logger
 from ...utils.system_check import get_ffmpeg_install_instructions, get_ffmpeg_path
+from ...utils.oss_utils import OSSImageUploader, is_object_key
 
 logger = get_logger(__name__)
 
 
 class MediaWorkflow:
-    """Coordinate video generation, audio generation, and export flows."""
+    """负责视频生成、音频生成与导出流程编排。"""
 
     def __init__(self):
         self.project_repository = ProjectRepository()
@@ -31,11 +33,11 @@ class MediaWorkflow:
         self.export_manager = ExportManager()
 
     def get_available_voices(self):
-        """Expose available TTS voice metadata to the API layer."""
+        """向 API 层暴露当前可用的 TTS 音色列表。"""
         return self.audio_provider.get_available_voices()
 
     def generate_video(self, script_id: str):
-        """Generate clip videos for frames that do not already have outputs."""
+        """为尚未产出视频的分镜帧生成视频片段。"""
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.status == "completed" and frame.video_url:
@@ -46,7 +48,7 @@ class MediaWorkflow:
         return self._get_project(script_id)
 
     def generate_audio(self, script_id: str):
-        """Generate dialogue, SFX, and BGM for each frame in the project."""
+        """为项目中每一帧生成对白、音效和背景音乐。"""
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.dialogue and frame.character_ids:
@@ -69,7 +71,7 @@ class MediaWorkflow:
         return self._get_project(script_id)
 
     def process_video_task(self, script_id: str, task_id: str):
-        """Execute a persisted video task and mirror results back to the project."""
+        """执行持久化视频任务，并把结果同步回项目聚合。"""
         project = self._get_project(script_id)
         task = self.video_task_repository.get(script_id, task_id)
         if not task:
@@ -88,7 +90,7 @@ class MediaWorkflow:
                 img_path=img_path,
                 img_url=task.image_url,
             )
-            task.video_url = os.path.relpath(output_path, "output")
+            task.video_url = self._persist_output(output_path, "video/tasks")
             task.status = "completed"
         except Exception as exc:
             logger.exception("Failed to process video task")
@@ -103,7 +105,7 @@ class MediaWorkflow:
         self.project_repository.save(project)
 
     def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float, pitch: float, volume: int):
-        """Generate dialogue audio for a single frame on demand."""
+        """按需为单个分镜帧生成对白音频。"""
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -117,7 +119,7 @@ class MediaWorkflow:
         return self._get_project(script_id)
 
     def merge_videos(self, script_id: str):
-        """Merge selected frame videos into a single output using FFmpeg."""
+        """使用 FFmpeg 把已选中的分镜视频合并成单个输出。"""
         validate_safe_id(script_id, "script_id")
         project = self._get_project(script_id)
         ffmpeg_path = get_ffmpeg_path()
@@ -136,8 +138,7 @@ class MediaWorkflow:
 
         video_paths = []
         for frame in project.frames:
-            # Prefer the user-selected video. Fall back to the first completed
-            # task for compatibility with older projects and partial edits.
+            # 优先使用用户当前选中的视频；若没有，则退回到该帧第一个已完成任务，兼容旧项目数据。
             if frame.selected_video_id:
                 video = next((item for item in project.video_tasks if item.id == frame.selected_video_id), None)
                 if video and video.video_url:
@@ -150,73 +151,78 @@ class MediaWorkflow:
         if not video_paths:
             raise ValueError("No videos selected to merge. Please select videos for each frame first.")
 
-        list_path = safe_resolve_path("output", f"merge_list_{script_id}.txt")
-        abs_video_paths = []
-        with open(list_path, "w") as file_obj:
-            for path in video_paths:
-                if path.startswith("http"):
-                    continue
-                abs_path = safe_resolve_path("output", path)
-                if os.path.exists(abs_path):
-                    file_obj.write(f"file '{abs_path}'\n")
-                    abs_video_paths.append(abs_path)
+        with tempfile.TemporaryDirectory(prefix="lumenx-merge-") as temp_dir:
+            list_path = os.path.join(temp_dir, f"merge_list_{script_id}.txt")
+            abs_video_paths = []
+            with open(list_path, "w") as file_obj:
+                for index, path in enumerate(video_paths):
+                    materialized_path = self._materialize_media_input(
+                        path,
+                        temp_dir=temp_dir,
+                        filename_hint=f"merge_{index}.mp4",
+                    )
+                    if materialized_path and os.path.exists(materialized_path):
+                        file_obj.write(f"file '{materialized_path}'\n")
+                        abs_video_paths.append(materialized_path)
 
-        if not abs_video_paths:
-            raise ValueError("No valid video files found. The video files may have been deleted or moved.")
+            if not abs_video_paths:
+                raise ValueError("No valid video files found. The video files may have been deleted or moved.")
 
-        output_filename = f"merged_{script_id}_{int(time.time())}.mp4"
-        output_path = safe_resolve_path(os.path.join("output", "video"), output_filename)
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_filename = f"merged_{script_id}_{int(time.time())}.mp4"
+            output_path = safe_resolve_path(os.path.join("output", "video"), output_filename)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        cmd = [
-            ffmpeg_path,
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            list_path,
-            "-c:v",
-            "libx264",
-            "-crf",
-            "23",
-            "-preset",
-            "fast",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-movflags",
-            "+faststart",
-            output_path,
-        ]
+            cmd = [
+                ffmpeg_path,
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                list_path,
+                "-c:v",
+                "libx264",
+                "-crf",
+                "23",
+                "-preset",
+                "fast",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                output_path,
+            ]
 
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, timeout=600)
-            project.merged_video_url = f"videos/{output_filename}"
-            project.updated_at = time.time()
-            self.project_repository.save(project)
-            if os.path.exists(list_path):
-                os.remove(list_path)
-            return self._get_project(script_id)
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("FFmpeg timed out. The videos may be too large.")
-        except subprocess.CalledProcessError as exc:
-            stderr_msg = exc.stderr.decode() if exc.stderr else "No error output"
-            raise RuntimeError(self._extract_ffmpeg_error_message(stderr_msg))
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+                project.merged_video_url = self._persist_output(output_path, "video/merged")
+                project.updated_at = time.time()
+                self.project_repository.save(project)
+                return self._get_project(script_id)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("FFmpeg timed out. The videos may be too large.")
+            except subprocess.CalledProcessError as exc:
+                stderr_msg = exc.stderr.decode() if exc.stderr else "No error output"
+                raise RuntimeError(self._extract_ffmpeg_error_message(stderr_msg))
 
     def export_project(self, script_id: str, options: dict):
-        """Run the export provider and persist the resulting output URL."""
+        """执行导出 provider，并持久化最终输出地址。"""
         project = self._get_project(script_id)
         export_url = self.export_manager.render_project(project, options)
-        project.merged_video_url = export_url
+        export_local_path = safe_resolve_path("output", export_url)
+        if os.path.exists(export_local_path):
+            project.merged_video_url = self._persist_output(export_local_path, "export")
+        else:
+            project.merged_video_url = export_url
         project.updated_at = time.time()
         self.project_repository.save(project)
-        return {"url": export_url}
+        return {"url": project.merged_video_url}
 
     def _sync_asset_video_task(self, project, task):
-        """Mirror task updates into aggregate fields still consumed by the UI."""
+        """把任务更新镜像回仍被 UI 使用的聚合字段。"""
         if not task.asset_id:
             return
         target_asset = next((item for item in project.characters if item.id == task.asset_id), None)
@@ -242,18 +248,61 @@ class MediaWorkflow:
             project.video_tasks.append(task)
 
     def _download_temp_image(self, url: str):
-        """Resolve a local image URL into an on-disk file path when possible."""
+        """尽可能把本地图片地址解析成磁盘文件路径。"""
         if not url:
             return None
-        if not url.startswith("http"):
-            local_path = safe_resolve_path("output", url)
+        if is_object_key(url) or url.startswith("http"):
+            with tempfile.NamedTemporaryFile(prefix="lumenx-input-", suffix=os.path.splitext(url)[1] or ".png", delete=False) as tmp:
+                tmp_path = tmp.name
+            if self._download_to_local(url, tmp_path):
+                return tmp_path
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return None
+
+        local_path = safe_resolve_path("output", url)
         if os.path.exists(local_path):
             return local_path
         return None
+
+    def _persist_output(self, local_path: str, sub_path: str) -> str:
+        """优先保存为 OSS 对象键；失败时回退到本地相对路径。"""
+        try:
+            uploader = OSSImageUploader()
+            if uploader.is_configured:
+                object_key = uploader.upload_file(local_path, sub_path=sub_path)
+                if object_key:
+                    return object_key
+        except Exception as exc:
+            logger.error("Failed to upload output %s to OSS: %s", local_path, exc)
+        return os.path.relpath(local_path, "output")
+
+    def _download_to_local(self, source: str, local_path: str) -> bool:
+        uploader = OSSImageUploader()
+        if is_object_key(source):
+            return uploader.download_file(source, local_path)
+        if source.startswith("http"):
+            return uploader.download_file(source, local_path)
+        return False
+
+    def _materialize_media_input(self, source: str, temp_dir: str, filename_hint: str) -> str | None:
+        """把 OSS 对象或远程地址下载成本地临时文件，供 FFmpeg 使用。"""
+        if not source:
+            return None
+
+        if is_object_key(source) or source.startswith("http"):
+            local_path = os.path.join(temp_dir, filename_hint)
+            return local_path if self._download_to_local(source, local_path) else None
+
+        local_path = safe_resolve_path("output", source)
+        if os.path.exists(local_path):
+            return local_path
+        if os.path.exists(source):
+            return source
         return None
 
     def _extract_ffmpeg_error_message(self, stderr: str):
-        """Map common FFmpeg failures to more actionable user-facing messages."""
+        """把常见 FFmpeg 错误映射成更可读的用户提示。"""
         if not stderr:
             return "FFmpeg merge failed with no error output. Please check the log files."
         stderr_lower = stderr.lower()
@@ -268,7 +317,7 @@ class MediaWorkflow:
         return f"FFmpeg merge failed: {stderr.strip().splitlines()[-1]}"
 
     def _get_project(self, script_id: str):
-        """Load a project aggregate or raise a not-found error."""
+        """加载项目聚合，缺失时抛出未找到错误。"""
         project = self.project_repository.get(script_id)
         if not project:
             raise ValueError("Script not found")

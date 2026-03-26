@@ -1,8 +1,9 @@
 import os
 import oss2
-import hashlib
 import time
-from typing import Optional, Tuple
+import requests
+from typing import Optional
+from src.settings.env_settings import get_env
 from . import get_logger
 
 logger = get_logger(__name__)
@@ -16,17 +17,17 @@ SIGN_URL_EXPIRES_API = 1800      # AI 接口调用用，默认 30 分钟
 def is_oss_configured() -> bool:
     """检查 OSS 基础配置是否齐全。"""
     required = [
-        os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"),
-        os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"),
-        os.getenv("OSS_ENDPOINT"),
-        os.getenv("OSS_BUCKET_NAME")
+        get_env("ALIBABA_CLOUD_ACCESS_KEY_ID"),
+        get_env("ALIBABA_CLOUD_ACCESS_KEY_SECRET"),
+        get_env("OSS_ENDPOINT"),
+        get_env("OSS_BUCKET_NAME")
     ]
     return all(required)
 
 
 def get_oss_base_path() -> str:
     """读取 OSS 根路径；未配置时使用默认值。"""
-    return os.getenv("OSS_BASE_PATH", DEFAULT_OSS_BASE_PATH).rstrip("/")
+    return get_env("OSS_BASE_PATH", DEFAULT_OSS_BASE_PATH).rstrip("/")
 
 
 def is_object_key(value: str) -> bool:
@@ -97,10 +98,10 @@ class OSSImageUploader:
         if self._initialized:
             return
             
-        self.access_key_id = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
-        self.access_key_secret = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
-        self.endpoint = os.getenv("OSS_ENDPOINT")
-        self.bucket_name = os.getenv("OSS_BUCKET_NAME")
+        self.access_key_id = get_env("ALIBABA_CLOUD_ACCESS_KEY_ID")
+        self.access_key_secret = get_env("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
+        self.endpoint = get_env("OSS_ENDPOINT")
+        self.bucket_name = get_env("OSS_BUCKET_NAME")
         self.base_path = get_oss_base_path()
         
         # 启动时把关键状态打印出来，便于桌面端排查配置问题
@@ -227,6 +228,38 @@ class OSSImageUploader:
             return self.bucket.object_exists(object_key)
         except:
             return False
+
+    def download_file(self, source: str, local_path: str) -> bool:
+        """
+        把 OSS 对象或远程 URL 落成本地文件。
+
+        仅用于 FFmpeg、导出等仍必须依赖本地路径的运行时环节。
+        """
+        if not source:
+            return False
+
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+        try:
+            if is_object_key(source):
+                if not self.bucket:
+                    logger.warning("OSS not configured, cannot download object: %s", source)
+                    return False
+                self.bucket.get_object_to_file(source, local_path)
+                return True
+
+            if source.startswith(("http://", "https://")):
+                response = requests.get(source, stream=True, timeout=60)
+                response.raise_for_status()
+                with open(local_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                return True
+        except Exception as e:
+            logger.error(f"Failed to download source {source} to {local_path}: {e}")
+
+        return False
     
     # 兼容旧调用方式的包装方法
     def upload_image(self, local_image_path: str, sub_path: str = "assets") -> Optional[str]:

@@ -1,7 +1,7 @@
-"""Asset application service.
+"""
+资产应用服务。
 
-This service handles direct user edits to asset state such as locking,
-selecting variants, and uploading manual replacements.
+这里处理用户对资产状态的直接编辑，例如锁定、切换候选图、上传手工替换图等。
 """
 
 import os
@@ -16,20 +16,20 @@ from ...utils.oss_utils import OSSImageUploader
 
 
 class AssetService:
-    """Application service for project asset mutations."""
+    """负责项目资产相关变更。"""
 
     def __init__(self):
         self.project_repository = ProjectRepository()
 
     def toggle_lock(self, script_id: str, asset_id: str, asset_type: str):
-        """Toggle lock state for a project asset."""
+        """切换项目资产的锁定状态。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.locked = not asset.locked
         return self._save_project(project)
 
     def update_image(self, script_id: str, asset_id: str, asset_type: str, image_url: str):
-        """Update the currently selected image URL for an asset."""
+        """更新资产当前选中的图片地址。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.image_url = image_url
@@ -38,11 +38,11 @@ class AssetService:
         return self._save_project(project)
 
     def update_description(self, script_id: str, asset_id: str, asset_type: str, description: str):
-        """Update only the description field of an asset."""
+        """仅更新资产的描述字段。"""
         return self.update_attributes(script_id, asset_id, asset_type, {"description": description})
 
     def update_attributes(self, script_id: str, asset_id: str, asset_type: str, attributes: dict[str, Any]):
-        """Patch mutable asset attributes with the provided values."""
+        """按给定值增量更新资产可变属性。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         for key, value in attributes.items():
@@ -51,7 +51,7 @@ class AssetService:
         return self._save_project(project)
 
     def select_variant(self, script_id: str, asset_id: str, asset_type: str, variant_id: str, generation_type: str | None = None):
-        """Select an image variant and sync any denormalized top-level URLs."""
+        """选中一个图片候选，并同步顶层冗余图片地址。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         variant = None
@@ -98,7 +98,7 @@ class AssetService:
         return self._save_project(project)
 
     def delete_variant(self, script_id: str, asset_id: str, asset_type: str, variant_id: str):
-        """Delete a variant and refresh the selected URL if it changed."""
+        """删除候选图，并在必要时刷新当前选中地址。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
 
@@ -121,7 +121,7 @@ class AssetService:
         return self._save_project(project)
 
     def toggle_variant_favorite(self, script_id: str, asset_id: str, asset_type: str, variant_id: str, is_favorited: bool, generation_type: str | None = None):
-        """Mark or unmark a variant as favorited."""
+        """设置或取消候选图收藏状态。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         found = False
@@ -144,7 +144,7 @@ class AssetService:
         return self._save_project(project)
 
     def upload_variant(self, script_id: str, asset_type: str, asset_id: str, upload_type: str, image_url: str, description: str | None = None):
-        """Attach a user-uploaded image as a new variant for an asset."""
+        """把用户上传图片作为资产的新候选图挂载进去。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         new_variant = ImageVariant(
@@ -158,8 +158,7 @@ class AssetService:
             asset.description = description
 
         if asset_type == "character":
-            # Character uploads must update both the new AssetUnit structure
-            # and the legacy ImageAsset fields still used elsewhere.
+            # 角色上传要同时维护新的 AssetUnit 结构和仍被其它代码使用的旧 ImageAsset 字段。
             if upload_type == "full_body":
                 target_unit = asset.full_body or AssetUnit()
                 asset.full_body = target_unit
@@ -197,7 +196,7 @@ class AssetService:
         return self._save_project(project)
 
     def delete_asset_video(self, script_id: str, asset_id: str, asset_type: str, video_id: str):
-        """Remove a generated asset video from both asset and project scope."""
+        """同时从资产范围和项目范围移除一个生成视频。"""
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         if hasattr(asset, "video_assets") and asset.video_assets is not None:
@@ -206,7 +205,7 @@ class AssetService:
         return self._save_project(project)
 
     def select_video_for_frame(self, script_id: str, frame_id: str, video_id: str):
-        """Bind a generated video task as the selected output for a frame."""
+        """把生成视频任务绑定为分镜帧当前选中结果。"""
         project = self._get_project(script_id)
         frame = next((frame for frame in project.frames if frame.id == frame_id), None)
         if not frame:
@@ -220,7 +219,7 @@ class AssetService:
         return self._save_project(project)
 
     def upload_frame_image(self, script_id: str, frame_id: str, image_path: str):
-        """Upload a manual storyboard frame image and store it as a variant."""
+        """上传手工分镜图，并把它作为候选图保存。"""
         project = self._get_project(script_id)
         frame = next((frame for frame in project.frames if frame.id == frame_id), None)
         if not frame:
@@ -245,14 +244,14 @@ class AssetService:
         return self._save_project(project)
 
     def _get_project(self, script_id: str):
-        """Load a project aggregate or raise a consistent not-found error."""
+        """加载项目聚合，缺失时抛出统一错误。"""
         project = self.project_repository.get(script_id)
         if not project:
             raise ValueError("Script not found")
         return project
 
     def _find_asset(self, project, asset_id: str, asset_type: str):
-        """Resolve an asset object by logical asset type inside a project."""
+        """在项目内按逻辑资产类型解析目标对象。"""
         if asset_type == "character":
             target = next((item for item in project.characters if item.id == asset_id), None)
         elif asset_type == "scene":
@@ -268,13 +267,13 @@ class AssetService:
         return target
 
     def _save_project(self, project):
-        """Persist project aggregate changes and return a fresh read."""
+        """持久化项目聚合变更，并返回最新读取结果。"""
         project.updated_at = time.time()
         self.project_repository.save(project)
         return self.project_repository.get(project.id)
 
     def _select_in_image_asset(self, image_asset: ImageAsset | None, variant_id: str):
-        """Select a variant inside a legacy ImageAsset container."""
+        """在旧版 ImageAsset 容器中选中一个候选图。"""
         if not image_asset or not image_asset.variants:
             return None
         for variant in image_asset.variants:
