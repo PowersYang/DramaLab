@@ -277,6 +277,18 @@ export interface PromptConfig {
     r2v_polish: string;
 }
 
+export interface FinalMixClipDraft {
+    frame_id: string;
+    video_id: string;
+    clip_order: number;
+    trim_start: number;
+    trim_end: number;
+}
+
+export interface FinalMixTimelineDraft {
+    clips: FinalMixClipDraft[];
+}
+
 export interface Series {
     id: string;
     title: string;
@@ -312,6 +324,7 @@ export interface Project {
     model_settings?: ModelSettings;
     prompt_config?: PromptConfig;
     merged_video_url?: string;
+    final_mix_timeline?: FinalMixTimelineDraft;
     series_id?: string;
     episode_number?: number;
 }
@@ -381,6 +394,22 @@ const normalizeProject = (project: any): any => {
         ...(Array.isArray(project.props) ? { props: sortByCreatedAt(project.props).map(normalizeAssetOwner) } : {}),
         ...(Array.isArray(project.frames) ? { frames: sortStoryboardFrames(project.frames) } : {}),
         ...(Array.isArray(project.video_tasks) ? { video_tasks: sortVideoTasks(project.video_tasks) } : {}),
+    };
+};
+
+const mergeProjectDrafts = (incomingProject: any, existingProject?: any): any => {
+    if (!incomingProject) {
+        return incomingProject;
+    }
+
+    if (!existingProject?.final_mix_timeline || incomingProject.final_mix_timeline) {
+        return incomingProject;
+    }
+
+    // Final Mix 时间轴当前先保存在前端项目状态里；后端刷新项目时要保留这份本地草稿。
+    return {
+        ...incomingProject,
+        final_mix_timeline: existingProject.final_mix_timeline,
     };
 };
 
@@ -478,7 +507,9 @@ export const useProjectStore = create<ProjectStore>()(
                         if (job.status !== "succeeded") {
                             throw new Error(job.error_message || "重新解析项目失败");
                         }
-                        const project = normalizeProject(await api.getProject(currentProject.id));
+                        const project = normalizeProject(
+                            mergeProjectDrafts(await api.getProject(currentProject.id), currentProject)
+                        );
                         set((state) => ({
                             projects: state.projects.map((p) =>
                                 p.id === project.id ? { ...project, updatedAt: new Date().toISOString() } : p
@@ -516,10 +547,10 @@ export const useProjectStore = create<ProjectStore>()(
                     if (response.ok) {
                         const rawData = await response.json();
                         // Transform data to match frontend model (snake_case -> camelCase for specific fields)
-                        const latestProject = normalizeProject({
+                        const latestProject = normalizeProject(mergeProjectDrafts({
                             ...rawData,
                             originalText: rawData.original_text
-                        });
+                        }, cachedProject));
 
                         // Update both currentProject and projects array with latest data
                         set((state) => ({

@@ -2,6 +2,9 @@
 项目媒体路由：视频任务、语音音频、混音、合成与导出。
 """
 
+import hashlib
+import json
+
 from fastapi import APIRouter, Header, HTTPException
 
 from ..application.tasks import TaskService
@@ -14,6 +17,7 @@ from ..schemas.requests import (
     CreateVideoTaskRequest,
     ExportRequest,
     GenerateLineAudioRequest,
+    MergeVideosRequest,
     UpdateVoiceParamsRequest,
 )
 from ..schemas.task_models import TaskReceipt
@@ -24,6 +28,13 @@ video_task_service = VideoTaskService()
 media_workflow = MediaWorkflow()
 project_service = ProjectService()
 task_service = TaskService()
+
+
+def _timeline_scope_suffix(final_mix_timeline: dict | None) -> str:
+    if not final_mix_timeline:
+        return "default"
+    digest = hashlib.sha256(json.dumps(final_mix_timeline, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    return digest
 
 
 @router.post("/projects/{script_id}/generate_video", response_model=TaskReceipt)
@@ -254,6 +265,7 @@ async def generate_mix_bgm(
 @router.post("/projects/{script_id}/merge", response_model=TaskReceipt)
 async def merge_videos(
     script_id: str,
+    request: MergeVideosRequest | None = None,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """把所有已选中的分镜视频合成为最终成片。"""
@@ -261,14 +273,17 @@ async def merge_videos(
         logger.info("MEDIA_API: merge_videos script_id=%s", script_id)
         receipt = task_service.create_job(
             task_type="media.merge",
-            payload={"project_id": script_id},
+            payload={
+                "project_id": script_id,
+                "final_mix_timeline": request.model_dump(mode="json").get("final_mix_timeline") if request else None,
+            },
             project_id=script_id,
             queue_name="video",
             resource_type="project",
             resource_id=script_id,
             timeout_seconds=1800,
             idempotency_key=idempotency_key,
-            dedupe_scope="media_merge",
+            dedupe_scope=f"media_merge:{_timeline_scope_suffix(request.model_dump(mode='json').get('final_mix_timeline') if request else None)}",
         )
         return signed_response(receipt)
     except ValueError as exc:
@@ -312,7 +327,10 @@ async def export_project(
             resource_id=script_id,
             timeout_seconds=1800,
             idempotency_key=idempotency_key,
-            dedupe_scope=f"project_export:{request.resolution}:{request.format}:{request.subtitles}",
+            dedupe_scope=(
+                f"project_export:{request.resolution}:{request.format}:{request.subtitles}:"
+                f"{_timeline_scope_suffix(request.model_dump(mode='json').get('final_mix_timeline'))}"
+            ),
         )
         return signed_response(receipt)
     except HTTPException:

@@ -266,6 +266,18 @@ export interface TaskJob {
     created_at: string | number;
 }
 
+export interface FinalMixClipDraft {
+    frame_id: string;
+    video_id: string;
+    clip_order: number;
+    trim_start: number;
+    trim_end: number;
+}
+
+export interface FinalMixTimelineDraft {
+    clips: FinalMixClipDraft[];
+}
+
 export const api = {
     createProject: async (title: string, text: string, skipAnalysis: boolean = false) => {
         const res = await axios.post(`${API_URL}/projects`, { title, text }, {
@@ -585,8 +597,10 @@ export const api = {
         return res.data;
     },
 
-    mergeVideos: async (scriptId: string): Promise<TaskReceipt> => {
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/merge`);
+    mergeVideos: async (scriptId: string, finalMixTimeline?: FinalMixTimelineDraft | null): Promise<TaskReceipt> => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/merge`, {
+            final_mix_timeline: finalMixTimeline || undefined,
+        });
         return res.data;
     },
 

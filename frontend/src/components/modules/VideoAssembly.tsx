@@ -69,7 +69,7 @@ export default function VideoAssembly() {
         setMergeError(null);  // Clear previous errors
 
         try {
-            const receipt = await api.mergeVideos(currentProject.id);
+            const receipt = await api.mergeVideos(currentProject.id, currentProject.final_mix_timeline);
             enqueueReceipts(currentProject.id, [receipt]);
             const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {

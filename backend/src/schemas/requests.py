@@ -3,6 +3,18 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class FinalMixClipRequest(BaseModel):
+    frame_id: str
+    video_id: str
+    clip_order: int
+    trim_start: float = 0
+    trim_end: float = 0
+
+
+class FinalMixTimelineRequest(BaseModel):
+    clips: List[FinalMixClipRequest] = Field(default_factory=list)
+
+
 class GenerateAssetRequest(BaseModel):
     asset_id: str
     asset_type: str
@@ -277,6 +289,11 @@ class ExportRequest(BaseModel):
     resolution: str = "1080p"
     format: str = "mp4"
     subtitles: str = "none"
+    final_mix_timeline: Optional[FinalMixTimelineRequest] = None
+
+
+class MergeVideosRequest(BaseModel):
+    final_mix_timeline: Optional[FinalMixTimelineRequest] = None
 
 
 class AnalyzeStyleRequest(BaseModel):

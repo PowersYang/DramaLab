@@ -31,18 +31,24 @@ export default function ExportStudio() {
         setExportError(null);
 
         try {
-            const receipt = await api.exportProject(currentProject.id, { resolution, format, subtitles });
+            const receipt = await api.exportProject(currentProject.id, {
+                resolution,
+                format,
+                subtitles,
+                final_mix_timeline: currentProject.final_mix_timeline,
+            });
             enqueueReceipts(currentProject.id, [receipt]);
             const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "导出失败");
             }
-            const nextUrl = job.result_json?.url || null;
-            if (nextUrl) {
-                setExportUrl(nextUrl);
-            }
             const updatedProject = await api.getProject(currentProject.id);
             updateProject(currentProject.id, updatedProject);
+            const nextUrl = job.result_json?.url || updatedProject.merged_video_url || null;
+            if (!nextUrl) {
+                throw new Error("导出任务已完成，但没有拿到导出视频地址");
+            }
+            setExportUrl(nextUrl);
         } catch (error: any) {
             console.error("Export failed:", error);
             setExportError(error?.message || "Export failed. Please check that videos have been generated.");

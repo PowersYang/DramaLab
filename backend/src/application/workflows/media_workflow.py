@@ -131,7 +131,7 @@ class MediaWorkflow:
         logger.info("MEDIA_WORKFLOW: generate_dialogue_line completed script_id=%s frame_id=%s", script_id, frame_id)
         return self._get_project(script_id)
 
-    def merge_videos(self, script_id: str):
+    def merge_videos(self, script_id: str, final_mix_timeline: dict | None = None):
         """使用 FFmpeg 把已选中的分镜视频合并成单个输出。"""
         logger.info("MEDIA_WORKFLOW: merge_videos script_id=%s", script_id)
         validate_safe_id(script_id, "script_id")
@@ -150,35 +150,34 @@ class MediaWorkflow:
         except Exception:
             logger.warning("Could not get FFmpeg version")
 
-        video_paths = []
-        for frame in project.frames:
-            # 优先使用用户当前选中的视频；若没有，则退回到该帧第一个已完成任务，兼容旧项目数据。
-            if frame.selected_video_id:
-                video = next((item for item in project.video_tasks if item.id == frame.selected_video_id), None)
-                if video and video.video_url:
-                    video_paths.append(video.video_url)
-                continue
-            default_video = next((item for item in project.video_tasks if item.frame_id == frame.id and item.status == "completed"), None)
-            if default_video and default_video.video_url:
-                video_paths.append(default_video.video_url)
-
-        if not video_paths:
+        clip_specs = self._resolve_merge_clips(project, final_mix_timeline)
+        if not clip_specs:
             raise ValueError("No videos selected to merge. Please select videos for each frame first.")
-        logger.info("MEDIA_WORKFLOW: merge_videos selected_video_count=%s script_id=%s", len(video_paths), script_id)
+        logger.info("MEDIA_WORKFLOW: merge_videos selected_clip_count=%s script_id=%s", len(clip_specs), script_id)
 
         with tempfile.TemporaryDirectory(prefix="lumenx-merge-") as temp_dir:
             list_path = os.path.join(temp_dir, f"merge_list_{script_id}.txt")
             abs_video_paths = []
             with open(list_path, "w") as file_obj:
-                for index, path in enumerate(video_paths):
-                    materialized_path = self._materialize_media_input(
-                        path,
+                for index, clip in enumerate(clip_specs):
+                    source_path = self._materialize_media_input(
+                        clip["video_url"],
                         temp_dir=temp_dir,
-                        filename_hint=f"merge_{index}.mp4",
+                        filename_hint=f"merge_source_{index}.mp4",
                     )
-                    if materialized_path and os.path.exists(materialized_path):
-                        file_obj.write(f"file '{materialized_path}'\n")
-                        abs_video_paths.append(materialized_path)
+                    if not source_path or not os.path.exists(source_path):
+                        continue
+                    trimmed_path = self._trim_video_clip(
+                        ffmpeg_path,
+                        source_path=source_path,
+                        temp_dir=temp_dir,
+                        index=index,
+                        trim_start=float(clip["trim_start"]),
+                        trim_end=float(clip["trim_end"]),
+                    )
+                    if trimmed_path and os.path.exists(trimmed_path):
+                        file_obj.write(f"file '{trimmed_path}'\n")
+                        abs_video_paths.append(trimmed_path)
 
             if not abs_video_paths:
                 raise ValueError("No valid video files found. The video files may have been deleted or moved.")
@@ -228,21 +227,111 @@ class MediaWorkflow:
         """执行导出 provider，并持久化最终输出地址。"""
         logger.info("MEDIA_WORKFLOW: export_project script_id=%s option_keys=%s", script_id, sorted(options.keys()))
         project = self._get_project(script_id)
-        # 兼容旧行为：当前导出参数仍未真正接入底层导出管线时，
-        # 如果项目已有合成成片，就直接复用它，避免重复做一遍耗时渲染。
+        final_mix_timeline = options.get("final_mix_timeline")
+        if final_mix_timeline:
+            logger.info("MEDIA_WORKFLOW: export_project use_final_mix_timeline script_id=%s", script_id)
+            project = self.merge_videos(script_id, final_mix_timeline=final_mix_timeline)
+            return {"url": project.merged_video_url}
+        # 当前 export provider 仍是历史占位实现，会生成不可播放的 dummy 文件。
+        # 这里统一回退到真实的合成成片：已有成片就直接复用，没有成片就即时执行一次 merge。
+        # 这样至少保证导出的始终是可播放视频；分辨率/格式/字幕参数后续再接入真实导出管线。
         if project.merged_video_url:
             logger.info("MEDIA_WORKFLOW: export_project reuse_merged_video script_id=%s", script_id)
             return {"url": project.merged_video_url}
-        export_url = self.export_manager.render_project(project, options)
-        export_local_path = safe_resolve_path("output", export_url)
-        if os.path.exists(export_local_path):
-            project.merged_video_url = self._persist_output(export_local_path, "export")
-        else:
-            project.merged_video_url = export_url
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
-        logger.info("MEDIA_WORKFLOW: export_project completed script_id=%s url=%s", script_id, project.merged_video_url)
+
+        logger.info("MEDIA_WORKFLOW: export_project fallback_to_merge script_id=%s", script_id)
+        project = self.merge_videos(script_id)
+        logger.info("MEDIA_WORKFLOW: export_project completed_via_merge script_id=%s url=%s", script_id, project.merged_video_url)
         return {"url": project.merged_video_url}
+
+    def _resolve_merge_clips(self, project, final_mix_timeline: dict | None = None) -> list[dict]:
+        """把前端 Final Mix 草稿解析成可执行的合成片段列表。"""
+        if final_mix_timeline and final_mix_timeline.get("clips"):
+            clips = []
+            video_by_id = {task.id: task for task in project.video_tasks}
+            frame_by_id = {frame.id: frame for frame in project.frames}
+            for item in sorted(final_mix_timeline.get("clips", []), key=lambda clip: clip.get("clip_order", 0)):
+                frame = frame_by_id.get(item.get("frame_id"))
+                video = video_by_id.get(item.get("video_id"))
+                if not frame or not video or not video.video_url:
+                    continue
+                trim_start = max(float(item.get("trim_start", 0) or 0), 0.0)
+                source_duration = float(video.duration or 5)
+                trim_end = float(item.get("trim_end", source_duration) or source_duration)
+                trim_end = max(min(trim_end, source_duration), trim_start + 0.1)
+                clips.append(
+                    {
+                        "frame_id": frame.id,
+                        "video_id": video.id,
+                        "video_url": video.video_url,
+                        "trim_start": trim_start,
+                        "trim_end": trim_end,
+                    }
+                )
+            if clips:
+                return clips
+
+        clips = []
+        for frame in project.frames:
+            if frame.selected_video_id:
+                video = next((item for item in project.video_tasks if item.id == frame.selected_video_id), None)
+                if video and video.video_url:
+                    clips.append(
+                        {
+                            "frame_id": frame.id,
+                            "video_id": video.id,
+                            "video_url": video.video_url,
+                            "trim_start": 0.0,
+                            "trim_end": float(video.duration or 5),
+                        }
+                    )
+                continue
+            default_video = next((item for item in project.video_tasks if item.frame_id == frame.id and item.status == "completed"), None)
+            if default_video and default_video.video_url:
+                clips.append(
+                    {
+                        "frame_id": frame.id,
+                        "video_id": default_video.id,
+                        "video_url": default_video.video_url,
+                        "trim_start": 0.0,
+                        "trim_end": float(default_video.duration or 5),
+                    }
+                )
+        return clips
+
+    def _trim_video_clip(self, ffmpeg_path: str, source_path: str, temp_dir: str, index: int, trim_start: float, trim_end: float) -> str:
+        """把单个视频片段裁切成标准化中间文件，供后续 concat 使用。"""
+        duration = max(trim_end - trim_start, 0.1)
+        output_path = os.path.join(temp_dir, f"merge_clip_{index}.mp4")
+        cmd = [
+            ffmpeg_path,
+            "-y",
+            "-ss",
+            f"{trim_start:.3f}",
+            "-i",
+            source_path,
+            "-t",
+            f"{duration:.3f}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            output_path,
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+            return output_path
+        except subprocess.CalledProcessError as exc:
+            stderr_msg = exc.stderr.decode() if exc.stderr else "No error output"
+            raise RuntimeError(self._extract_ffmpeg_error_message(stderr_msg))
 
     def _sync_asset_video_task(self, project, task):
         """把任务更新镜像回仍被 UI 使用的聚合字段。"""
