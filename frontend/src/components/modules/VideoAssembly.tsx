@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
-import { api, API_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl, extractErrorDetail } from "@/lib/utils";
 
@@ -91,13 +91,11 @@ export default function VideoAssembly() {
         if (!currentProject?.merged_video_url) return;
         setIsDownloading(true);
         try {
-            // Build download URL - use proxy in dev to avoid CORS, direct in production
-            const rawPath = currentProject.merged_video_url;
-            const cleanPath = rawPath.startsWith("/") ? rawPath.slice(1) : rawPath;
-            const isDev = process.env.NODE_ENV === "development";
-            const url = isDev
-                ? `/api-proxy/files/${cleanPath}`
-                : getAssetUrl(rawPath);
+            // 当前下载链路统一依赖后端返回的稳定 OSS 地址，不再走本地 /files 代理。
+            const url = getAssetUrl(currentProject.merged_video_url);
+            if (!url) {
+                throw new Error("Merged video URL is empty");
+            }
 
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);

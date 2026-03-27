@@ -114,7 +114,22 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportF
         setIsAnalyzing(true);
         setError(null);
         try {
-            const result = await api.importFilePreview(file, suggestedEpisodes);
+            const receipt = await api.importFilePreview(file, suggestedEpisodes);
+            let job = await fetchJob(receipt.job_id);
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                    break;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 2000));
+                job = await fetchJob(receipt.job_id);
+            }
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "分析失败，请重试");
+            }
+            const result = job.result_json as PreviewResult | null;
+            if (!result) {
+                throw new Error("导入预览结果为空");
+            }
             setPreviewResult(result);
             setStep(2);
         } catch (err: any) {

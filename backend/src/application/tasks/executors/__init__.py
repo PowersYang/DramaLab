@@ -12,12 +12,16 @@ from .project_reparse import ProjectReparseExecutor
 from .project_sync_descriptions import ProjectSyncDescriptionsExecutor
 from .series_import_assets import SeriesImportAssetsExecutor
 from .series_import_confirm import SeriesImportConfirmExecutor
+from .series_import_preview import SeriesImportPreviewExecutor
 from .series_asset_generate import SeriesAssetGenerateExecutor
 from .storyboard_analyze import StoryboardAnalyzeExecutor
 from .storyboard_generate_all import StoryboardGenerateAllExecutor
+from .storyboard_refine_prompt import StoryboardRefinePromptExecutor
 from .storyboard_render import StoryboardRenderExecutor
 from .video_generate import VideoGenerateExecutor
 from .video_generate_project import VideoGenerateProjectExecutor
+from .video_polish_prompt import VideoPolishPromptExecutor
+from .video_polish_r2v_prompt import VideoPolishR2VPromptExecutor
 
 __all__ = [
     "AudioGenerateLineExecutor",
@@ -34,10 +38,14 @@ __all__ = [
     "ProjectSyncDescriptionsExecutor",
     "SeriesImportAssetsExecutor",
     "SeriesImportConfirmExecutor",
+    "SeriesImportPreviewExecutor",
     "SeriesAssetGenerateExecutor",
     "StoryboardAnalyzeExecutor",
     "StoryboardGenerateAllExecutor",
+    "StoryboardRefinePromptExecutor",
     "StoryboardRenderExecutor",
     "VideoGenerateExecutor",
     "VideoGenerateProjectExecutor",
+    "VideoPolishPromptExecutor",
+    "VideoPolishR2VPromptExecutor",
 ]

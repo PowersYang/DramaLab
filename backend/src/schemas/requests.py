@@ -95,6 +95,8 @@ class EnvConfig(BaseModel):
     POSTGRES_USER: Optional[str] = None
     POSTGRES_PASSWORD: Optional[str] = None
     LLM_PROVIDER: Optional[str] = None
+    LLM_REQUEST_TIMEOUT_SECONDS: Optional[str] = None
+    LLM_MAX_RETRIES: Optional[str] = None
     DASHSCOPE_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: Optional[str] = None
@@ -104,6 +106,7 @@ class EnvConfig(BaseModel):
     OSS_BUCKET_NAME: Optional[str] = None
     OSS_ENDPOINT: Optional[str] = None
     OSS_BASE_PATH: Optional[str] = None
+    OSS_PUBLIC_BASE_URL: Optional[str] = None
     KLING_ACCESS_KEY: Optional[str] = None
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None

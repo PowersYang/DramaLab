@@ -289,7 +289,11 @@ class MediaWorkflow:
         return None
 
     def _persist_output(self, local_path: str, sub_path: str) -> str:
-        """优先保存为 OSS 对象键；失败时回退到本地相对路径。"""
+        """把导出结果持久化到 OSS。
+
+        导出地址会直接回给前端下载，当前已经不再暴露本地静态目录，
+        所以这里不能回退本地相对路径，必须确保最终产物已经落到对象存储。
+        """
         try:
             uploader = OSSImageUploader()
             if uploader.is_configured:
@@ -298,7 +302,7 @@ class MediaWorkflow:
                     return object_key
         except Exception as exc:
             logger.error("Failed to upload output %s to OSS: %s", local_path, exc)
-        return os.path.relpath(local_path, "output")
+        raise RuntimeError(f"Failed to upload output {local_path} to OSS.")
 
     def _download_to_local(self, source: str, local_path: str) -> bool:
         uploader = OSSImageUploader()

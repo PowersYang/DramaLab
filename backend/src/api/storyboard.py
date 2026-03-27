@@ -68,12 +68,33 @@ async def analyze_to_storyboard(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/storyboard/refine_prompt")
-async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest):
+@router.post("/projects/{script_id}/storyboard/refine_prompt", response_model=TaskReceipt)
+async def refine_storyboard_prompt(
+    script_id: str,
+    request: RefinePromptRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """把原始分镜提示词润色成中英文双语版本。"""
     try:
         logger.info("STORYBOARD_API: refine_storyboard_prompt script_id=%s frame_id=%s", script_id, request.frame_id)
-        return storyboard_workflow.refine_prompt(script_id, request.frame_id, request.raw_prompt, request.assets, request.feedback)
+        receipt = task_service.create_job(
+            task_type="storyboard.refine_prompt",
+            payload={
+                "project_id": script_id,
+                "frame_id": request.frame_id,
+                "raw_prompt": request.raw_prompt,
+                "assets": request.assets,
+                "feedback": request.feedback,
+            },
+            project_id=script_id,
+            queue_name="llm",
+            resource_type="storyboard_frame",
+            resource_id=request.frame_id,
+            timeout_seconds=600,
+            idempotency_key=idempotency_key,
+            dedupe_scope="storyboard-refine-prompt",
+        )
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("STORYBOARD_API: refine_storyboard_prompt failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

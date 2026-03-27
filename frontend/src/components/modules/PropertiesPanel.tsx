@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Settings, Sliders, Image as ImageIcon, Type, FileText, Users, Layout, Video, Mic, Music, Film, Info, StickyNote, Paintbrush, Wand2, Sparkles } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
+import { useTaskStore } from "@/store/taskStore";
 import { useState, useEffect } from "react";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
@@ -273,6 +274,7 @@ function StoryboardInspector() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
+    const fetchJob = useTaskStore((state) => state.fetchJob);
 
     if (!currentProject) return null;
 
@@ -395,14 +397,21 @@ function StoryboardInspector() {
             : (selectedFrame.image_prompt || selectedFrame.action_description);
 
         try {
-            // Use new bilingual refine API
-            const res = await api.refineFramePrompt(currentProject.id, selectedFrame.id, draft, assets, feedback);
-            if (res.prompt_cn && res.prompt_en) {
+            const receipt = await api.refineFramePrompt(currentProject.id, selectedFrame.id, draft, assets, feedback);
+            let job = await fetchJob(receipt.job_id);
+            while (!["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+                job = await fetchJob(receipt.job_id);
+            }
+            const result = job.result_json || {};
+            if (job.status === "succeeded" && result.prompt_cn && result.prompt_en) {
                 setPolishedPrompts(prev => ({
                     ...prev,
-                    [selectedFrame.id]: { cn: res.prompt_cn, en: res.prompt_en }
+                    [selectedFrame.id]: { cn: result.prompt_cn, en: result.prompt_en }
                 }));
                 setFeedbackText("");
+            } else {
+                throw new Error(job.error_message || "Prompt polishing failed");
             }
         } catch (err) {
             console.error("Polish failed", err);

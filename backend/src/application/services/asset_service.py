@@ -256,7 +256,10 @@ class AssetService:
         safe_path = os.path.join("output", os.path.relpath(image_path, "output")) if os.path.isabs(image_path) else image_path
         uploader = OSSImageUploader()
         oss_url = uploader.upload_image(safe_path)
-        image_url = oss_url if oss_url else os.path.relpath(safe_path, "output")
+        if not oss_url:
+            # 分镜上传结果会直接回给前端；既然静态目录不再对外暴露，这里不能再回退本地相对路径。
+            raise RuntimeError("OSS upload failed for frame image.")
+        image_url = oss_url
         variant = ImageVariant(
             id=str(uuid.uuid4()),
             url=image_url,

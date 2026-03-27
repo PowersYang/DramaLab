@@ -13,11 +13,15 @@ from .executors.project_sync_descriptions import ProjectSyncDescriptionsExecutor
 from .executors.series_asset_generate import SeriesAssetGenerateExecutor
 from .executors.series_import_assets import SeriesImportAssetsExecutor
 from .executors.series_import_confirm import SeriesImportConfirmExecutor
+from .executors.series_import_preview import SeriesImportPreviewExecutor
 from .executors.storyboard_analyze import StoryboardAnalyzeExecutor
 from .executors.storyboard_generate_all import StoryboardGenerateAllExecutor
+from .executors.storyboard_refine_prompt import StoryboardRefinePromptExecutor
 from .executors.storyboard_render import StoryboardRenderExecutor
 from .executors.video_generate import VideoGenerateExecutor
 from .executors.video_generate_project import VideoGenerateProjectExecutor
+from .executors.video_polish_prompt import VideoPolishPromptExecutor
+from .executors.video_polish_r2v_prompt import VideoPolishR2VPromptExecutor
 
 
 class TaskExecutorRegistry:
@@ -40,12 +44,16 @@ class TaskExecutorRegistry:
             "series.asset.generate": SeriesAssetGenerateExecutor(),
             "series.assets.import": SeriesImportAssetsExecutor(),
             "series.import.confirm": SeriesImportConfirmExecutor(),
+            "series.import.preview": SeriesImportPreviewExecutor(),
             "storyboard.analyze": StoryboardAnalyzeExecutor(),
             "storyboard.generate_all": StoryboardGenerateAllExecutor(),
+            "storyboard.refine_prompt": StoryboardRefinePromptExecutor(),
             "storyboard.render": StoryboardRenderExecutor(),
             "video.generate.project": VideoGenerateProjectExecutor(),
             "video.generate.frame": VideoGenerateExecutor(),
             "video.generate.asset": VideoGenerateExecutor(),
+            "video.polish_prompt": VideoPolishPromptExecutor(),
+            "video.polish_r2v_prompt": VideoPolishR2VPromptExecutor(),
         }
 
     def get(self, task_type: str):

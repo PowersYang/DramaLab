@@ -614,7 +614,7 @@ export const api = {
     },
 
     // NOTE: polishPrompt removed - use refineFramePrompt for storyboard prompts
-    polishVideoPrompt: async (draftPrompt: string, feedback: string = "", scriptId: string = "") => {
+    polishVideoPrompt: async (draftPrompt: string, feedback: string = "", scriptId: string = ""): Promise<TaskReceipt> => {
         const res = await axios.post(`${API_URL}/video/polish_prompt`, {
             draft_prompt: draftPrompt,
             feedback: feedback,
@@ -622,7 +622,7 @@ export const api = {
         });
         return res.data;
     },
-    polishR2VPrompt: async (draftPrompt: string, slots: { description: string }[], feedback: string = "", scriptId: string = "") => {
+    polishR2VPrompt: async (draftPrompt: string, slots: { description: string }[], feedback: string = "", scriptId: string = ""): Promise<TaskReceipt> => {
         const res = await axios.post(`${API_URL}/video/polish_r2v_prompt`, {
             draft_prompt: draftPrompt,
             slots: slots,
@@ -713,15 +713,19 @@ export const api = {
     },
 
     /**
-     * Refines a raw prompt into bilingual (CN/EN) prompts using AI.
-     * Returns { prompt_cn, prompt_en, frame_updated }.
+     * 提交分镜提示词润色任务，完成后 result_json 中会回填双语提示词。
      */
-    refineFramePrompt: async (scriptId: string, frameId: string, rawPrompt: string, assets: any[] = [], feedback: string = "") => {
+    refineFramePrompt: async (scriptId: string, frameId: string, rawPrompt: string, assets: any[] = [], feedback: string = ""): Promise<TaskReceipt> => {
+        const dedupeKey = `storyboard-refine:${scriptId}:${frameId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/refine_prompt`, {
             frame_id: frameId,
             raw_prompt: rawPrompt,
             assets: assets,
             feedback: feedback
+        }, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
         });
         return res.data;
     },
@@ -895,7 +899,7 @@ export const api = {
     },
 
     // File Import
-    importFilePreview: async (file: File, suggestedEpisodes: number = 3) => {
+    importFilePreview: async (file: File, suggestedEpisodes: number = 3): Promise<TaskReceipt> => {
         const formData = new FormData();
         formData.append('file', file);
         const response = await axios.post(`${API_URL}/series/import/preview?suggested_episodes=${suggestedEpisodes}`, formData, {

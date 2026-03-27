@@ -1,12 +1,12 @@
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from ..utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
+from ..utils.oss_utils import OSSImageUploader, expose_oss_urls_in_data
 
 
 def signed_response(data):
     """
-    返回给前端前，统一为数据里的 OSS 地址补签名。
+    返回给前端前，统一把数据里的 OSS 对象键转换成稳定展示地址。
 
     支持 Pydantic 模型、模型列表和普通字典；
     最终直接返回 `JSONResponse`，避免再次经过 Pydantic 清洗字段。
@@ -26,7 +26,7 @@ def signed_response(data):
 
     uploader = OSSImageUploader()
     if uploader.is_configured:
-        processed_data = sign_oss_urls_in_data(processed_data, uploader)
+        processed_data = expose_oss_urls_in_data(processed_data, uploader)
 
     # 业务时间字段已切到 datetime，这里统一做 JSON 安全编码，避免接口返回阶段再抛序列化异常。
     return JSONResponse(content=jsonable_encoder(processed_data))

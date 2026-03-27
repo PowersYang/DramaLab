@@ -18,6 +18,7 @@ import {
 
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, TaskReceipt, VideoTask } from "@/lib/api";
+import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder";
 import type { VideoParams } from "@/store/projectStore";
@@ -34,6 +35,7 @@ interface VideoCreatorProps {
 export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, onRemixClear, params, onParamsChange }: VideoCreatorProps) {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const fetchJob = useTaskStore((state) => state.fetchJob);
 
     // Helper function to generate motion description text
     const getMotionDescription = () => {
@@ -159,7 +161,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
         if (!draftPrompt) return;
         setIsPolishing(true);
         try {
-            let res;
+            let receipt;
             const scriptId = currentProject?.id || "";
             if (generationMode === 'r2v') {
                 // R2V mode: use R2V-specific polish with slot info
@@ -168,11 +170,23 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                     .map((slot) => ({
                         description: slot.name || 'Unknown character'
                     }));
-                res = await api.polishR2VPrompt(draftPrompt, slotInfo, feedback, scriptId);
+                receipt = await api.polishR2VPrompt(draftPrompt, slotInfo, feedback, scriptId);
             } else {
                 // I2V mode: use video polish
-                res = await api.polishVideoPrompt(draftPrompt, feedback, scriptId);
+                receipt = await api.polishVideoPrompt(draftPrompt, feedback, scriptId);
             }
+            let job = await fetchJob(receipt.job_id);
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                    break;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 1000));
+                job = await fetchJob(receipt.job_id);
+            }
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "AI 润色失败");
+            }
+            const res = job.result_json || {};
             if (res.prompt_cn && res.prompt_en) {
                 setPolishedPrompt({ cn: res.prompt_cn, en: res.prompt_en });
                 setFeedbackText("");
@@ -329,8 +343,6 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                         console.warn("Image upload pending for", img);
                         continue;
                     }
-                } else if (img && img.startsWith(`${API_URL}/files/`)) {
-                    finalImageUrl = img.replace(`${API_URL}/files/`, "");
                 }
 
                 // Find frame ID - use selectedFrameId directly for R2V mode
@@ -342,8 +354,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                     // I2V mode: find frame by matching image URL (check rendered_image_url first, then image_url)
                     const frame = currentProject?.frames?.find((f: any) =>
                         (f.rendered_image_url || f.image_url) === img ||
-                        f.image_url === img ||
-                        `${API_URL}/files/${f.image_url}` === img
+                        f.image_url === img
                     );
                     frameId = frame ? frame.id : undefined;
                 }

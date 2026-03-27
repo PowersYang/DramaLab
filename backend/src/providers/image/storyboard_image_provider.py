@@ -153,8 +153,12 @@ class StoryboardGenerator:
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 logger.info("[Storyboard] Calling model.generate with %s reference images using model %s", len(asset_ref_paths), model_name or "default")
                 self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
-                rel_path = os.path.relpath(output_path, "output")
-                variant = ImageVariant(id=variant_id, url=rel_path, prompt=prompt, created_at=utc_now())
+                # 分镜图现在必须以 OSS 对象键持久化，避免前端继续依赖本地静态目录。
+                uploader = OSSImageUploader()
+                object_key = uploader.upload_file(output_path, sub_path="storyboard") if uploader.is_configured else None
+                if not object_key:
+                    raise RuntimeError(f"Failed to upload storyboard frame {frame.id} to OSS.")
+                variant = ImageVariant(id=variant_id, url=object_key, prompt=prompt, created_at=utc_now())
                 frame.rendered_image_asset.variants.append(variant)
                 frame.rendered_image_asset.selected_id = variant_id
 
@@ -166,20 +170,6 @@ class StoryboardGenerator:
             frame.updated_at = utc_now()
             frame.status = GenerationStatus.COMPLETED
 
-            try:
-                uploader = OSSImageUploader()
-                if uploader.is_configured and selected_variant:
-                    # 只上传当前选中候选，保证外部引用和 UI 正在展示的图片保持一致。
-                    local_path = os.path.join("output", selected_variant.url)
-                    if os.path.exists(local_path):
-                        object_key = uploader.upload_file(local_path, sub_path="storyboard")
-                        if object_key:
-                            logger.info("Uploaded frame %s to OSS: %s", frame.id, object_key)
-                            selected_variant.url = object_key
-                            frame.rendered_image_url = object_key
-                            frame.image_url = object_key
-            except Exception as exc:
-                logger.error("Failed to upload frame %s to OSS: %s", frame.id, exc)
         except Exception as exc:
             logger.error("Failed to generate frame %s: %s", frame.id, exc)
             frame.status = GenerationStatus.FAILED

@@ -2,9 +2,7 @@
 系统路由：调试检查、文件导入、环境配置与通用工具接口。
 """
 
-import asyncio
 import os
-from functools import partial
 import shutil
 import sys
 import uuid
@@ -21,7 +19,6 @@ from src.settings.env_settings import (
     remove_env_keys,
     save_env_values,
 )
-from ..providers import ScriptProcessor
 from ..utils.endpoints import PROVIDER_DEFAULTS
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.system_check import run_system_checks
@@ -40,7 +37,6 @@ from ..schemas.task_models import TaskReceipt
 router = APIRouter()
 task_service = TaskService()
 system_service = SystemService()
-text_provider = ScriptProcessor()
 
 
 @router.get("/debug/config")
@@ -52,6 +48,7 @@ async def debug_config():
         "oss_configured": uploader.is_configured,
         "oss_bucket_initialized": uploader.bucket is not None,
         "oss_base_path": get_env("OSS_BASE_PATH", "lumenx"),
+        "oss_public_base_url": get_env("OSS_PUBLIC_BASE_URL", ""),
         "output_dir_exists": os.path.exists("output"),
         "output_contents": os.listdir("output") if os.path.exists("output") else [],
         "cwd": os.getcwd(),
@@ -87,19 +84,19 @@ async def upload_file(file: UploadFile = File(...)):
             logger.info("SYSTEM_API: upload_file uploaded_to_oss filename=%s", file.filename)
             return signed_response({"url": oss_url})
 
-        logger.info("SYSTEM_API: upload_file stored_locally filename=%s", file.filename)
-        return {"url": f"uploads/{filename}"}
+        raise RuntimeError("OSS upload failed. Static file mount has been removed, so local fallback URLs are no longer supported.")
     except Exception as exc:
         logger.exception("SYSTEM_API: upload_file unexpected_error filename=%s", file.filename)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/series/import/preview")
+@router.post("/series/import/preview", response_model=TaskReceipt)
 async def import_file_preview(
     file: UploadFile = File(...),
     suggested_episodes: int = 3,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    """上传 txt/md 文件，并返回 LLM 预拆分的分集结果。"""
+    """上传 txt/md 文件，并异步返回 LLM 预拆分任务。"""
     logger.info("SYSTEM_API: import_file_preview filename=%s suggested_episodes=%s", file.filename, suggested_episodes)
     if suggested_episodes < 1 or suggested_episodes > 50:
         raise HTTPException(status_code=400, detail="建议集数应在 1-50 之间")
@@ -108,17 +105,23 @@ async def import_file_preview(
         text = content_bytes.decode("utf-8")
         if not text.strip():
             raise HTTPException(status_code=400, detail="文件内容为空")
-
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            partial(system_service.preview_import, text, suggested_episodes),
+        receipt = task_service.create_job(
+            task_type="series.import.preview",
+            payload={
+                "filename": file.filename,
+                "text": text,
+                "suggested_episodes": suggested_episodes,
+            },
+            project_id=None,
+            series_id=None,
+            queue_name="llm",
+            resource_type="series_import_preview",
+            resource_id=file.filename,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"series_import_preview:{file.filename}:{len(text)}:{suggested_episodes}",
         )
-        return {
-            "filename": file.filename,
-            "text_length": len(text),
-            **result,
-        }
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("SYSTEM_API: import_file_preview invalid_request filename=%s detail=%s", file.filename, exc)
         raise HTTPException(status_code=400, detail=str(exc))
@@ -274,11 +277,14 @@ async def get_env_config():
             "OSS_BUCKET_NAME": get_env("OSS_BUCKET_NAME", ""),
             "OSS_ENDPOINT": get_env("OSS_ENDPOINT", ""),
             "OSS_BASE_PATH": get_env("OSS_BASE_PATH", ""),
+            "OSS_PUBLIC_BASE_URL": get_env("OSS_PUBLIC_BASE_URL", ""),
             "KLING_ACCESS_KEY": get_env("KLING_ACCESS_KEY", ""),
             "KLING_SECRET_KEY": get_env("KLING_SECRET_KEY", ""),
             "VIDU_API_KEY": get_env("VIDU_API_KEY", ""),
             "ARK_API_KEY": get_env("ARK_API_KEY", ""),
             "LLM_PROVIDER": get_env("LLM_PROVIDER", ""),
+            "LLM_REQUEST_TIMEOUT_SECONDS": get_env("LLM_REQUEST_TIMEOUT_SECONDS", ""),
+            "LLM_MAX_RETRIES": get_env("LLM_MAX_RETRIES", ""),
             "OPENAI_API_KEY": get_env("OPENAI_API_KEY", ""),
             "OPENAI_BASE_URL": get_env("OPENAI_BASE_URL", ""),
             "OPENAI_MODEL": get_env("OPENAI_MODEL", ""),
@@ -352,54 +358,54 @@ async def get_style_presets():
         logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(exc))
 
-
-def _get_custom_prompt(script_id: str, field: str) -> str:
-    """
-    读取自定义提示词，按“分集 -> 系列 -> 系统默认”三级回退。
-
-    如果最终结果等于系统默认值，则返回空字符串，
-    这样下游 LLM 方法会直接使用内置默认提示词。
-    """
-    if not script_id:
-        return ""
-    return system_service.get_effective_prompt(script_id, field)
-
-
-@router.post("/video/polish_prompt")
-async def polish_video_prompt(request: PolishVideoPromptRequest):
+@router.post("/video/polish_prompt", response_model=TaskReceipt)
+async def polish_video_prompt(request: PolishVideoPromptRequest, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """调用 LLM 润色视频提示词，并返回中英文结果。"""
     try:
-        custom_prompt = _get_custom_prompt(request.script_id, "video_polish")
-        result = text_provider.polish_video_prompt(
-            request.draft_prompt,
-            request.feedback,
-            custom_prompt,
+        receipt = task_service.create_job(
+            task_type="video.polish_prompt",
+            payload={
+                "draft_prompt": request.draft_prompt,
+                "feedback": request.feedback,
+                "script_id": request.script_id,
+            },
+            project_id=request.script_id or None,
+            series_id=None,
+            queue_name="llm",
+            resource_type="video_prompt",
+            resource_id=request.script_id or "global",
+            timeout_seconds=900,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"video_polish:{len(request.draft_prompt)}:{len(request.feedback)}",
         )
-        return {
-            "prompt_cn": result.get("prompt_cn", ""),
-            "prompt_en": result.get("prompt_en", ""),
-        }
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/video/polish_r2v_prompt")
-async def polish_r2v_prompt(request: PolishR2VPromptRequest):
+@router.post("/video/polish_r2v_prompt", response_model=TaskReceipt)
+async def polish_r2v_prompt(request: PolishR2VPromptRequest, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """调用 LLM 润色 R2V 提示词，并返回中英文结果。"""
     try:
-        custom_prompt = _get_custom_prompt(request.script_id, "r2v_polish")
-        slot_info = [{"description": slot.description} for slot in request.slots]
-        result = text_provider.polish_r2v_prompt(
-            request.draft_prompt,
-            slot_info,
-            request.feedback,
-            custom_prompt,
+        receipt = task_service.create_job(
+            task_type="video.polish_r2v_prompt",
+            payload={
+                "draft_prompt": request.draft_prompt,
+                "slots": [{"description": slot.description} for slot in request.slots],
+                "feedback": request.feedback,
+                "script_id": request.script_id,
+            },
+            project_id=request.script_id or None,
+            series_id=None,
+            queue_name="llm",
+            resource_type="r2v_prompt",
+            resource_id=request.script_id or "global",
+            timeout_seconds=900,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"r2v_polish:{len(request.draft_prompt)}:{len(request.slots)}:{len(request.feedback)}",
         )
-        return {
-            "prompt_cn": result.get("prompt_cn", ""),
-            "prompt_en": result.get("prompt_en", ""),
-        }
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(exc))

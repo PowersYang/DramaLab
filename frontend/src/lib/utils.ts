@@ -1,4 +1,3 @@
-import { API_URL } from "./api";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -11,7 +10,7 @@ export function getAssetUrl(path: string | null | undefined): string {
     const normalizedPath = path.trim();
     if (!normalizedPath) return "";
 
-    // 兼容 OSS 签名地址、浏览器 blob/data URL，以及后端直接返回的根路径静态资源地址。
+    // 资源已经统一切到 OSS/CDN 绝对地址；这里只保留浏览器可直接消费的 URL 原样透传。
     if (
         normalizedPath.startsWith("http://")
         || normalizedPath.startsWith("https://")
@@ -21,17 +20,9 @@ export function getAssetUrl(path: string | null | undefined): string {
         return normalizedPath;
     }
 
-    if (normalizedPath.startsWith("/api-proxy/files/")) {
-        return normalizedPath;
-    }
-
-    if (normalizedPath.startsWith("/files/")) {
-        return `${API_URL}${normalizedPath}`;
-    }
-
-    // Remove leading slash if present to avoid double slashes with API_URL/files/
-    const cleanPath = normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath;
-    return `${API_URL}/files/${cleanPath}`;
+    // 如果这里仍收到相对路径，说明后端没有正确返回稳定 OSS 地址；
+    // 直接原样返回，便于尽早暴露问题，而不是悄悄拼接已下线的本地静态资源路由。
+    return normalizedPath;
 }
 
 export function getAssetUrlWithTimestamp(path: string | null | undefined, timestamp?: number): string {

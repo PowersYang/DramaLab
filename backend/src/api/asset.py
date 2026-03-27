@@ -423,7 +423,7 @@ async def upload_asset(
 
         oss_url = OSSImageUploader().upload_image(file_path)
         if not oss_url:
-            oss_url = f"uploads/{filename}"
+            raise RuntimeError("OSS upload failed. Static file mount has been removed, so local fallback URLs are no longer supported.")
 
         updated_script = asset_service.upload_variant(
             script_id=script_id,

@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from ...schemas.models import Script
 
 from ...utils import get_logger
+from ...utils.oss_utils import OSSImageUploader
 
 logger = get_logger(__name__)
 
@@ -24,7 +25,7 @@ class ExportManager:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def render_project(self, script: Script, options: Dict[str, Any]) -> str:
-        """导出项目最终视频，并返回相对路径。"""
+        """导出项目最终视频，并返回 OSS 对象键。"""
         logger.info("Starting export for project %s with options: %s", script.id, options)
 
         _resolution = options.get("resolution", "1080p")
@@ -38,8 +39,12 @@ class ExportManager:
             output_path = os.path.join(self.output_dir, filename)
             with open(output_path, "wb") as file_obj:
                 file_obj.write(b"dummy video content")
-            logger.info("Export completed: %s", output_path)
-            return os.path.relpath(output_path, "output")
+            uploader = OSSImageUploader()
+            object_key = uploader.upload_file(output_path, sub_path="export") if uploader.is_configured else None
+            if not object_key:
+                raise RuntimeError("Failed to upload exported video to OSS.")
+            logger.info("Export completed: %s -> %s", output_path, object_key)
+            return object_key
         except Exception as exc:
             logger.error("Export failed: %s", exc)
             raise

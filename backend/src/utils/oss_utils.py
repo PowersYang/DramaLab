@@ -3,6 +3,7 @@ import oss2
 import time
 import requests
 from typing import Optional
+from urllib.parse import quote
 from src.common.log import get_logger
 from src.settings.env_settings import get_env
 
@@ -28,6 +29,23 @@ def is_oss_configured() -> bool:
 def get_oss_base_path() -> str:
     """读取 OSS 根路径；未配置时使用默认值。"""
     return get_env("OSS_BASE_PATH", DEFAULT_OSS_BASE_PATH).rstrip("/")
+
+
+def get_oss_public_base_url() -> str:
+    """读取前端展示用的稳定 OSS 公网前缀。
+
+    优先使用显式配置的 `OSS_PUBLIC_BASE_URL`，便于接入 CDN、自定义域名或 OSS 绑定域名。
+    若未配置，则回退到标准阿里云 OSS 域名格式。
+    """
+    configured = get_env("OSS_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+
+    bucket_name = get_env("OSS_BUCKET_NAME", "").strip()
+    endpoint = get_env("OSS_ENDPOINT", "").strip().lstrip("/")
+    if not bucket_name or not endpoint:
+        return ""
+    return f"https://{bucket_name}.{endpoint}"
 
 
 def is_object_key(value: str) -> bool:
@@ -219,6 +237,18 @@ class OSSImageUploader:
     def sign_url_for_api(self, object_key: str) -> str:
         """生成给 AI 接口调用用的签名地址。"""
         return self.generate_signed_url(object_key, SIGN_URL_EXPIRES_API)
+
+    def public_url_for_display(self, object_key: str) -> str:
+        """生成给前端展示用的稳定公开地址。
+
+        前端展示地址不能依赖短期签名，否则刷新页面或隔日回访时会出现失效链接。
+        这里默认要求 bucket/CDN 已经对外可读。
+        """
+        base_url = get_oss_public_base_url()
+        if not base_url:
+            logger.warning("OSS public base URL is not configured, cannot build stable display URL.")
+            return ""
+        return f"{base_url}/{quote(object_key, safe='/')}"
     
     def object_exists(self, object_key: str) -> bool:
         """检查对象是否存在于 OSS。"""
@@ -274,19 +304,19 @@ class OSSImageUploader:
         """
         兼容旧接口：获取 OSS 地址。
 
-        在当前私有 OSS 策略下，始终返回签名地址；
-        `use_public_url` 仅为兼容保留，已不建议使用。
+        前端展示默认返回稳定公网地址；只有显式要求时才返回签名地址。
         """
         if use_public_url:
-            logger.warning("Public URLs are deprecated. Using signed URL instead for security.")
-        return self.sign_url_for_display(object_key)
+            return self.public_url_for_display(object_key)
+        return self.public_url_for_display(object_key) or self.sign_url_for_display(object_key)
 
 
-def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
+def expose_oss_urls_in_data(data, uploader: OSSImageUploader = None):
     """
-    递归遍历数据结构，把其中的 OSS 对象键替换成签名地址。
+    递归遍历数据结构，把其中的 OSS 对象键替换成稳定公网地址。
 
-    这是“动态签名”方案的核心入口，通常在 API 返回前统一调用。
+    AI 调用仍然应该使用短期签名地址；
+    这里只有面向前端展示的响应链路，必须尽量返回不会过期的 URL。
     """
     if uploader is None:
         uploader = OSSImageUploader()
@@ -298,8 +328,8 @@ def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
     def process_value(value):
         if isinstance(value, str):
             if is_object_key(value):
-                signed_url = uploader.sign_url_for_display(value)
-                return signed_url if signed_url else value
+                public_url = uploader.public_url_for_display(value)
+                return public_url if public_url else value
             return value
         elif isinstance(value, dict):
             return {k: process_value(v) for k, v in value.items()}
@@ -309,6 +339,11 @@ def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
             return value
     
     return process_value(data)
+
+
+def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
+    """兼容旧函数名，实际行为已经切到“稳定公网地址暴露”模式。"""
+    return expose_oss_urls_in_data(data, uploader)
 
 
 def convert_local_path_to_object_key(local_path: str, project_id: str = None) -> str:

@@ -138,7 +138,10 @@ class AudioGenerator:
         return frame
 
     def _persist_media(self, output_path: str, sub_path: str) -> str:
-        """优先把新生成媒体持久化到 OSS；失败时回退到本地相对路径。"""
+        """把新生成媒体持久化到 OSS。
+
+        音频地址会被前端和后续导出流程复用，因此这里强制要求产物已经上传成功。
+        """
         try:
             uploader = OSSImageUploader()
             if uploader.is_configured:
@@ -147,4 +150,4 @@ class AudioGenerator:
                     return object_key
         except Exception as exc:
             logger.error("Failed to upload media %s to OSS: %s", output_path, exc)
-        return os.path.relpath(output_path, "output")
+        raise RuntimeError(f"Failed to upload media {output_path} to OSS.")

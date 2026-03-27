@@ -18,8 +18,6 @@ from src.common import bootstrap_api_environment
 from src.common.log import setup_logging
 from src.common.request_logging import log_request_response
 
-from starlette.staticfiles import StaticFiles
-
 logger = logging.getLogger(__name__)
 
 
@@ -80,30 +78,8 @@ def create_app() -> FastAPI:
     )
 
     @app.middleware("http")
-    async def add_cache_control_header(request: Request, call_next):
-        response = await call_next(request)
-        if request.url.path.startswith("/files/"):
-            response.headers["Cache-Control"] = "public, max-age=86400"
-        return response
-
-    @app.middleware("http")
     async def request_logging_middleware(request: Request, call_next):
         return await log_request_response(request, call_next)
-
-    app.mount(
-        "/files/outputs/videos",
-        StaticFiles(directory="output/video"),
-        name="files_outputs_videos",
-    )
-    app.mount(
-        "/files/outputs/assets",
-        StaticFiles(directory="output/assets"),
-        name="files_outputs_assets",
-    )
-    app.mount("/files/outputs", StaticFiles(directory="output"), name="files_outputs")
-    app.mount("/files/videos", StaticFiles(directory="output/video"), name="files_videos")
-    app.mount("/files/assets", StaticFiles(directory="output/assets"), name="files_assets")
-    app.mount("/files", StaticFiles(directory="output"), name="files")
 
     app.include_router(system_router)
     app.include_router(task_router)
@@ -112,7 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(project_assets_router)
     app.include_router(project_media_router)
     app.include_router(project_storyboard_router)
-    logger.info("APP: routers and static mounts registered successfully")
+    logger.info("APP: routers registered successfully")
     return app
 
 

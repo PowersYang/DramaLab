@@ -51,16 +51,12 @@ class VideoGenerator:
                 img_url=image_url if not img_path else None,
             )
 
-            video_url = os.path.relpath(output_path, "output")
-            try:
-                uploader = OSSImageUploader()
-                if uploader.is_configured:
-                    object_key = uploader.upload_file(output_path, sub_path="motion_ref")
-                    if object_key:
-                        logger.info("Uploaded motion ref video to OSS: %s", object_key)
-                        video_url = object_key
-            except Exception as exc:
-                logger.error("Failed to upload motion ref to OSS: %s", exc)
+            uploader = OSSImageUploader()
+            object_key = uploader.upload_file(output_path, sub_path="motion_ref") if uploader.is_configured else None
+            if not object_key:
+                raise RuntimeError("Failed to upload motion reference video to OSS.")
+            logger.info("Uploaded motion ref video to OSS: %s", object_key)
+            video_url = object_key
 
             return {"video_url": video_url}
         except Exception as exc:
@@ -96,19 +92,13 @@ class VideoGenerator:
                 img_url=img_url if not img_path else None,
             )
 
-            rel_path = os.path.relpath(output_path, "output")
-            frame.video_url = rel_path
+            uploader = OSSImageUploader()
+            object_key = uploader.upload_file(output_path, sub_path="video") if uploader.is_configured else None
+            if not object_key:
+                raise RuntimeError(f"Failed to upload video for frame {frame.id} to OSS.")
+            logger.info("Uploaded video for frame %s to OSS: %s", frame.id, object_key)
+            frame.video_url = object_key
             frame.status = GenerationStatus.COMPLETED
-
-            try:
-                uploader = OSSImageUploader()
-                if uploader.is_configured:
-                    object_key = uploader.upload_file(output_path, sub_path="video")
-                    if object_key:
-                        logger.info("Uploaded video for frame %s to OSS: %s", frame.id, object_key)
-                        frame.video_url = object_key
-            except Exception as exc:
-                logger.error("Failed to upload video for frame %s to OSS: %s", frame.id, exc)
         except Exception as exc:
             logger.error("Failed to generate video for frame %s: %s", frame.id, exc)
             frame.status = GenerationStatus.FAILED

@@ -242,7 +242,9 @@ class StoryboardWorkflow:
         except subprocess.TimeoutExpired:
             raise RuntimeError("FFmpeg frame extraction timed out")
 
-        image_url = self.storage_provider.upload_image(output_path) or os.path.relpath(output_path, "output")
+        image_url = self.storage_provider.upload_image(output_path)
+        if not image_url:
+            raise RuntimeError("Failed to upload extracted frame image to OSS.")
         variant = ImageVariant(
             id=str(uuid.uuid4()),
             url=image_url,
