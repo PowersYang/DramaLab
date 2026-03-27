@@ -43,6 +43,7 @@ text_provider = ScriptProcessor()
 @router.get("/debug/config")
 async def debug_config():
     """检查 OSS 与本地路径配置是否正常。"""
+    logger.info("SYSTEM_API: debug_config")
     uploader = OSSImageUploader()
     return {
         "oss_configured": uploader.is_configured,
@@ -62,6 +63,7 @@ async def debug_config():
 @router.get("/system/check")
 async def check_system():
     """检查系统依赖与基础配置。"""
+    logger.info("SYSTEM_API: check_system")
     return run_system_checks()
 
 
@@ -69,6 +71,7 @@ async def check_system():
 async def upload_file(file: UploadFile = File(...)):
     """上传文件，并返回可供前端访问的地址。"""
     try:
+        logger.info("SYSTEM_API: upload_file filename=%s", file.filename)
         file_ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4()}{file_ext}"
         file_path = os.path.join("output/uploads", filename)
@@ -78,10 +81,13 @@ async def upload_file(file: UploadFile = File(...)):
 
         oss_url = OSSImageUploader().upload_image(file_path)
         if oss_url:
+            logger.info("SYSTEM_API: upload_file uploaded_to_oss filename=%s", file.filename)
             return signed_response({"url": oss_url})
 
+        logger.info("SYSTEM_API: upload_file stored_locally filename=%s", file.filename)
         return {"url": f"uploads/{filename}"}
     except Exception as exc:
+        logger.exception("SYSTEM_API: upload_file unexpected_error filename=%s", file.filename)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -91,6 +97,7 @@ async def import_file_preview(
     suggested_episodes: int = 3,
 ):
     """上传 txt/md 文件，并返回 LLM 预拆分的分集结果。"""
+    logger.info("SYSTEM_API: import_file_preview filename=%s suggested_episodes=%s", file.filename, suggested_episodes)
     if suggested_episodes < 1 or suggested_episodes > 50:
         raise HTTPException(status_code=400, detail="建议集数应在 1-50 之间")
     try:
@@ -110,9 +117,10 @@ async def import_file_preview(
             **result,
         }
     except ValueError as exc:
+        logger.warning("SYSTEM_API: import_file_preview invalid_request filename=%s detail=%s", file.filename, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("File import preview failed")
+        logger.exception("SYSTEM_API: import_file_preview unexpected_error filename=%s", file.filename)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -120,6 +128,7 @@ async def import_file_preview(
 async def import_file_confirm(request: ConfirmImportRequest):
     """确认分集结果，并正式创建系列与分集项目。"""
     try:
+        logger.info("SYSTEM_API: import_file_confirm title=%s episode_count=%s has_import_id=%s", request.title, len(request.episodes), bool(request.import_id))
         text = None
         if request.import_id:
             text = system_service.pop_import_text(request.import_id)
@@ -141,9 +150,10 @@ async def import_file_confirm(request: ConfirmImportRequest):
         )
         return signed_response(result)
     except ValueError as exc:
+        logger.warning("SYSTEM_API: import_file_confirm invalid_request title=%s detail=%s", request.title, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("Import confirm failed")
+        logger.exception("SYSTEM_API: import_file_confirm unexpected_error title=%s", request.title)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -161,6 +171,7 @@ def load_user_config():
     """从 .env 重新加载用户配置到当前进程缓存。"""
     try:
         reload_env_settings()
+        logger.info("SYSTEM_API: load_user_config reloaded path=%s", get_user_config_path())
     except Exception as exc:
         logger.warning("Failed to reload config from %s: %s", get_user_config_path(), exc)
 
@@ -183,6 +194,7 @@ load_user_config()
 @router.get("/config/info")
 async def get_config_info():
     """返回当前配置存储模式与路径信息。"""
+    logger.info("SYSTEM_API: get_config_info")
     config_path = get_user_config_path()
     return {
         "mode": "packaged" if getattr(sys, "frozen", False) else "development",
@@ -195,6 +207,7 @@ async def get_config_info():
 async def update_env_config(config: EnvConfig):
     """更新环境配置，并落盘保存。"""
     try:
+        logger.info("SYSTEM_API: update_env_config")
         config_dict = config.model_dump(exclude_unset=True)
         endpoint_overrides = config_dict.pop("endpoint_overrides", {})
         config_dict = {key: value for key, value in config_dict.items() if value is not None}
@@ -226,7 +239,7 @@ async def update_env_config(config: EnvConfig):
             "message": f"Configuration saved to {config_path}",
         }
     except Exception as exc:
-        logger.exception("Failed to save environment configuration")
+        logger.exception("SYSTEM_API: update_env_config unexpected_error")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -234,6 +247,7 @@ async def update_env_config(config: EnvConfig):
 async def get_env_config():
     """读取当前环境配置。"""
     try:
+        logger.info("SYSTEM_API: get_env_config")
         endpoint_overrides = {}
         for provider in PROVIDER_DEFAULTS:
             env_key = f"{provider}_BASE_URL"

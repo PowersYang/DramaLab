@@ -777,6 +777,9 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
             **_audit_time_kwargs(character),
         )
     )
+    # 先把角色主记录刷入数据库，避免 PostgreSQL 在写角色素材单元时触发外键约束失败。
+    session.flush()
+
     for group_name, image_asset in (
         ("full_body_asset", character.full_body_asset or ImageAsset()),
         ("three_view_asset", character.three_view_asset or ImageAsset()),

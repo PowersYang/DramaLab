@@ -15,5 +15,14 @@ echo "========================================"
 # 确保在 backend 项目根目录
 cd "$(dirname "$0")"
 
-# 启动 uvicorn
-python3 -m uvicorn main:create_app --factory --reload --port 17177 --host 0.0.0.0
+# 开发态只监听 Python 源码目录，并排除运行产物目录；否则日志写入 output/logs/app.log
+# 也会触发 uvicorn 热重载，导致前端代理在请求过程中遇到 socket hang up。
+python3 -m uvicorn main:create_app --factory --reload \
+  --reload-dir src \
+  --reload-dir . \
+  --reload-include '*.py' \
+  --reload-exclude 'output/*' \
+  --reload-exclude 'output/**' \
+  --reload-exclude '*.log' \
+  --port 17177 \
+  --host 0.0.0.0

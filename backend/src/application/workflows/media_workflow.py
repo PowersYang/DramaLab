@@ -35,10 +35,12 @@ class MediaWorkflow:
 
     def get_available_voices(self):
         """向 API 层暴露当前可用的 TTS 音色列表。"""
+        logger.info("MEDIA_WORKFLOW: get_available_voices")
         return self.audio_provider.get_available_voices()
 
     def generate_video(self, script_id: str):
         """为尚未产出视频的分镜帧生成视频片段。"""
+        logger.info("MEDIA_WORKFLOW: generate_video script_id=%s", script_id)
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.status == "completed" and frame.video_url:
@@ -46,10 +48,12 @@ class MediaWorkflow:
             self.video_provider.generate_clip(frame)
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("MEDIA_WORKFLOW: generate_video completed script_id=%s", script_id)
         return self._get_project(script_id)
 
     def generate_audio(self, script_id: str):
         """为项目中每一帧生成对白、音效和背景音乐。"""
+        logger.info("MEDIA_WORKFLOW: generate_audio script_id=%s", script_id)
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.dialogue and frame.character_ids:
@@ -69,10 +73,12 @@ class MediaWorkflow:
             self.audio_provider.generate_bgm(frame)
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("MEDIA_WORKFLOW: generate_audio completed script_id=%s", script_id)
         return self._get_project(script_id)
 
     def process_video_task(self, script_id: str, task_id: str):
         """执行持久化视频任务，并把结果同步回项目聚合。"""
+        logger.info("MEDIA_WORKFLOW: process_video_task start script_id=%s task_id=%s", script_id, task_id)
         project = self._get_project(script_id)
         task = self.video_task_repository.get(script_id, task_id)
         if not task:
@@ -93,6 +99,7 @@ class MediaWorkflow:
             )
             task.video_url = self._persist_output(output_path, "video/tasks")
             task.status = "completed"
+            logger.info("MEDIA_WORKFLOW: process_video_task completed script_id=%s task_id=%s", script_id, task_id)
         except Exception as exc:
             logger.exception("Failed to process video task")
             logger.error("Video generation failed: %s", exc)
@@ -107,6 +114,7 @@ class MediaWorkflow:
 
     def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float, pitch: float, volume: int):
         """按需为单个分镜帧生成对白音频。"""
+        logger.info("MEDIA_WORKFLOW: generate_dialogue_line script_id=%s frame_id=%s", script_id, frame_id)
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -117,10 +125,12 @@ class MediaWorkflow:
                 self.audio_provider.generate_dialogue(frame, speaker, speed, pitch, volume)
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("MEDIA_WORKFLOW: generate_dialogue_line completed script_id=%s frame_id=%s", script_id, frame_id)
         return self._get_project(script_id)
 
     def merge_videos(self, script_id: str):
         """使用 FFmpeg 把已选中的分镜视频合并成单个输出。"""
+        logger.info("MEDIA_WORKFLOW: merge_videos script_id=%s", script_id)
         validate_safe_id(script_id, "script_id")
         project = self._get_project(script_id)
         ffmpeg_path = get_ffmpeg_path()
@@ -151,6 +161,7 @@ class MediaWorkflow:
 
         if not video_paths:
             raise ValueError("No videos selected to merge. Please select videos for each frame first.")
+        logger.info("MEDIA_WORKFLOW: merge_videos selected_video_count=%s script_id=%s", len(video_paths), script_id)
 
         with tempfile.TemporaryDirectory(prefix="lumenx-merge-") as temp_dir:
             list_path = os.path.join(temp_dir, f"merge_list_{script_id}.txt")
@@ -202,6 +213,7 @@ class MediaWorkflow:
                 project.merged_video_url = self._persist_output(output_path, "video/merged")
                 project.updated_at = utc_now()
                 self.project_repository.save(project)
+                logger.info("MEDIA_WORKFLOW: merge_videos completed script_id=%s output=%s", script_id, project.merged_video_url)
                 return self._get_project(script_id)
             except subprocess.TimeoutExpired:
                 raise RuntimeError("FFmpeg timed out. The videos may be too large.")
@@ -211,6 +223,7 @@ class MediaWorkflow:
 
     def export_project(self, script_id: str, options: dict):
         """执行导出 provider，并持久化最终输出地址。"""
+        logger.info("MEDIA_WORKFLOW: export_project script_id=%s option_keys=%s", script_id, sorted(options.keys()))
         project = self._get_project(script_id)
         export_url = self.export_manager.render_project(project, options)
         export_local_path = safe_resolve_path("output", export_url)
@@ -220,6 +233,7 @@ class MediaWorkflow:
             project.merged_video_url = export_url
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("MEDIA_WORKFLOW: export_project completed script_id=%s url=%s", script_id, project.merged_video_url)
         return {"url": project.merged_video_url}
 
     def _sync_asset_video_task(self, project, task):

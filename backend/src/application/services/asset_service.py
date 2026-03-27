@@ -5,14 +5,16 @@
 """
 
 import os
-import shutil
 import uuid
 from typing import Any
 
+from ...common.log import get_logger
 from ...repository import ProjectRepository
 from ...schemas.models import AssetUnit, ImageAsset, ImageVariant
 from ...utils.datetime import utc_now
-from ...utils.oss_utils import OSSImageUploader
+
+
+logger = get_logger(__name__)
 
 
 class AssetService:
@@ -23,6 +25,7 @@ class AssetService:
 
     def toggle_lock(self, script_id: str, asset_id: str, asset_type: str):
         """切换项目资产的锁定状态。"""
+        logger.info("ASSET_SERVICE: toggle_lock script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.locked = not asset.locked
@@ -30,6 +33,7 @@ class AssetService:
 
     def update_image(self, script_id: str, asset_id: str, asset_type: str, image_url: str):
         """更新资产当前选中的图片地址。"""
+        logger.info("ASSET_SERVICE: update_image script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.image_url = image_url
@@ -39,10 +43,12 @@ class AssetService:
 
     def update_description(self, script_id: str, asset_id: str, asset_type: str, description: str):
         """仅更新资产的描述字段。"""
+        logger.info("ASSET_SERVICE: update_description script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
         return self.update_attributes(script_id, asset_id, asset_type, {"description": description})
 
     def update_attributes(self, script_id: str, asset_id: str, asset_type: str, attributes: dict[str, Any]):
         """按给定值增量更新资产可变属性。"""
+        logger.info("ASSET_SERVICE: update_attributes script_id=%s asset_id=%s asset_type=%s fields=%s", script_id, asset_id, asset_type, sorted(attributes.keys()))
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         for key, value in attributes.items():
@@ -52,6 +58,14 @@ class AssetService:
 
     def select_variant(self, script_id: str, asset_id: str, asset_type: str, variant_id: str, generation_type: str | None = None):
         """选中一个图片候选，并同步顶层冗余图片地址。"""
+        logger.info(
+            "ASSET_SERVICE: select_variant script_id=%s asset_id=%s asset_type=%s variant_id=%s generation_type=%s",
+            script_id,
+            asset_id,
+            asset_type,
+            variant_id,
+            generation_type,
+        )
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         variant = None
@@ -99,6 +113,7 @@ class AssetService:
 
     def delete_variant(self, script_id: str, asset_id: str, asset_type: str, variant_id: str):
         """删除候选图，并在必要时刷新当前选中地址。"""
+        logger.info("ASSET_SERVICE: delete_variant script_id=%s asset_id=%s asset_type=%s variant_id=%s", script_id, asset_id, asset_type, variant_id)
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
 
@@ -122,6 +137,15 @@ class AssetService:
 
     def toggle_variant_favorite(self, script_id: str, asset_id: str, asset_type: str, variant_id: str, is_favorited: bool, generation_type: str | None = None):
         """设置或取消候选图收藏状态。"""
+        logger.info(
+            "ASSET_SERVICE: toggle_variant_favorite script_id=%s asset_id=%s asset_type=%s variant_id=%s is_favorited=%s generation_type=%s",
+            script_id,
+            asset_id,
+            asset_type,
+            variant_id,
+            is_favorited,
+            generation_type,
+        )
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         found = False
@@ -145,6 +169,7 @@ class AssetService:
 
     def upload_variant(self, script_id: str, asset_type: str, asset_id: str, upload_type: str, image_url: str, description: str | None = None):
         """把用户上传图片作为资产的新候选图挂载进去。"""
+        logger.info("ASSET_SERVICE: upload_variant script_id=%s asset_id=%s asset_type=%s upload_type=%s", script_id, asset_id, asset_type, upload_type)
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         new_variant = ImageVariant(
@@ -197,6 +222,7 @@ class AssetService:
 
     def delete_asset_video(self, script_id: str, asset_id: str, asset_type: str, video_id: str):
         """同时从资产范围和项目范围移除一个生成视频。"""
+        logger.info("ASSET_SERVICE: delete_asset_video script_id=%s asset_id=%s asset_type=%s video_id=%s", script_id, asset_id, asset_type, video_id)
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         if hasattr(asset, "video_assets") and asset.video_assets is not None:
@@ -206,6 +232,7 @@ class AssetService:
 
     def select_video_for_frame(self, script_id: str, frame_id: str, video_id: str):
         """把生成视频任务绑定为分镜帧当前选中结果。"""
+        logger.info("ASSET_SERVICE: select_video_for_frame script_id=%s frame_id=%s video_id=%s", script_id, frame_id, video_id)
         project = self._get_project(script_id)
         frame = next((frame for frame in project.frames if frame.id == frame_id), None)
         if not frame:
@@ -220,6 +247,7 @@ class AssetService:
 
     def upload_frame_image(self, script_id: str, frame_id: str, image_path: str):
         """上传手工分镜图，并把它作为候选图保存。"""
+        logger.info("ASSET_SERVICE: upload_frame_image script_id=%s frame_id=%s image_path=%s", script_id, frame_id, image_path)
         project = self._get_project(script_id)
         frame = next((frame for frame in project.frames if frame.id == frame_id), None)
         if not frame:
@@ -247,6 +275,7 @@ class AssetService:
         """加载项目聚合，缺失时抛出统一错误。"""
         project = self.project_repository.get(script_id)
         if not project:
+            logger.warning("ASSET_SERVICE: _get_project target_missing script_id=%s", script_id)
             raise ValueError("Script not found")
         return project
 
@@ -263,11 +292,14 @@ class AssetService:
         else:
             raise ValueError(f"Unsupported asset_type: {asset_type}")
         if not target:
+            logger.warning("ASSET_SERVICE: _find_asset target_missing asset_id=%s asset_type=%s", asset_id, asset_type)
             raise ValueError(f"Asset {asset_id} of type {asset_type} not found")
         return target
 
     def _save_project(self, project):
         """持久化项目聚合变更，并返回最新读取结果。"""
+        # 聚合更新统一走这里落库，便于后续把保存耗时或版本冲突监控集中到同一出口。
+        logger.info("ASSET_SERVICE: _save_project project_id=%s", project.id)
         project.updated_at = utc_now()
         self.project_repository.save(project)
         return self.project_repository.get(project.id)

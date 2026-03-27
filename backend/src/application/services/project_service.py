@@ -6,9 +6,13 @@
 """
 
 from ...repository import ProjectRepository, SeriesRepository
+from ...common.log import get_logger
 from ...providers import ScriptProcessor
 from ...schemas.models import ModelSettings, PromptConfig
 from ...utils.datetime import utc_now
+
+
+logger = get_logger(__name__)
 
 
 class ProjectService:
@@ -21,17 +25,31 @@ class ProjectService:
 
     def create_project(self, title: str, text: str, skip_analysis: bool = False):
         """根据原始文本创建并持久化项目。"""
+        # 创建项目时记录文本长度和模式，后续可以区分是 AI 解析慢还是草稿创建阶段慢。
+        logger.info(
+            "PROJECT_SERVICE: create_project title=%s text_length=%s skip_analysis=%s",
+            title,
+            len(text or ""),
+            skip_analysis,
+        )
         if skip_analysis:
             project = self.text_provider.create_draft_script(title, text)
         else:
             project = self.text_provider.parse_novel(title, text)
         self.project_repository.create(project)
+        logger.info("PROJECT_SERVICE: create_project completed project_id=%s", project.id)
         return project
 
     def reparse_project(self, script_id: str, text: str):
         """重新解析剧本，同时保留稳定元数据字段。"""
+        logger.info(
+            "PROJECT_SERVICE: reparse_project script_id=%s text_length=%s",
+            script_id,
+            len(text or ""),
+        )
         existing = self.get_project(script_id)
         if not existing:
+            logger.warning("PROJECT_SERVICE: reparse_project target missing script_id=%s", script_id)
             raise ValueError("Script not found")
 
         reparsed = self.text_provider.parse_novel(existing.title, text)
@@ -52,20 +70,27 @@ class ProjectService:
         reparsed.updated_by = existing.updated_by
 
         self.project_repository.replace_graph(reparsed)
+        logger.info("PROJECT_SERVICE: reparse_project completed script_id=%s", script_id)
         return reparsed
 
     def list_projects(self):
         """返回所有已持久化项目。"""
-        return self.project_repository.list()
+        projects = self.project_repository.list()
+        logger.info("PROJECT_SERVICE: list_projects count=%s", len(projects))
+        return projects
 
     def get_project(self, script_id: str):
         """加载单个项目聚合。"""
-        return self.project_repository.get(script_id)
+        project = self.project_repository.get(script_id)
+        logger.info("PROJECT_SERVICE: get_project script_id=%s found=%s", script_id, bool(project))
+        return project
 
     def delete_project(self, script_id: str):
         """删除项目，并在需要时解除它与系列的关联。"""
+        logger.info("PROJECT_SERVICE: delete_project script_id=%s", script_id)
         project = self.get_project(script_id)
         if not project:
+            logger.warning("PROJECT_SERVICE: delete_project target missing script_id=%s", script_id)
             raise ValueError("Project not found")
 
         if project.series_id:
@@ -76,12 +101,20 @@ class ProjectService:
                 self.series_repository.replace_graph(series)
 
         self.project_repository.soft_delete(script_id)
+        logger.info(
+            "PROJECT_SERVICE: delete_project completed script_id=%s title=%s series_id=%s",
+            script_id,
+            project.title,
+            project.series_id,
+        )
         return {"status": "deleted", "id": script_id, "title": project.title}
 
     def sync_descriptions(self, script_id: str):
         """清空缓存提示词，便于后续按最新描述重新生成。"""
+        logger.info("PROJECT_SERVICE: sync_descriptions script_id=%s", script_id)
         project = self.get_project(script_id)
         if not project:
+            logger.warning("PROJECT_SERVICE: sync_descriptions target missing script_id=%s", script_id)
             raise ValueError("Script not found")
 
         for character in project.characters:
@@ -96,12 +129,27 @@ class ProjectService:
             if hasattr(prop, "prompt"):
                 prop.prompt = None
 
-        return self.project_repository.replace_graph(project)
+        updated_project = self.project_repository.replace_graph(project)
+        logger.info(
+            "PROJECT_SERVICE: sync_descriptions completed script_id=%s characters=%s scenes=%s props=%s",
+            script_id,
+            len(project.characters),
+            len(project.scenes),
+            len(project.props),
+        )
+        return updated_project
 
     def update_style(self, script_id: str, style_preset: str, style_prompt: str | None = None):
         """更新项目级视觉风格选择。"""
+        logger.info(
+            "PROJECT_SERVICE: update_style script_id=%s style_preset=%s has_style_prompt=%s",
+            script_id,
+            style_preset,
+            bool(style_prompt),
+        )
         project = self.get_project(script_id)
         if not project:
+            logger.warning("PROJECT_SERVICE: update_style target missing script_id=%s", script_id)
             raise ValueError("Script not found")
         return self.project_repository.patch_metadata(
             script_id,
@@ -111,10 +159,17 @@ class ProjectService:
 
     def update_model_settings(self, script_id: str, **updates):
         """增量更新项目上的模型设置字段。"""
+        effective_updates = {k: v for k, v in updates.items() if v is not None}
+        logger.info(
+            "PROJECT_SERVICE: update_model_settings script_id=%s fields=%s",
+            script_id,
+            sorted(effective_updates.keys()),
+        )
         project = self.get_project(script_id)
         if not project:
+            logger.warning("PROJECT_SERVICE: update_model_settings target missing script_id=%s", script_id)
             raise ValueError("Script not found")
-        project.model_settings = project.model_settings.model_copy(update={k: v for k, v in updates.items() if v is not None})
+        project.model_settings = project.model_settings.model_copy(update=effective_updates)
         return self.project_repository.patch_metadata(
             script_id,
             {"model_settings": project.model_settings.model_dump(mode="json"), "updated_at": utc_now()},
@@ -123,15 +178,25 @@ class ProjectService:
 
     def get_prompt_config(self, script_id: str):
         """返回提示词配置，缺省时给出空配置对象。"""
+        logger.info("PROJECT_SERVICE: get_prompt_config script_id=%s", script_id)
         project = self.get_project(script_id)
         if not project:
+            logger.warning("PROJECT_SERVICE: get_prompt_config target missing script_id=%s", script_id)
             raise ValueError("Project not found")
         return project.prompt_config if hasattr(project, "prompt_config") else PromptConfig()
 
     def update_prompt_config(self, script_id: str, storyboard_polish: str = "", video_polish: str = "", r2v_polish: str = ""):
         """整体替换项目的提示词覆写配置。"""
+        logger.info(
+            "PROJECT_SERVICE: update_prompt_config script_id=%s storyboard=%s video=%s r2v=%s",
+            script_id,
+            bool(storyboard_polish),
+            bool(video_polish),
+            bool(r2v_polish),
+        )
         project = self.get_project(script_id)
         if not project:
+            logger.warning("PROJECT_SERVICE: update_prompt_config target missing script_id=%s", script_id)
             raise ValueError("Project not found")
         prompt_config = PromptConfig(
             storyboard_polish=storyboard_polish,
@@ -143,4 +208,5 @@ class ProjectService:
             {"prompt_config": prompt_config.model_dump(mode="json"), "updated_at": utc_now()},
             expected_version=project.version,
         )
+        logger.info("PROJECT_SERVICE: update_prompt_config completed script_id=%s", script_id)
         return prompt_config

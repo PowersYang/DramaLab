@@ -5,10 +5,11 @@
 import asyncio
 from functools import partial
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ..application.services import CharacterService, ProjectService, PropService, SceneService
 from ..application.workflows import AssetWorkflow
+from ..common.log import get_logger
 from ..providers.text.default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
     DEFAULT_STORYBOARD_POLISH_PROMPT,
@@ -27,6 +28,7 @@ from ..schemas.requests import (
 
 
 router = APIRouter()
+logger = get_logger(__name__)
 project_service = ProjectService()
 character_service = CharacterService()
 scene_service = SceneService()
@@ -37,35 +39,57 @@ asset_workflow = AssetWorkflow()
 @router.post("/projects", response_model=Script)
 async def create_project(request: CreateProjectRequest, skip_analysis: bool = False):
     """根据小说文本创建新项目。"""
+    # 路由层只记录轻量上下文，避免和请求中间件重复打印完整正文。
+    logger.info("PROJECT_API: create_project title=%s skip_analysis=%s", request.title, skip_analysis)
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         None,
         partial(project_service.create_project, request.title, request.text, skip_analysis),
     )
+    logger.info("PROJECT_API: create_project completed project_id=%s", result.id)
     return signed_response(result)
 
 
 @router.put("/projects/{script_id}/reparse", response_model=Script)
-async def reparse_project(script_id: str, request: ReparseProjectRequest):
+async def reparse_project(script_id: str, request: ReparseProjectRequest, http_request: Request):
     """重新解析已有项目文本，并替换其中的实体数据。"""
+    request_id = getattr(http_request.state, "request_id", None)
     try:
+        logger.info("PROJECT_API: reparse_project script_id=%s request_id=%s", script_id, request_id)
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
             partial(project_service.reparse_project, script_id, request.text),
         )
+        logger.info("PROJECT_API: reparse_project completed script_id=%s request_id=%s", script_id, request_id)
         return signed_response(result)
     except ValueError as exc:
+        logger.warning(
+            "PROJECT_API: reparse_project not_found script_id=%s request_id=%s detail=%s",
+            script_id,
+            request_id,
+            exc,
+        )
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.exception("PROJECT_API: reparse_project failed script_id=%s request_id=%s", script_id, request_id)
+        # 把 request_id 回传给前端，便于代理层报错后快速定位到后端异常栈。
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": str(exc),
+                "request_id": request_id,
+            },
+        )
 
 
 @router.get("/projects", response_model=list[dict])
 @router.get("/projects/", response_model=list[dict])
 async def list_projects():
     """列出后端当前保存的全部项目。"""
-    return signed_response(project_service.list_projects())
+    projects = project_service.list_projects()
+    logger.info("PROJECT_API: list_projects count=%s", len(projects))
+    return signed_response(projects)
 
 
 @router.get("/projects/{script_id}", response_model=Script)
@@ -73,7 +97,9 @@ async def get_project(script_id: str):
     """按项目 ID 读取项目详情。"""
     script = project_service.get_project(script_id)
     if not script:
+        logger.warning("PROJECT_API: get_project not_found script_id=%s", script_id)
         raise HTTPException(status_code=404, detail="Project not found")
+    logger.info("PROJECT_API: get_project hit script_id=%s", script_id)
     return signed_response(script)
 
 
@@ -81,10 +107,15 @@ async def get_project(script_id: str):
 async def delete_project(script_id: str):
     """按 ID 删除项目。注意：这是永久删除。"""
     try:
-        return project_service.delete_project(script_id)
+        logger.info("PROJECT_API: delete_project script_id=%s", script_id)
+        result = project_service.delete_project(script_id)
+        logger.info("PROJECT_API: delete_project completed script_id=%s", script_id)
+        return result
     except ValueError as exc:
+        logger.warning("PROJECT_API: delete_project not_found script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("PROJECT_API: delete_project failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -92,11 +123,15 @@ async def delete_project(script_id: str):
 async def sync_descriptions(script_id: str):
     """把脚本模块里的实体描述同步回素材模块。"""
     try:
+        logger.info("PROJECT_API: sync_descriptions script_id=%s", script_id)
         updated_script = project_service.sync_descriptions(script_id)
+        logger.info("PROJECT_API: sync_descriptions completed script_id=%s", script_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("PROJECT_API: sync_descriptions not_found script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("PROJECT_API: sync_descriptions failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -152,11 +187,15 @@ async def delete_scene(script_id: str, scene_id: str):
 async def update_project_style(script_id: str, request: UpdateStyleRequest):
     """更新项目的全局风格设置。"""
     try:
+        logger.info("PROJECT_API: update_project_style script_id=%s style_preset=%s", script_id, request.style_preset)
         updated_script = project_service.update_style(script_id, request.style_preset, request.style_prompt)
+        logger.info("PROJECT_API: update_project_style completed script_id=%s", script_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("PROJECT_API: update_project_style not_found script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("PROJECT_API: update_project_style failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -164,13 +203,17 @@ async def update_project_style(script_id: str, request: UpdateStyleRequest):
 async def generate_assets(script_id: str, background_tasks: BackgroundTasks):
     """触发项目素材生成。"""
     _ = background_tasks
+    logger.info("PROJECT_API: generate_assets script_id=%s", script_id)
     script = project_service.get_project(script_id)
     if not script:
+        logger.warning("PROJECT_API: generate_assets not_found script_id=%s", script_id)
         raise HTTPException(status_code=404, detail="Project not found")
     try:
         updated_script = asset_workflow.generate_assets(script_id)
+        logger.info("PROJECT_API: generate_assets completed script_id=%s", script_id)
         return signed_response(updated_script)
     except Exception as exc:
+        logger.exception("PROJECT_API: generate_assets failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -196,11 +239,15 @@ async def delete_prop(script_id: str, prop_id: str):
 async def update_model_settings(script_id: str, request: UpdateModelSettingsRequest):
     """更新项目级模型配置与宽高比设置。"""
     try:
+        logger.info("PROJECT_API: update_model_settings script_id=%s", script_id)
         updated_script = project_service.update_model_settings(script_id, **request.model_dump())
+        logger.info("PROJECT_API: update_model_settings completed script_id=%s", script_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("PROJECT_API: update_model_settings not_found script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("PROJECT_API: update_model_settings failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -208,10 +255,13 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
 async def get_prompt_config(script_id: str):
     """读取项目自定义提示词配置，并附带系统默认值。"""
     try:
+        logger.info("PROJECT_API: get_prompt_config script_id=%s", script_id)
         script = project_service.get_project(script_id)
         if not script:
+            logger.warning("PROJECT_API: get_prompt_config not_found script_id=%s", script_id)
             raise HTTPException(status_code=404, detail="Project not found")
         config = script.prompt_config if hasattr(script, "prompt_config") else PromptConfig()
+        logger.info("PROJECT_API: get_prompt_config completed script_id=%s", script_id)
         return {
             "prompt_config": config.model_dump(),
             "defaults": {
@@ -223,6 +273,7 @@ async def get_prompt_config(script_id: str):
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("PROJECT_API: get_prompt_config failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -230,14 +281,17 @@ async def get_prompt_config(script_id: str):
 async def update_prompt_config(script_id: str, request: UpdatePromptConfigRequest):
     """更新项目自定义提示词配置；空字符串表示回退系统默认值。"""
     try:
+        logger.info("PROJECT_API: update_prompt_config script_id=%s", script_id)
         config = project_service.update_prompt_config(
             script_id,
             storyboard_polish=request.storyboard_polish,
             video_polish=request.video_polish,
             r2v_polish=request.r2v_polish,
         )
+        logger.info("PROJECT_API: update_prompt_config completed script_id=%s", script_id)
         return {"prompt_config": config.model_dump()}
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("PROJECT_API: update_prompt_config failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

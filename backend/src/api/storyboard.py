@@ -40,12 +40,14 @@ async def analyze_to_storyboard(
 ):
     """调用 AI 分析脚本文本并重建分镜帧。"""
     try:
+        logger.info("STORYBOARD_API: analyze_to_storyboard script_id=%s text_length=%s", script_id, len(request.text or ""))
         updated_script = storyboard_workflow.analyze_to_storyboard(script_id, request.text)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: analyze_to_storyboard failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.error("Error in analyze_to_storyboard: %s", exc, exc_info=True)
+        logger.exception("STORYBOARD_API: analyze_to_storyboard unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -53,11 +55,13 @@ async def analyze_to_storyboard(
 async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest):
     """把原始分镜提示词润色成中英文双语版本。"""
     try:
+        logger.info("STORYBOARD_API: refine_storyboard_prompt script_id=%s frame_id=%s", script_id, request.frame_id)
         return storyboard_workflow.refine_prompt(script_id, request.frame_id, request.raw_prompt, request.assets, request.feedback)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: refine_storyboard_prompt failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.error("Error in refine_storyboard_prompt: %s", exc, exc_info=True)
+        logger.exception("STORYBOARD_API: refine_storyboard_prompt unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -65,8 +69,10 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
 async def generate_storyboard(script_id: str):
     """触发分镜图生成。"""
     try:
+        logger.info("STORYBOARD_API: generate_storyboard script_id=%s", script_id)
         return signed_response(storyboard_workflow.generate_storyboard(script_id))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: generate_storyboard unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -74,11 +80,14 @@ async def generate_storyboard(script_id: str):
 async def toggle_frame_lock(script_id: str, request: ToggleFrameLockRequest):
     """切换分镜帧锁定状态。"""
     try:
+        logger.info("STORYBOARD_API: toggle_frame_lock script_id=%s frame_id=%s", script_id, request.frame_id)
         updated_script = storyboard_frame_service.toggle_lock(script_id, request.frame_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: toggle_frame_lock failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: toggle_frame_lock unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -86,6 +95,7 @@ async def toggle_frame_lock(script_id: str, request: ToggleFrameLockRequest):
 async def update_frame(script_id: str, request: UpdateFrameRequest):
     """更新分镜帧信息，如提示词、场景、角色等。"""
     try:
+        logger.info("STORYBOARD_API: update_frame script_id=%s frame_id=%s", script_id, request.frame_id)
         updated_script = storyboard_frame_service.update_frame(
             script_id,
             request.frame_id,
@@ -98,8 +108,10 @@ async def update_frame(script_id: str, request: UpdateFrameRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: update_frame failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: update_frame unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -107,6 +119,7 @@ async def update_frame(script_id: str, request: UpdateFrameRequest):
 async def add_frame(script_id: str, request: AddFrameRequest):
     """新增分镜帧。"""
     try:
+        logger.info("STORYBOARD_API: add_frame script_id=%s insert_at=%s", script_id, request.insert_at)
         updated_script = storyboard_frame_service.add_frame(
             script_id,
             request.scene_id,
@@ -116,8 +129,10 @@ async def add_frame(script_id: str, request: AddFrameRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: add_frame failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: add_frame unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -125,11 +140,14 @@ async def add_frame(script_id: str, request: AddFrameRequest):
 async def delete_frame(script_id: str, frame_id: str):
     """删除分镜帧。"""
     try:
+        logger.info("STORYBOARD_API: delete_frame script_id=%s frame_id=%s", script_id, frame_id)
         updated_script = storyboard_frame_service.delete_frame(script_id, frame_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: delete_frame failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: delete_frame unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -137,6 +155,7 @@ async def delete_frame(script_id: str, frame_id: str):
 async def copy_frame(script_id: str, request: CopyFrameRequest):
     """复制一帧分镜。"""
     try:
+        logger.info("STORYBOARD_API: copy_frame script_id=%s frame_id=%s insert_at=%s", script_id, request.frame_id, request.insert_at)
         updated_script = storyboard_frame_service.copy_frame(
             script_id,
             request.frame_id,
@@ -144,8 +163,10 @@ async def copy_frame(script_id: str, request: CopyFrameRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: copy_frame failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: copy_frame unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -153,11 +174,14 @@ async def copy_frame(script_id: str, request: CopyFrameRequest):
 async def reorder_frames(script_id: str, request: ReorderFramesRequest):
     """重排分镜帧顺序。"""
     try:
+        logger.info("STORYBOARD_API: reorder_frames script_id=%s frame_count=%s", script_id, len(request.frame_ids))
         updated_script = storyboard_frame_service.reorder_frames(script_id, request.frame_ids)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: reorder_frames failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: reorder_frames unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -165,13 +189,20 @@ async def reorder_frames(script_id: str, request: ReorderFramesRequest):
 async def render_frame(script_id: str, request: RenderFrameRequest):
     """根据构图数据重绘指定分镜帧。"""
     try:
-        logger.info("Rendering frame %s", request.frame_id)
+        logger.info(
+            "STORYBOARD_API: render_frame script_id=%s frame_id=%s batch_size=%s has_composition=%s",
+            script_id,
+            request.frame_id,
+            request.batch_size,
+            bool(request.composition_data),
+        )
         updated_script = storyboard_workflow.render_frame(script_id, request.frame_id, request.composition_data, request.prompt, request.batch_size)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: render_frame failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("Error rendering frame %s: %s", request.frame_id, exc)
+        logger.exception("STORYBOARD_API: render_frame unexpected_error script_id=%s frame_id=%s", script_id, request.frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -182,11 +213,14 @@ async def render_frame(script_id: str, request: RenderFrameRequest):
 async def select_video(script_id: str, frame_id: str, request: SelectVideoRequest):
     """为某一帧切换当前选中的视频版本。"""
     try:
+        logger.info("STORYBOARD_API: select_video script_id=%s frame_id=%s video_id=%s", script_id, frame_id, request.video_id)
         updated_script = asset_service.select_video_for_frame(script_id, frame_id, request.video_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: select_video failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("STORYBOARD_API: select_video unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -198,14 +232,17 @@ async def extract_last_frame(
 ):
     """从已完成视频里抽最后一帧，并加入该帧的渲染图候选列表。"""
     try:
+        logger.info("STORYBOARD_API: extract_last_frame script_id=%s frame_id=%s video_task_id=%s", script_id, frame_id, request.video_task_id)
         updated_script = storyboard_workflow.extract_last_frame(script_id, frame_id, request.video_task_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: extract_last_frame failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except RuntimeError as exc:
+        logger.exception("STORYBOARD_API: extract_last_frame runtime_error script_id=%s frame_id=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
-        logger.exception("Error extracting last frame: %s", exc)
+        logger.exception("STORYBOARD_API: extract_last_frame unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -217,6 +254,7 @@ async def upload_frame_image(
 ):
     """给分镜帧上传一张渲染图候选图片。"""
     try:
+        logger.info("STORYBOARD_API: upload_frame_image script_id=%s frame_id=%s filename=%s", script_id, frame_id, file.filename)
         file_ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4()}{file_ext}"
         file_path = os.path.join("output/uploads", filename)
@@ -227,7 +265,8 @@ async def upload_frame_image(
         updated_script = asset_service.upload_frame_image(script_id, frame_id, file_path)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("STORYBOARD_API: upload_frame_image failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("Error uploading frame image: %s", exc)
+        logger.exception("STORYBOARD_API: upload_frame_image unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))

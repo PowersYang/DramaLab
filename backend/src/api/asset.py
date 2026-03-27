@@ -42,6 +42,15 @@ async def generate_motion_ref(
 ):
     """为指定素材生成动作参考视频。"""
     try:
+        # 动作参考生成通常较慢，先记录素材维度和批次，便于区分排队慢还是模型侧慢。
+        logger.info(
+            "ASSET_API: generate_motion_ref script_id=%s asset_id=%s asset_type=%s duration=%s batch_size=%s",
+            script_id,
+            request.asset_id,
+            request.asset_type,
+            request.duration,
+            request.batch_size,
+        )
         script, task_id = asset_workflow.generate_motion_ref_task(
             script_id=script_id,
             asset_id=request.asset_id,
@@ -54,10 +63,13 @@ async def generate_motion_ref(
         background_tasks.add_task(asset_workflow.process_motion_ref_task, script_id, task_id)
         response_data = script.model_dump()
         response_data["_task_id"] = task_id
+        logger.info("ASSET_API: generate_motion_ref task_created script_id=%s task_id=%s", script_id, task_id)
         return signed_response(response_data)
     except ValueError as exc:
+        logger.warning("ASSET_API: generate_motion_ref failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: generate_motion_ref unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -69,6 +81,14 @@ async def generate_single_asset(
 ):
     """按指定参数生成单个素材。"""
     try:
+        logger.info(
+            "ASSET_API: generate_single_asset script_id=%s asset_id=%s asset_type=%s generation_type=%s batch_size=%s",
+            script_id,
+            request.asset_id,
+            request.asset_type,
+            request.generation_type,
+            request.batch_size,
+        )
         script, task_id = asset_workflow.create_asset_generation_task(
             script_id,
             request.asset_id,
@@ -86,23 +106,29 @@ async def generate_single_asset(
         background_tasks.add_task(asset_workflow.process_asset_generation_task, task_id)
         response_data = script.model_dump()
         response_data["_task_id"] = task_id
+        logger.info("ASSET_API: generate_single_asset task_created script_id=%s task_id=%s", script_id, task_id)
         return signed_response(response_data)
     except ValueError as exc:
+        logger.warning("ASSET_API: generate_single_asset failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: generate_single_asset unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/tasks/{task_id}")
 async def get_task_status(task_id: str):
     """返回素材生成任务的当前状态。"""
+    logger.info("ASSET_API: get_task_status task_id=%s", task_id)
     status = asset_workflow.get_task_status(task_id)
     if not status:
+        logger.warning("ASSET_API: get_task_status not_found task_id=%s", task_id)
         raise HTTPException(status_code=404, detail="Task not found")
     if status["status"] == "completed":
         script = project_service.get_project(status["script_id"])
         if script:
             status["script"] = signed_response(script).body.decode("utf-8")
+    logger.info("ASSET_API: get_task_status completed task_id=%s status=%s", task_id, status["status"])
     return status
 
 
@@ -119,6 +145,13 @@ async def generate_asset_video(
 ):
     """为指定素材生成 I2V 视频。"""
     try:
+        logger.info(
+            "ASSET_API: generate_asset_video script_id=%s asset_id=%s asset_type=%s duration=%s",
+            script_id,
+            asset_id,
+            asset_type,
+            request.duration,
+        )
         script, task_id = asset_workflow.create_asset_video_task(
             script_id,
             asset_id,
@@ -128,10 +161,13 @@ async def generate_asset_video(
             request.aspect_ratio,
         )
         background_tasks.add_task(media_workflow.process_video_task, script_id, task_id)
+        logger.info("ASSET_API: generate_asset_video task_created script_id=%s task_id=%s", script_id, task_id)
         return signed_response(script)
     except ValueError as exc:
+        logger.warning("ASSET_API: generate_asset_video failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: generate_asset_video unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -147,6 +183,13 @@ async def delete_asset_video(
 ):
     """删除某个素材下的一条视频记录。"""
     try:
+        logger.info(
+            "ASSET_API: delete_asset_video script_id=%s asset_id=%s asset_type=%s video_id=%s",
+            script_id,
+            asset_id,
+            asset_type,
+            video_id,
+        )
         updated_script = asset_service.delete_asset_video(
             script_id,
             asset_id,
@@ -155,8 +198,10 @@ async def delete_asset_video(
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: delete_asset_video failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: delete_asset_video unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -164,6 +209,7 @@ async def delete_asset_video(
 async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
     """切换素材锁定状态。"""
     try:
+        logger.info("ASSET_API: toggle_asset_lock script_id=%s asset_id=%s asset_type=%s", script_id, request.asset_id, request.asset_type)
         updated_script = asset_service.toggle_lock(
             script_id,
             request.asset_id,
@@ -171,8 +217,10 @@ async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: toggle_asset_lock failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: toggle_asset_lock unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -180,6 +228,7 @@ async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
 async def update_asset_image(script_id: str, request: UpdateAssetImageRequest):
     """手动更新素材图片地址。"""
     try:
+        logger.info("ASSET_API: update_asset_image script_id=%s asset_id=%s asset_type=%s", script_id, request.asset_id, request.asset_type)
         updated_script = asset_service.update_image(
             script_id,
             request.asset_id,
@@ -188,8 +237,10 @@ async def update_asset_image(script_id: str, request: UpdateAssetImageRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: update_asset_image failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: update_asset_image unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -200,6 +251,13 @@ async def update_asset_attributes(
 ):
     """批量更新素材任意字段。"""
     try:
+        logger.info(
+            "ASSET_API: update_asset_attributes script_id=%s asset_id=%s asset_type=%s fields=%s",
+            script_id,
+            request.asset_id,
+            request.asset_type,
+            sorted(request.attributes.keys()),
+        )
         updated_script = asset_service.update_attributes(
             script_id,
             request.asset_id,
@@ -208,8 +266,10 @@ async def update_asset_attributes(
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: update_asset_attributes failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: update_asset_attributes unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -220,6 +280,7 @@ async def update_asset_description(
 ):
     """更新素材描述。"""
     try:
+        logger.info("ASSET_API: update_asset_description script_id=%s asset_id=%s asset_type=%s", script_id, request.asset_id, request.asset_type)
         updated_script = asset_service.update_description(
             script_id,
             request.asset_id,
@@ -228,8 +289,10 @@ async def update_asset_description(
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: update_asset_description failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: update_asset_description unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -237,6 +300,14 @@ async def update_asset_description(
 async def select_asset_variant(script_id: str, request: SelectVariantRequest):
     """把某张候选图设为素材当前选中项。"""
     try:
+        logger.info(
+            "ASSET_API: select_asset_variant script_id=%s asset_id=%s asset_type=%s variant_id=%s generation_type=%s",
+            script_id,
+            request.asset_id,
+            request.asset_type,
+            request.variant_id,
+            request.generation_type,
+        )
         updated_script = asset_service.select_variant(
             script_id,
             request.asset_id,
@@ -246,8 +317,10 @@ async def select_asset_variant(script_id: str, request: SelectVariantRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: select_asset_variant failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: select_asset_variant unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -255,6 +328,13 @@ async def select_asset_variant(script_id: str, request: SelectVariantRequest):
 async def delete_asset_variant(script_id: str, request: DeleteVariantRequest):
     """删除素材下的某张候选图。"""
     try:
+        logger.info(
+            "ASSET_API: delete_asset_variant script_id=%s asset_id=%s asset_type=%s variant_id=%s",
+            script_id,
+            request.asset_id,
+            request.asset_type,
+            request.variant_id,
+        )
         updated_script = asset_service.delete_variant(
             script_id,
             request.asset_id,
@@ -263,8 +343,10 @@ async def delete_asset_variant(script_id: str, request: DeleteVariantRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: delete_asset_variant failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: delete_asset_variant unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -272,6 +354,14 @@ async def delete_asset_variant(script_id: str, request: DeleteVariantRequest):
 async def toggle_variant_favorite(script_id: str, request: FavoriteVariantRequest):
     """切换候选图收藏状态；已收藏图片不会被自动清理。"""
     try:
+        logger.info(
+            "ASSET_API: toggle_variant_favorite script_id=%s asset_id=%s asset_type=%s variant_id=%s is_favorited=%s",
+            script_id,
+            request.asset_id,
+            request.asset_type,
+            request.variant_id,
+            request.is_favorited,
+        )
         updated_script = asset_service.toggle_variant_favorite(
             script_id,
             request.asset_id,
@@ -282,8 +372,10 @@ async def toggle_variant_favorite(script_id: str, request: FavoriteVariantReques
         )
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: toggle_variant_favorite failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
+        logger.exception("ASSET_API: toggle_variant_favorite unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -298,6 +390,14 @@ async def upload_asset(
 ):
     """给素材手动上传一张图片，并登记为新的候选图。"""
     try:
+        logger.info(
+            "ASSET_API: upload_asset script_id=%s asset_id=%s asset_type=%s upload_type=%s filename=%s",
+            script_id,
+            asset_id,
+            asset_type,
+            upload_type,
+            file.filename,
+        )
         file_ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4()}{file_ext}"
         file_path = os.path.join("output/uploads", filename)
@@ -319,9 +419,11 @@ async def upload_asset(
         )
         if not updated_script:
             raise HTTPException(status_code=404, detail="Script or asset not found")
+        logger.info("ASSET_API: upload_asset completed script_id=%s asset_id=%s", script_id, asset_id)
         return signed_response(updated_script)
     except ValueError as exc:
+        logger.warning("ASSET_API: upload_asset invalid_request script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("Error uploading asset: %s", exc)
+        logger.exception("ASSET_API: upload_asset unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

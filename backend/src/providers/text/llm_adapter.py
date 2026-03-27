@@ -3,6 +3,7 @@
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 try:
@@ -14,6 +15,7 @@ from ...utils.endpoints import get_provider_base_url
 from src.settings.env_settings import get_env
 
 logger = logging.getLogger(__name__)
+LLM_REQUEST_TIMEOUT_SECONDS = 120.0
 
 
 class LLMAdapter:
@@ -41,11 +43,13 @@ class LLMAdapter:
                 self._client = OpenAI(
                     api_key=get_env("OPENAI_API_KEY"),
                     base_url=get_env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                    timeout=LLM_REQUEST_TIMEOUT_SECONDS,
                 )
             else:
                 self._client = OpenAI(
                     api_key=get_env("DASHSCOPE_API_KEY"),
                     base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
+                    timeout=LLM_REQUEST_TIMEOUT_SECONDS,
                 )
         return self._client
 
@@ -70,8 +74,30 @@ class LLMAdapter:
             kwargs["response_format"] = response_format
 
         try:
+            # 记录外部模型调用耗时，便于区分“后端逻辑异常”和“上游模型接口卡住/超时”。
+            started_at = time.perf_counter()
+            logger.info(
+                "LLM_ADAPTER: chat start provider=%s model=%s messages=%s timeout_seconds=%s",
+                self.provider,
+                model,
+                len(messages),
+                LLM_REQUEST_TIMEOUT_SECONDS,
+            )
             response = client.chat.completions.create(**kwargs)
+            duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            logger.info(
+                "LLM_ADAPTER: chat completed provider=%s model=%s duration_ms=%s",
+                self.provider,
+                model,
+                duration_ms,
+            )
             return response.choices[0].message.content
         except Exception as exc:
             provider_label = "DashScope" if self.provider != "openai" else "OpenAI"
+            logger.exception(
+                "LLM_ADAPTER: chat failed provider=%s model=%s timeout_seconds=%s",
+                self.provider,
+                model,
+                LLM_REQUEST_TIMEOUT_SECONDS,
+            )
             raise RuntimeError(f"{provider_label} API error: {exc}") from exc

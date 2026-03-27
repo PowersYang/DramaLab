@@ -9,10 +9,14 @@ import os
 import shutil
 import uuid
 
+from ...common.log import get_logger
 from ...repository import ProjectRepository, VideoTaskRepository
 from ...schemas.models import VideoTask
 from ...utils.path_safety import safe_resolve_path, validate_safe_id
 from .character_service import CharacterService
+
+
+logger = get_logger(__name__)
 
 
 class VideoTaskService:
@@ -47,8 +51,17 @@ class VideoTaskService:
         movement_amplitude: str | None = None,
     ) -> list[VideoTask]:
         """为项目创建一个或多个持久化视频任务。"""
+        logger.info(
+            "VIDEO_TASK_SERVICE: create_tasks script_id=%s batch_size=%s model=%s generation_mode=%s frame_id=%s",
+            script_id,
+            batch_size,
+            model,
+            generation_mode,
+            frame_id,
+        )
         project = self.project_repository.get(script_id)
         if not project:
+            logger.warning("VIDEO_TASK_SERVICE: create_tasks project_missing script_id=%s", script_id)
             raise ValueError("Script not found")
 
         tasks = []
@@ -83,14 +96,17 @@ class VideoTaskService:
             self.video_task_repository.save(task)
             tasks.append(task)
 
+        logger.info("VIDEO_TASK_SERVICE: create_tasks completed script_id=%s task_count=%s", script_id, len(tasks))
         return tasks
 
     def bind_voice(self, script_id: str, char_id: str, voice_id: str, voice_name: str):
         """把语音绑定请求转交给角色服务。"""
+        logger.info("VIDEO_TASK_SERVICE: bind_voice script_id=%s char_id=%s voice_id=%s", script_id, char_id, voice_id)
         return CharacterService().bind_voice(script_id, char_id, voice_id, voice_name)
 
     def update_voice_params(self, script_id: str, char_id: str, speed: float, pitch: float, volume: int):
         """把语音参数更新请求转交给角色服务。"""
+        logger.info("VIDEO_TASK_SERVICE: update_voice_params script_id=%s char_id=%s", script_id, char_id)
         return CharacterService().update_voice_params(script_id, char_id, speed, pitch, volume)
 
     def _snapshot_input_image(self, task_id: str, image_url: str) -> str:
@@ -108,6 +124,8 @@ class VideoTaskService:
                     snapshot_path = safe_resolve_path(snapshot_dir, snapshot_filename)
                     shutil.copy2(src_path, snapshot_path)
                     snapshot_url = f"video_inputs/{snapshot_filename}"
+                    logger.info("VIDEO_TASK_SERVICE: snapshot_input_image task_id=%s snapshot_url=%s", task_id, snapshot_url)
         except Exception:
+            logger.exception("VIDEO_TASK_SERVICE: snapshot_input_image failed task_id=%s", task_id)
             snapshot_url = image_url
         return snapshot_url

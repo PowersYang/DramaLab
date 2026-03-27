@@ -1,8 +1,8 @@
-import axios from "axios";
+import axiosLib from "axios";
 
 // Dynamic API URL detection:
 // 1. In packaged app (Electron): Frontend is served by backend, use same origin
-// 2. In development (port 3000/3001): Use backend port 17177
+// 2. In development (port 3000/3001): Default to direct backend port 17177
 const getApiUrl = (): string => {
     const envUrl = process.env.NEXT_PUBLIC_API_URL;
     if (envUrl && envUrl.trim()) {
@@ -11,7 +11,12 @@ const getApiUrl = (): string => {
 
     if (typeof window !== "undefined") {
         if (process.env.NODE_ENV !== "production") {
-            return "/api-proxy";
+            // 开发态默认直连后端，避免 Next dev 代理在长耗时接口（如 reparse）上提前断开连接。
+            // 如果确实需要继续走代理，可显式设置 NEXT_PUBLIC_USE_DEV_PROXY=true。
+            if (process.env.NEXT_PUBLIC_USE_DEV_PROXY === "true") {
+                return "/api-proxy";
+            }
+            return "http://127.0.0.1:17177";
         }
 
         const { protocol, hostname, port } = window.location;
@@ -29,6 +34,177 @@ const getApiUrl = (): string => {
 
 
 export const API_URL = getApiUrl();
+
+const LOG_PREFIX = "[lumenx-api]";
+const SENSITIVE_KEYWORDS = ["password", "secret", "token", "key", "authorization", "cookie"];
+
+const axios = axiosLib.create();
+
+const formatAxiosError = (error: unknown, fallbackMessage: string): Error => {
+    // 统一把代理层、后端状态码和 request_id 拼进错误文案，便于直接在浏览器里定位问题。
+    if (!axiosLib.isAxiosError(error)) {
+        return error instanceof Error ? error : new Error(fallbackMessage);
+    }
+
+    const requestId = error.response?.headers?.["x-request-id"];
+    const detail = error.response?.data?.detail;
+    const detailMessage =
+        typeof detail === "string"
+            ? detail
+            : typeof detail?.message === "string"
+                ? detail.message
+                : error.message;
+    const requestIdFromBody =
+        typeof detail === "object" && detail && typeof detail.request_id === "string"
+            ? detail.request_id
+            : undefined;
+
+    if (error.response) {
+        const resolvedRequestId = requestId || requestIdFromBody;
+        return new Error(
+            `${fallbackMessage}（status=${error.response.status}` +
+            `${resolvedRequestId ? `, request_id=${resolvedRequestId}` : ""}` +
+            `${detailMessage ? `, detail=${detailMessage}` : ""}）`
+        );
+    }
+
+    if (error.request) {
+        return new Error(
+            `${fallbackMessage}（未收到后端响应，可能是代理断连或服务重启；code=${error.code || "unknown"}` +
+            `${requestId ? `, request_id=${requestId}` : ""}` +
+            `${error.message ? `, detail=${error.message}` : ""}）`
+        );
+    }
+
+    return new Error(`${fallbackMessage}（detail=${detailMessage || error.message}）`);
+};
+
+const sanitizeForLog = (value: unknown): unknown => {
+    // 统一对前端日志里的敏感字段做脱敏，避免在浏览器控制台泄露配置或密钥。
+    if (Array.isArray(value)) {
+        return value.map((item) => sanitizeForLog(item));
+    }
+    if (value && typeof value === "object") {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+                key,
+                SENSITIVE_KEYWORDS.some((word) => key.toLowerCase().includes(word)) ? "***" : sanitizeForLog(item),
+            ])
+        );
+    }
+    return value;
+};
+
+const createRequestId = (): string => {
+    // 请求 ID 会同步到后端，便于把浏览器日志和服务端日志关联到一起。
+    return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
+axios.interceptors.request.use((config) => {
+    const requestId = createRequestId();
+    const metadata = {
+        requestId,
+        startedAt: Date.now(),
+    };
+
+    config.headers = config.headers ?? {};
+    config.headers["X-Request-ID"] = requestId;
+    (config as typeof config & { metadata?: typeof metadata }).metadata = metadata;
+
+    console.info(LOG_PREFIX, "request:start", {
+        requestId,
+        method: config.method,
+        url: config.url,
+        params: sanitizeForLog(config.params),
+        data: sanitizeForLog(config.data),
+    });
+    return config;
+});
+
+axios.interceptors.response.use(
+    (response) => {
+        const metadata = (response.config as typeof response.config & { metadata?: { requestId: string; startedAt: number } }).metadata;
+        const durationMs = metadata ? Date.now() - metadata.startedAt : undefined;
+
+        console.info(LOG_PREFIX, "request:end", {
+            requestId: response.headers["x-request-id"] || metadata?.requestId,
+            method: response.config.method,
+            url: response.config.url,
+            status: response.status,
+            durationMs,
+        });
+        return response;
+    },
+    (error) => {
+        const config = error.config as (typeof error.config & { metadata?: { requestId: string; startedAt: number } }) | undefined;
+        const durationMs = config?.metadata ? Date.now() - config.metadata.startedAt : undefined;
+
+        console.error(LOG_PREFIX, "request:error", {
+            requestId: error.response?.headers?.["x-request-id"] || config?.metadata?.requestId,
+            method: config?.method,
+            url: config?.url,
+            status: error.response?.status,
+            durationMs,
+            params: sanitizeForLog(config?.params),
+            data: sanitizeForLog(config?.data),
+            response: sanitizeForLog(error.response?.data),
+        });
+        return Promise.reject(error);
+    }
+);
+
+const fetchJson = async (input: string, init?: RequestInit) => {
+    const requestId = createRequestId();
+    const startedAt = Date.now();
+    const headers = new Headers(init?.headers);
+
+    // fetch 场景也保持和 axios 一样的请求 ID 策略，避免日志链路断掉。
+    headers.set("X-Request-ID", requestId);
+
+    console.info(LOG_PREFIX, "fetch:start", {
+        requestId,
+        url: input,
+        method: init?.method || "GET",
+    });
+
+    const response = await fetch(input, {
+        ...init,
+        headers,
+    });
+    const durationMs = Date.now() - startedAt;
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        let parsedError: unknown = errorText;
+        try {
+            // 后端多数错误会返回 JSON，这里优先保留结构化信息，方便前端日志检索 detail 字段。
+            parsedError = errorText ? JSON.parse(errorText) : errorText;
+        } catch {
+            parsedError = errorText;
+        }
+        console.error(LOG_PREFIX, "fetch:error", {
+            requestId: response.headers.get("x-request-id") || requestId,
+            url: input,
+            method: init?.method || "GET",
+            status: response.status,
+            durationMs,
+            response: sanitizeForLog(parsedError),
+        });
+        if (parsedError && typeof parsedError === "object" && "detail" in (parsedError as Record<string, unknown>)) {
+            throw new Error(String((parsedError as Record<string, unknown>).detail));
+        }
+        throw new Error(errorText || `Request failed with status ${response.status}`);
+    }
+
+    console.info(LOG_PREFIX, "fetch:end", {
+        requestId: response.headers.get("x-request-id") || requestId,
+        url: input,
+        method: init?.method || "GET",
+        status: response.status,
+        durationMs,
+    });
+    return response.json();
+};
 
 export interface VideoTask {
     id: string;
@@ -75,8 +251,13 @@ export const api = {
     },
 
     reparseProject: async (scriptId: string, text: string) => {
-        const res = await axios.put(`${API_URL}/projects/${scriptId}/reparse`, { text });
-        return { ...res.data, originalText: res.data.original_text };
+        try {
+            const res = await axios.put(`${API_URL}/projects/${scriptId}/reparse`, { text });
+            return { ...res.data, originalText: res.data.original_text };
+        } catch (error) {
+            // 重新解析是长耗时链路，这里把错误格式化得更明确，便于区分 500 和 socket hang up。
+            throw formatAxiosError(error, "重新解析项目失败");
+        }
     },
 
     syncDescriptions: async (scriptId: string) => {
@@ -145,12 +326,10 @@ export const api = {
     uploadFile: async (file: File) => {
         const formData = new FormData();
         formData.append("file", file);
-        const response = await fetch(`${API_URL}/upload`, {
+        return fetchJson(`${API_URL}/upload`, {
             method: "POST",
             body: formData,
         });
-        if (!response.ok) throw new Error("Failed to upload file");
-        return response.json();
     },
 
     /**
@@ -175,20 +354,13 @@ export const api = {
             params.append("description", description);
         }
 
-        const response = await fetch(
+        return fetchJson(
             `${API_URL}/projects/${scriptId}/assets/${assetType}/${assetId}/upload?${params.toString()}`,
             {
                 method: "POST",
                 body: formData,
             }
         );
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || "Failed to upload asset");
-        }
-
-        return response.json();
     },
 
     generateAsset: async (scriptId: string, assetId: string, assetType: string, stylePreset: string, stylePrompt?: string, generationType: string = "all", prompt: string = "", applyStyle: boolean = true, negativePrompt: string = "", batchSize: number = 1, modelName?: string) => {
@@ -470,57 +642,45 @@ export const api = {
     },
 
     getVoices: async () => {
-        const response = await fetch(`${API_URL}/voices`);
-        if (!response.ok) throw new Error("Failed to fetch voices");
-        return response.json();
+        return fetchJson(`${API_URL}/voices`);
     },
 
     bindVoice: async (scriptId: string, charId: string, voiceId: string, voiceName: string) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/characters/${charId}/voice`, {
+        return fetchJson(`${API_URL}/projects/${scriptId}/characters/${charId}/voice`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ voice_id: voiceId, voice_name: voiceName }),
         });
-        if (!response.ok) throw new Error("Failed to bind voice");
-        return response.json();
     },
 
     generateAudio: async (scriptId: string) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/generate_audio`, {
+        return fetchJson(`${API_URL}/projects/${scriptId}/generate_audio`, {
             method: "POST",
         });
-        if (!response.ok) throw new Error("Failed to generate audio");
-        return response.json();
     },
 
     generateLineAudio: async (scriptId: string, frameId: string, speed: number, pitch: number, volume: number = 50) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/frames/${frameId}/audio`, {
+        return fetchJson(`${API_URL}/projects/${scriptId}/frames/${frameId}/audio`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ speed, pitch, volume }),
         });
-        if (!response.ok) throw new Error("Failed to generate line audio");
-        return response.json();
     },
 
     updateVoiceParams: async (scriptId: string, charId: string, speed: number, pitch: number, volume: number) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/characters/${charId}/voice_params`, {
+        return fetchJson(`${API_URL}/projects/${scriptId}/characters/${charId}/voice_params`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ speed, pitch, volume }),
         });
-        if (!response.ok) throw new Error("Failed to update voice params");
-        return response.json();
     },
 
     exportProject: async (scriptId: string, options: any) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/export`, {
+        return fetchJson(`${API_URL}/projects/${scriptId}/export`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(options),
         });
-        if (!response.ok) throw new Error("Failed to export project");
-        return response.json();
     },
 
     generateVideo: async (scriptId: string) => {
@@ -550,15 +710,10 @@ export const api = {
     uploadFrameImage: async (scriptId: string, frameId: string, file: File) => {
         const formData = new FormData();
         formData.append("file", file);
-        const response = await fetch(
+        return fetchJson(
             `${API_URL}/projects/${scriptId}/frames/${frameId}/upload_image`,
             { method: "POST", body: formData }
         );
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || "Failed to upload frame image");
-        }
-        return response.json();
     },
 
     // ============================================

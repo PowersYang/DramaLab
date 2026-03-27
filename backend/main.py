@@ -12,6 +12,9 @@ from src.common.log import setup_logging
 from src.common.request_logging import log_request_response
 
 
+logger = logging.getLogger(__name__)
+
+
 def get_application_path() -> str:
     if getattr(sys, "frozen", False):
         application_path = sys._MEIPASS
@@ -36,6 +39,8 @@ def bootstrap_runtime() -> None:
     os.makedirs(log_dir, exist_ok=True)
 
     setup_logging(log_file=os.path.join(log_dir, "app.log"))
+    # 记录运行目录和日志目录，便于排查打包环境、supervisor 工作目录或挂载目录错误。
+    logger.info("BOOTSTRAP: app_dir=%s log_dir=%s", app_dir, log_dir)
 
 
 def create_app() -> FastAPI:
@@ -47,6 +52,8 @@ def create_app() -> FastAPI:
     from src.api.system import router as system_router
 
     app = FastAPI(title="AI Comic Gen API")
+    # 在应用创建时补一条汇总日志，方便确认当前实例已经把哪些核心路由装载进来。
+    logger.info("APP: creating FastAPI application instance")
     bootstrap_api_environment(logging.getLogger(__name__))
 
     app.add_middleware(
@@ -90,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(project_assets_router)
     app.include_router(project_media_router)
     app.include_router(project_storyboard_router)
+    logger.info("APP: routers and static mounts registered successfully")
     return app
 
 

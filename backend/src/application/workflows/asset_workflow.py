@@ -9,6 +9,7 @@ import time
 import uuid
 from typing import Any
 
+from ...common.log import get_logger
 from ...providers import AssetGenerator, VideoModelProvider
 from ...providers.image.asset_image_provider import ASPECT_RATIO_TO_SIZE
 from ...repository import ProjectRepository, SeriesRepository
@@ -20,6 +21,7 @@ from ...utils.datetime import utc_now
 # 核心业务状态已经落库，后续再把任务状态也迁到专门任务表。
 _ASSET_TASKS: dict[str, dict[str, Any]] = {}
 _MOTION_REF_TASKS: dict[str, dict[str, Any]] = {}
+logger = get_logger(__name__)
 
 
 class AssetWorkflow:
@@ -33,6 +35,7 @@ class AssetWorkflow:
 
     def generate_assets(self, script_id: str):
         """为项目中的角色、场景和道具批量生成资产。"""
+        logger.info("ASSET_WORKFLOW: generate_assets script_id=%s", script_id)
         project = self._get_project(script_id)
         ordered_characters = sorted(
             project.characters,
@@ -49,6 +52,7 @@ class AssetWorkflow:
             self._generate_project_asset(project, prop.id, "prop")
             project = self._get_project(script_id)
 
+        logger.info("ASSET_WORKFLOW: generate_assets completed script_id=%s", script_id)
         return self._get_project(script_id)
 
     def create_asset_generation_task(
@@ -67,6 +71,7 @@ class AssetWorkflow:
         model_name: str | None = None,
     ):
         """把项目资产生成请求登记到过渡期任务表。"""
+        logger.info("ASSET_WORKFLOW: create_asset_generation_task script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
@@ -96,6 +101,7 @@ class AssetWorkflow:
                 "model_name": model_name,
             },
         }
+        logger.info("ASSET_WORKFLOW: create_asset_generation_task completed task_id=%s", task_id)
         return self._get_project(script_id), task_id
 
     def create_series_asset_generation_task(
@@ -114,6 +120,7 @@ class AssetWorkflow:
         model_name: str | None = None,
     ):
         """把系列共享资产生成请求登记到过渡期任务表。"""
+        logger.info("ASSET_WORKFLOW: create_series_asset_generation_task series_id=%s asset_id=%s asset_type=%s", series_id, asset_id, asset_type)
         series = self._get_series(series_id)
         asset = self._find_asset(series, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
@@ -143,14 +150,17 @@ class AssetWorkflow:
                 "model_name": model_name,
             },
         }
+        logger.info("ASSET_WORKFLOW: create_series_asset_generation_task completed task_id=%s", task_id)
         return self._get_series(series_id), task_id
 
     def process_asset_generation_task(self, task_id: str):
         """执行已登记的资产生成任务。"""
         task = _ASSET_TASKS.get(task_id)
         if not task:
+            logger.warning("ASSET_WORKFLOW: process_asset_generation_task task_missing task_id=%s", task_id)
             return
 
+        logger.info("ASSET_WORKFLOW: process_asset_generation_task start task_id=%s owner_kind=%s", task_id, task["owner_kind"])
         task["status"] = "processing"
         try:
             if task["owner_kind"] == "series":
@@ -171,9 +181,11 @@ class AssetWorkflow:
                 )
             task["status"] = "completed"
             task["progress"] = 100
+            logger.info("ASSET_WORKFLOW: process_asset_generation_task completed task_id=%s", task_id)
         except Exception as exc:
             task["status"] = "failed"
             task["error"] = str(exc)
+            logger.exception("ASSET_WORKFLOW: process_asset_generation_task failed task_id=%s", task_id)
             raise
 
     def get_task_status(self, task_id: str):
@@ -203,6 +215,7 @@ class AssetWorkflow:
         batch_size: int = 1,
     ):
         """为资产登记一个动作参考生成任务。"""
+        logger.info("ASSET_WORKFLOW: generate_motion_ref_task script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
         project = self._get_project(script_id)
         task_id = str(uuid.uuid4())
         _MOTION_REF_TASKS[task_id] = {
@@ -221,14 +234,17 @@ class AssetWorkflow:
                 "batch_size": batch_size,
             },
         }
+        logger.info("ASSET_WORKFLOW: generate_motion_ref_task completed task_id=%s", task_id)
         return project, task_id
 
     def process_motion_ref_task(self, script_id: str, task_id: str):
         """执行动作参考生成任务。"""
         task = _MOTION_REF_TASKS.get(task_id)
         if not task:
+            logger.warning("ASSET_WORKFLOW: process_motion_ref_task task_missing task_id=%s", task_id)
             return
 
+        logger.info("ASSET_WORKFLOW: process_motion_ref_task start script_id=%s task_id=%s", script_id, task_id)
         task["status"] = "processing"
         try:
             project = self._get_project(script_id)
@@ -245,9 +261,11 @@ class AssetWorkflow:
             )
             task["status"] = "completed"
             task["progress"] = 100
+            logger.info("ASSET_WORKFLOW: process_motion_ref_task completed script_id=%s task_id=%s", script_id, task_id)
         except Exception as exc:
             task["status"] = "failed"
             task["error"] = str(exc)
+            logger.exception("ASSET_WORKFLOW: process_motion_ref_task failed script_id=%s task_id=%s", script_id, task_id)
             raise
 
     def create_asset_video_task(
@@ -260,6 +278,7 @@ class AssetWorkflow:
         aspect_ratio: str | None = None,
     ):
         """基于已有资产图片创建一个持久化视频任务。"""
+        logger.info("ASSET_WORKFLOW: create_asset_video_task script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
         _ = aspect_ratio
         project = self._get_project(script_id)
         target_asset = self._find_asset(project, asset_id, asset_type)
@@ -300,10 +319,12 @@ class AssetWorkflow:
         target_asset.video_assets.append(task)
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("ASSET_WORKFLOW: create_asset_video_task completed script_id=%s task_id=%s", script_id, task_id)
         return self._get_project(script_id), task_id
 
     def _generate_project_asset(self, project, asset_id: str, asset_type: str, **params):
         """生成单个项目资产并持久化更新后的聚合。"""
+        logger.info("ASSET_WORKFLOW: _generate_project_asset project_id=%s asset_id=%s asset_type=%s", project.id, asset_id, asset_type)
         self._generate_asset_common(project, asset_id, asset_type, **params)
         project.updated_at = utc_now()
         self.project_repository.save(project)
@@ -311,6 +332,7 @@ class AssetWorkflow:
 
     def _generate_series_asset(self, series, asset_id: str, asset_type: str, **params):
         """生成单个系列资产并持久化更新后的聚合。"""
+        logger.info("ASSET_WORKFLOW: _generate_series_asset series_id=%s asset_id=%s asset_type=%s", series.id, asset_id, asset_type)
         self._generate_asset_common(series, asset_id, asset_type, **params)
         series.updated_at = utc_now()
         self.series_repository.save(series)

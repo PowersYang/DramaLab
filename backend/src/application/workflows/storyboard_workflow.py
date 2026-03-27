@@ -35,6 +35,7 @@ class StoryboardWorkflow:
 
     def analyze_to_storyboard(self, script_id: str, text: str):
         """根据剧本文本生成结构化分镜帧。"""
+        logger.info("STORYBOARD_WORKFLOW: analyze_to_storyboard script_id=%s text_length=%s", script_id, len(text or ""))
         project = self._get_project(script_id)
         resolved = self._resolve_episode_assets(project)
         entities_json = {
@@ -72,10 +73,12 @@ class StoryboardWorkflow:
         project.frames = new_frames
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("STORYBOARD_WORKFLOW: analyze_to_storyboard completed script_id=%s frame_count=%s", script_id, len(new_frames))
         return self._get_project(script_id)
 
     def refine_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: list, feedback: str = ""):
         """结合可选系列级覆写，对分镜帧图片提示词进行润色。"""
+        logger.info("STORYBOARD_WORKFLOW: refine_prompt script_id=%s frame_id=%s asset_count=%s", script_id, frame_id, len(assets))
         project = self._get_project(script_id)
         series = self.series_repository.get(project.series_id) if project.series_id else None
         custom_prompt = self._get_effective_prompt("storyboard_polish", project, series)
@@ -102,6 +105,7 @@ class StoryboardWorkflow:
         if frame_found:
             project.updated_at = utc_now()
             self.project_repository.save(project)
+        logger.info("STORYBOARD_WORKFLOW: refine_prompt completed script_id=%s frame_id=%s frame_updated=%s", script_id, frame_id, frame_found)
 
         return {
             "prompt_cn": result.get("prompt_cn"),
@@ -111,14 +115,17 @@ class StoryboardWorkflow:
 
     def generate_storyboard(self, script_id: str):
         """为项目分镜中所有待处理帧批量渲染图片。"""
+        logger.info("STORYBOARD_WORKFLOW: generate_storyboard script_id=%s", script_id)
         project = self._get_project(script_id)
         self.image_provider.generate_storyboard(project)
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("STORYBOARD_WORKFLOW: generate_storyboard completed script_id=%s", script_id)
         return self._get_project(script_id)
 
     def render_frame(self, script_id: str, frame_id: str, composition_data, prompt: str, batch_size: int = 1):
         """使用显式构图输入渲染单个分镜帧。"""
+        logger.info("STORYBOARD_WORKFLOW: render_frame script_id=%s frame_id=%s batch_size=%s", script_id, frame_id, batch_size)
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -174,15 +181,18 @@ class StoryboardWorkflow:
             )
             project.updated_at = utc_now()
             self.project_repository.save(project)
+            logger.info("STORYBOARD_WORKFLOW: render_frame completed script_id=%s frame_id=%s", script_id, frame_id)
             return self._get_project(script_id)
         except Exception:
             frame.status = GenerationStatus.FAILED
             project.updated_at = utc_now()
             self.project_repository.save(project)
+            logger.exception("STORYBOARD_WORKFLOW: render_frame failed script_id=%s frame_id=%s", script_id, frame_id)
             raise
 
     def extract_last_frame(self, script_id: str, frame_id: str, video_task_id: str):
         """提取视频最后一帧，并把它挂成分镜候选图。"""
+        logger.info("STORYBOARD_WORKFLOW: extract_last_frame script_id=%s frame_id=%s video_task_id=%s", script_id, frame_id, video_task_id)
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -245,6 +255,7 @@ class StoryboardWorkflow:
         frame.updated_at = utc_now()
         project.updated_at = utc_now()
         self.project_repository.save(project)
+        logger.info("STORYBOARD_WORKFLOW: extract_last_frame completed script_id=%s frame_id=%s image_url=%s", script_id, frame_id, image_url)
         return self._get_project(script_id)
 
     def _resolve_episode_assets(self, episode):
