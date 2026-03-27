@@ -16,8 +16,7 @@ export default function ConsistencyVault() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
-    const fetchJob = useTaskStore((state) => state.fetchJob);
-    const upsertJobs = useTaskStore((state) => state.upsertJobs);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
 
 
 
@@ -98,33 +97,16 @@ export default function ConsistencyVault() {
                 currentProject.model_settings?.t2i_model
             );
             enqueueReceipts(currentProject.id, [response]);
-            const pollInterval = setInterval(async () => {
-                try {
-                    const job = await api.getTask(response.job_id);
-                    upsertJobs([job]);
-                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                        clearInterval(pollInterval);
-                        const updatedProject = await api.getProject(currentProject.id);
-                        updateProject(currentProject.id, updatedProject);
-                        if (removeGeneratingTask) {
-                            removeGeneratingTask(assetId, generationType);
-                        }
-                        if (["failed", "timed_out"].includes(job.status)) {
-                            alert(job.error_message || "生成失败，请稍后重试");
-                        }
-                    }
-                } catch (pollError: any) {
-                    console.error("Polling error:", pollError);
-                    clearInterval(pollInterval);
-                    alert(`轮询任务状态失败: ${pollError.message || '网络错误'}`);
-                    if (removeGeneratingTask) {
-                        removeGeneratingTask(assetId, generationType);
-                    }
-                }
-            }, 2000);
+            const job = await waitForJob(response.job_id, { intervalMs: 2000 });
+            const updatedProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, updatedProject);
+            if (["failed", "timed_out"].includes(job.status)) {
+                alert(job.error_message || "生成失败，请稍后重试");
+            }
         } catch (error: any) {
             console.error("Failed to generate asset:", error);
             alert(`启动生成任务失败: ${error.response?.data?.detail || error.message}`);
+        } finally {
             if (removeGeneratingTask) {
                 removeGeneratingTask(assetId, generationType);
             }
@@ -215,33 +197,16 @@ export default function ConsistencyVault() {
                 duration
             );
             enqueueReceipts(currentProject.id, [response]);
-            const pollInterval = setInterval(async () => {
-                try {
-                    const job = await api.getTask(response.job_id);
-                    upsertJobs([job]);
-                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                        clearInterval(pollInterval);
-                        const updatedProject = await api.getProject(currentProject.id);
-                        updateProject(currentProject.id, updatedProject);
-                        if (removeGeneratingTask) {
-                            removeGeneratingTask(assetId, generationType);
-                        }
-                        if (["failed", "timed_out"].includes(job.status)) {
-                            alert(`视频生成失败: ${job.error_message || '生成失败，请稍后重试'}`);
-                        }
-                    }
-                } catch (pollError: any) {
-                    console.error("Video polling error:", pollError);
-                    clearInterval(pollInterval);
-                    alert(`视频轮询失败: ${pollError.message || '网络错误'}`);
-                    if (removeGeneratingTask) {
-                        removeGeneratingTask(assetId, generationType);
-                    }
-                }
-            }, 3000);
+            const job = await waitForJob(response.job_id, { intervalMs: 3000 });
+            const updatedProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, updatedProject);
+            if (["failed", "timed_out"].includes(job.status)) {
+                alert(`视频生成失败: ${job.error_message || '生成失败，请稍后重试'}`);
+            }
         } catch (error: any) {
             console.error("Failed to generate video:", error);
             alert(`启动视频生成失败: ${error.response?.data?.detail || error.message}`);
+        } finally {
             if (removeGeneratingTask) {
                 removeGeneratingTask(assetId, generationType);
             }
@@ -278,14 +243,7 @@ export default function ConsistencyVault() {
         try {
             const receipt = await api.syncDescriptions(currentProject.id);
             enqueueReceipts(currentProject.id, [receipt]);
-            let job = await fetchJob(receipt.job_id);
-            for (let attempt = 0; attempt < 180; attempt += 1) {
-                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                    break;
-                }
-                await new Promise((resolve) => window.setTimeout(resolve, 2000));
-                job = await fetchJob(receipt.job_id);
-            }
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "描述同步失败");
             }

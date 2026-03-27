@@ -274,7 +274,7 @@ function StoryboardInspector() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
-    const fetchJob = useTaskStore((state) => state.fetchJob);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
 
     if (!currentProject) return null;
 
@@ -398,11 +398,7 @@ function StoryboardInspector() {
 
         try {
             const receipt = await api.refineFramePrompt(currentProject.id, selectedFrame.id, draft, assets, feedback);
-            let job = await fetchJob(receipt.job_id);
-            while (!["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                await new Promise((resolve) => setTimeout(resolve, 1500));
-                job = await fetchJob(receipt.job_id);
-            }
+            const job = await waitForJob(receipt.job_id, { intervalMs: 1500 });
             const result = job.result_json || {};
             if (job.status === "succeeded" && result.prompt_cn && result.prompt_en) {
                 setPolishedPrompts(prev => ({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Upload, X, Wand2, Plus, ChevronDown, ChevronUp, Loader2, Layout,
@@ -35,7 +35,23 @@ interface VideoCreatorProps {
 export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, onRemixClear, params, onParamsChange }: VideoCreatorProps) {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
-    const fetchJob = useTaskStore((state) => state.fetchJob);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
+
+    const sortedFrames = useMemo(() => {
+        if (!currentProject?.frames) {
+            return [];
+        }
+
+        // Motion 页和 Storyboard 页保持同一排序基准：按 storyboard_frames.frame_order 展示。
+        return [...currentProject.frames].sort((a: any, b: any) => {
+            const orderA = typeof a?.frame_order === "number" ? a.frame_order : Number.MAX_SAFE_INTEGER;
+            const orderB = typeof b?.frame_order === "number" ? b.frame_order : Number.MAX_SAFE_INTEGER;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            return String(a?.id || "").localeCompare(String(b?.id || ""));
+        });
+    }, [currentProject?.frames]);
 
     // Helper function to generate motion description text
     const getMotionDescription = () => {
@@ -96,23 +112,23 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
 
     const handleExtractLastFrame = async (frameId: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!currentProject?.frames) return;
+        if (sortedFrames.length === 0) return;
 
-        const frameIndex = currentProject.frames.findIndex((f: any) => f.id === frameId);
+        const frameIndex = sortedFrames.findIndex((f: any) => f.id === frameId);
         if (frameIndex <= 0) return;
 
-        const prevFrame = currentProject.frames[frameIndex - 1];
+        const prevFrame = sortedFrames[frameIndex - 1];
         if (!prevFrame.selected_video_id) return;
 
-        const prevVideo = currentProject.video_tasks?.find(
+        const prevVideo = currentProject?.video_tasks?.find(
             (t: any) => t.id === prevFrame.selected_video_id && t.status === "completed"
         );
         if (!prevVideo) return;
 
         setExtractingFrameId(frameId);
         try {
-            const updatedProject = await api.extractLastFrame(currentProject.id, frameId, prevVideo.id);
-            updateProject(currentProject.id, updatedProject);
+            const updatedProject = await api.extractLastFrame(currentProject!.id, frameId, prevVideo.id);
+            updateProject(currentProject!.id, updatedProject);
         } catch (error: any) {
             console.error("Failed to extract last frame:", error);
             alert(error?.response?.data?.detail || "Failed to extract last frame");
@@ -175,14 +191,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                 // I2V mode: use video polish
                 receipt = await api.polishVideoPrompt(draftPrompt, feedback, scriptId);
             }
-            let job = await fetchJob(receipt.job_id);
-            for (let attempt = 0; attempt < 180; attempt += 1) {
-                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                    break;
-                }
-                await new Promise((resolve) => window.setTimeout(resolve, 1000));
-                job = await fetchJob(receipt.job_id);
-            }
+            const job = await waitForJob(receipt.job_id);
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "AI 润色失败");
             }
@@ -304,6 +313,12 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
         promptBuilderRef.current?.insertCharacter(slotIndex, slot.name, thumbnail);
     };
 
+    const refreshProjectSnapshot = async (projectId: string) => {
+        // 入队成功后的全量项目刷新改为后台执行，避免按钮一直被慢接口占住。
+        const updatedProject = await api.getProject(projectId);
+        onTaskCreated(updatedProject);
+    };
+
     const handleSubmit = async () => {
         // Validation based on mode
         if (generationMode === 'i2v') {
@@ -400,13 +415,15 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                 onJobCreated(createdReceipts);
             }
 
-            // Refresh with actual data from server
-            const updatedProject = await api.getProject(currentProject.id);
-            onTaskCreated(updatedProject);
-
             // Success feedback
             setSubmitSuccess(true);
             setTimeout(() => setSubmitSuccess(false), 1500);
+
+            // 任务已经成功入队，此时就应该结束按钮的提交态；
+            // 项目详情刷新放到后台，避免让用户误以为仍在同步生成。
+            void refreshProjectSnapshot(currentProject.id).catch((refreshError) => {
+                console.error("Failed to refresh project after queueing video task:", refreshError);
+            });
 
             // Clear selection after successful submit
             // setSelectedImages([]); // Keep selection for iterative generation
@@ -414,8 +431,9 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             console.error("Failed to submit task:", error);
             alert("提交失败");
             // Refresh to remove optimistic updates
-            const updatedProject = await api.getProject(currentProject.id);
-            onTaskCreated(updatedProject);
+            void refreshProjectSnapshot(currentProject.id).catch((refreshError) => {
+                console.error("Failed to refresh project after submit error:", refreshError);
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -583,16 +601,16 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                             <div className="bg-black/20 border border-white/10 rounded-xl p-4 min-h-[200px]">
                                 {activeTab === "storyboard" ? (
                                     <div className="space-y-4">
-                                        {currentProject?.frames && currentProject.frames.length > 0 ? (() => {
+                                        {sortedFrames.length > 0 ? (() => {
                                             const completedVideoIds = new Set(
-                                                currentProject.video_tasks
+                                                currentProject?.video_tasks
                                                     ?.filter((t: any) => t.status === "completed")
                                                     .map((t: any) => t.id) ?? []
                                             );
                                             return (
                                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-h-[500px] overflow-y-auto custom-scrollbar pr-2 p-2">
-                                                {currentProject.frames.map((frame: any, index: number) => {
-                                                    const prevFrame = index > 0 ? currentProject.frames![index - 1] : null;
+                                                {sortedFrames.map((frame: any, index: number) => {
+                                                    const prevFrame = index > 0 ? sortedFrames[index - 1] : null;
                                                     const prevVideoCompleted = prevFrame?.selected_video_id && completedVideoIds.has(prevFrame.selected_video_id);
                                                     const isExtracting = extractingFrameId === frame.id;
                                                     const hasExtracted = !!frame.rendered_image_url;
@@ -622,7 +640,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                                                         </div>
                                                         {/* Frame Number Badge */}
                                                         <div className="absolute top-1 left-1 bg-black/60 px-1.5 rounded text-[10px] text-gray-300 backdrop-blur-sm">
-                                                            #{frame.id.slice(0, 4)}
+                                                            #{typeof frame.frame_order === "number" ? frame.frame_order + 1 : index + 1}
                                                         </div>
                                                         {/* Extract Last Frame Button */}
                                                         {prevVideoCompleted && (
@@ -759,8 +777,8 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                             <div className="space-y-3">
                                 <label className="text-sm font-medium text-gray-300">选择分镜 (Select Frame)</label>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
-                                    {currentProject?.frames && currentProject.frames.length > 0 ? (
-                                        currentProject.frames.map((frame: any) => (
+                                    {sortedFrames.length > 0 ? (
+                                        sortedFrames.map((frame: any) => (
                                             <div
                                                 key={frame.id}
                                                 onClick={() => handleR2VFrameSelect(frame)}

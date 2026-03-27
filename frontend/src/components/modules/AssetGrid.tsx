@@ -24,7 +24,7 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
-    const upsertJobs = useTaskStore((state) => state.upsertJobs);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
 
     const [isGenerating, setIsGenerating] = useState(false);
 
@@ -78,46 +78,36 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
         try {
             const receipt = await api.generateAssets(projectId);
             enqueueReceipts(projectId, [receipt]);
-            const pollInterval = setInterval(async () => {
-                try {
-                    const job = await api.getTask(receipt.job_id);
-                    upsertJobs([job]);
-                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                        clearInterval(pollInterval);
-                        const project = await api.getProject(projectId);
-                        const newAssets: Asset[] = [
-                            ...project.characters.map((c: any) => ({
-                                id: c.id,
-                                type: "char" as const,
-                                url: getAssetUrl(c.image_url),
-                                title: c.name
-                            })),
-                            ...project.scenes.map((s: any) => ({
-                                id: s.id,
-                                type: "bg" as const,
-                                url: getAssetUrl(s.image_url),
-                                title: s.name
-                            }))
-                        ];
-                        setAssets(newAssets);
-                        if (currentProject) {
-                            updateProject(currentProject.id, {
-                                characters: project.characters,
-                                scenes: project.scenes,
-                                props: project.props,
-                            });
-                        }
-                        setIsGenerating(false);
-                    }
-                } catch (pollError) {
-                    clearInterval(pollInterval);
-                    setIsGenerating(false);
-                    console.error("Failed to poll generate assets:", pollError);
-                }
-            }, 2000);
-            return;
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
+            const project = await api.getProject(projectId);
+            const newAssets: Asset[] = [
+                ...project.characters.map((c: any) => ({
+                    id: c.id,
+                    type: "char" as const,
+                    url: getAssetUrl(c.image_url),
+                    title: c.name
+                })),
+                ...project.scenes.map((s: any) => ({
+                    id: s.id,
+                    type: "bg" as const,
+                    url: getAssetUrl(s.image_url),
+                    title: s.name
+                }))
+            ];
+            setAssets(newAssets);
+            if (currentProject) {
+                updateProject(currentProject.id, {
+                    characters: project.characters,
+                    scenes: project.scenes,
+                    props: project.props,
+                });
+            }
+            if (job.status !== "succeeded") {
+                console.error("Generate assets finished with non-success status:", job.error_message);
+            }
         } catch (error) {
             console.error("Failed to generate assets:", error);
+        } finally {
             setIsGenerating(false);
         }
     };

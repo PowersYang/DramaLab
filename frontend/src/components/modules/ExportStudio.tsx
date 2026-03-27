@@ -10,7 +10,7 @@ export default function ExportStudio() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
-    const fetchJob = useTaskStore((state) => state.fetchJob);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
 
     const [isExporting, setIsExporting] = useState(false);
     const [exportUrl, setExportUrl] = useState<string | null>(null);
@@ -24,17 +24,6 @@ export default function ExportStudio() {
     // If project already has a merged video, show it immediately
     const effectiveUrl = exportUrl || currentProject?.merged_video_url || null;
 
-    const waitForJob = async (jobId: string) => {
-        for (let attempt = 0; attempt < 180; attempt += 1) {
-            const job = await fetchJob(jobId);
-            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                return job;
-            }
-            await new Promise((resolve) => window.setTimeout(resolve, 2000));
-        }
-        throw new Error("导出任务等待超时");
-    };
-
     const handleExport = async () => {
         if (!currentProject) return;
         setIsExporting(true);
@@ -44,7 +33,7 @@ export default function ExportStudio() {
         try {
             const receipt = await api.exportProject(currentProject.id, { resolution, format, subtitles });
             enqueueReceipts(currentProject.id, [receipt]);
-            const job = await waitForJob(receipt.job_id);
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "导出失败");
             }

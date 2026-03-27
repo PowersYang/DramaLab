@@ -17,7 +17,7 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
     const currentProject = useProjectStore(state => state.currentProject);
     const updateProject = useProjectStore(state => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
-    const upsertJobs = useTaskStore((state) => state.upsertJobs);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
 
     // Get the latest frame data from the store (instead of using stale prop)
     const frame = useMemo(() => {
@@ -51,29 +51,16 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                 batchSize
             );
             enqueueReceipts(currentProject.id, [receipt]);
-            const pollInterval = setInterval(async () => {
-                try {
-                    const job = await api.getTask(receipt.job_id);
-                    upsertJobs([job]);
-                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                        clearInterval(pollInterval);
-                        const updatedProject = await api.getProject(currentProject.id);
-                        updateProject(currentProject.id, updatedProject);
-                        setIsGenerating(false);
-                        if (["failed", "timed_out"].includes(job.status)) {
-                            alert(job.error_message || "Failed to generate frame");
-                        }
-                    }
-                } catch (pollError: any) {
-                    clearInterval(pollInterval);
-                    setIsGenerating(false);
-                    alert(pollError?.message || "Failed to generate frame");
-                }
-            }, 2000);
-            return;
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
+            const updatedProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, updatedProject);
+            if (["failed", "timed_out"].includes(job.status)) {
+                alert(job.error_message || "Failed to generate frame");
+            }
         } catch (error) {
             console.error("Failed to generate frame:", error);
             alert("Failed to generate frame");
+        } finally {
             setIsGenerating(false);
         }
     };

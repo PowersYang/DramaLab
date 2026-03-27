@@ -12,7 +12,7 @@ export default function VideoAssembly() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
-    const fetchJob = useTaskStore((state) => state.fetchJob);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
 
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
     const [isMerging, setIsMerging] = useState(false);
@@ -37,23 +37,30 @@ export default function VideoAssembly() {
 
     const handleSelectVideo = async (frameId: string, videoId: string) => {
         if (!currentProject) return;
+        const selectedVideo = currentProject.video_tasks?.find((video: any) => video.id === videoId);
+        if (!selectedVideo) return;
+
         try {
+            // 选中关系本身是轻量绑定，先做前端乐观更新，避免用户误以为要等待重任务执行。
+            updateProject(currentProject.id, {
+                frames: currentProject.frames?.map((frame: any) =>
+                    frame.id === frameId
+                        ? {
+                            ...frame,
+                            selected_video_id: videoId,
+                            video_url: selectedVideo.video_url,
+                            updated_at: new Date().toISOString(),
+                        }
+                        : frame
+                ),
+            });
             const updatedProject = await api.selectVideo(currentProject.id, frameId, videoId);
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to select video:", error);
+            const restoredProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, restoredProject);
         }
-    };
-
-    const waitForJob = async (jobId: string) => {
-        for (let attempt = 0; attempt < 180; attempt += 1) {
-            const job = await fetchJob(jobId);
-            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                return job;
-            }
-            await new Promise((resolve) => window.setTimeout(resolve, 2000));
-        }
-        throw new Error("视频合成任务等待超时");
     };
 
     const handleMerge = async () => {
@@ -64,7 +71,7 @@ export default function VideoAssembly() {
         try {
             const receipt = await api.mergeVideos(currentProject.id);
             enqueueReceipts(currentProject.id, [receipt]);
-            const job = await waitForJob(receipt.job_id);
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "视频合成失败");
             }

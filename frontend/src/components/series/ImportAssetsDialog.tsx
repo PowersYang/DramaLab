@@ -50,7 +50,7 @@ function getAssetImageUrl(asset: Character | Scene | Prop, type: AssetTab): stri
 }
 
 export default function ImportAssetsDialog({ isOpen, onClose, seriesId, onImported }: ImportAssetsDialogProps) {
-    const fetchJob = useTaskStore((state) => state.fetchJob);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
     const [step, setStep] = useState(1);
     const [allSeries, setAllSeries] = useState<Series[]>([]);
     const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -149,14 +149,7 @@ export default function ImportAssetsDialog({ isOpen, onClose, seriesId, onImport
         setIsImporting(true);
         try {
             const receipt = await api.importSeriesAssets(seriesId, selectedSourceId, Array.from(selectedAssetIds));
-            let job = await fetchJob(receipt.job_id);
-            for (let attempt = 0; attempt < 180; attempt += 1) {
-                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                    break;
-                }
-                await new Promise((resolve) => window.setTimeout(resolve, 2000));
-                job = await fetchJob(receipt.job_id);
-            }
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "导入共享素材失败");
             }

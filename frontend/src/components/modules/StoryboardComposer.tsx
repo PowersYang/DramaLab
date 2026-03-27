@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Layout, Image as ImageIcon, Box, Type, Move,
@@ -21,7 +21,7 @@ export default function StoryboardComposer() {
     const setSelectedFrameId = useProjectStore((state) => state.setSelectedFrameId);
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
-    const upsertJobs = useTaskStore((state) => state.upsertJobs);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
 
     // Use global rendering state (persists across module switches)
     const renderingFrames = useProjectStore((state) => state.renderingFrames);
@@ -41,6 +41,22 @@ export default function StoryboardComposer() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadTargetFrameId, setUploadTargetFrameId] = useState<string | null>(null);
 
+    const sortedFrames = useMemo(() => {
+        if (!currentProject?.frames) {
+            return [];
+        }
+
+        // 分镜展示始终以数据库中的 frame_order 为准，避免局部更新后出现视觉乱序。
+        return [...currentProject.frames].sort((a: any, b: any) => {
+            const orderA = typeof a?.frame_order === "number" ? a.frame_order : Number.MAX_SAFE_INTEGER;
+            const orderB = typeof b?.frame_order === "number" ? b.frame_order : Number.MAX_SAFE_INTEGER;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            return String(a?.id || "").localeCompare(String(b?.id || ""));
+        });
+    }, [currentProject?.frames]);
+
 
 
     // NEW: Analyze script text to generate storyboard frames
@@ -53,7 +69,7 @@ export default function StoryboardComposer() {
             return;
         }
 
-        if (currentProject.frames?.length > 0) {
+        if (sortedFrames.length > 0) {
             if (!confirm("这将覆盖当前的所有分镜帧。是否继续？")) return;
         }
 
@@ -61,34 +77,19 @@ export default function StoryboardComposer() {
         try {
             const receipt = await api.analyzeToStoryboard(currentProject.id, text);
             enqueueReceipts(currentProject.id, [receipt]);
-            const pollInterval = setInterval(async () => {
-                try {
-                    const job = await api.getTask(receipt.job_id);
-                    upsertJobs([job]);
-                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                        clearInterval(pollInterval);
-                        const updatedProject = await api.getProject(currentProject.id);
-                        const frameCount = updatedProject.frames?.length || 0;
-                        updateProject(currentProject.id, updatedProject);
-                        if (job.status === "succeeded") {
-                            if (frameCount > 0) {
-                                alert(`成功生成 ${frameCount} 个分镜帧！`);
-                            } else {
-                                alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
-                            }
-                        } else {
-                            alert(`分镜生成失败：${job.error_message || "请查看控制台了解详情。"}`);
-                        }
-                        setIsAnalyzing(false);
-                    }
-                } catch (pollError: any) {
-                    clearInterval(pollInterval);
-                    setIsAnalyzing(false);
-                    const detail = extractErrorDetail(pollError, "");
-                    alert(`分镜生成失败：${detail || "请查看控制台了解详情。"}`);
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
+            const updatedProject = await api.getProject(currentProject.id);
+            const frameCount = updatedProject.frames?.length || 0;
+            updateProject(currentProject.id, updatedProject);
+            if (job.status === "succeeded") {
+                if (frameCount > 0) {
+                    alert(`成功生成 ${frameCount} 个分镜帧！`);
+                } else {
+                    alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
                 }
-            }, 2000);
-            return;
+            } else {
+                alert(`分镜生成失败：${job.error_message || "请查看控制台了解详情。"}`);
+            }
         } catch (error: any) {
             console.error("Analyze to storyboard failed:", error);
             const detail = extractErrorDetail(error, "");
@@ -97,7 +98,9 @@ export default function StoryboardComposer() {
             } else {
                 alert(`分镜生成失败：${detail || "请查看控制台了解详情。"}`);
             }
-        } finally {}
+        } finally {
+            setIsAnalyzing(false);
+        }
     };
 
     const handleImageClick = (frameId: string, e: React.MouseEvent) => {
@@ -154,13 +157,13 @@ export default function StoryboardComposer() {
 
     const handleMoveFrame = async (index: number, direction: 'up' | 'down', e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!currentProject || !currentProject.frames) return;
+        if (!currentProject || sortedFrames.length === 0) return;
 
         const newIndex = direction === 'up' ? index - 1 : index + 1;
-        if (newIndex < 0 || newIndex >= currentProject.frames.length) return;
+        if (newIndex < 0 || newIndex >= sortedFrames.length) return;
 
         // Create new order
-        const newFrames = [...currentProject.frames];
+        const newFrames = [...sortedFrames];
         const [movedFrame] = newFrames.splice(index, 1);
         newFrames.splice(newIndex, 0, movedFrame);
 
@@ -183,19 +186,19 @@ export default function StoryboardComposer() {
 
     const handleExtractLastFrame = async (frameId: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!currentProject?.frames) return;
+        if (sortedFrames.length === 0) return;
 
-        const frameIndex = currentProject.frames.findIndex((f: any) => f.id === frameId);
+        const frameIndex = sortedFrames.findIndex((f: any) => f.id === frameId);
         if (frameIndex <= 0) return;
 
         // Find the previous frame's selected video
-        const prevFrame = currentProject.frames[frameIndex - 1];
+        const prevFrame = sortedFrames[frameIndex - 1];
         if (!prevFrame.selected_video_id) {
             alert("Previous frame has no selected video.");
             return;
         }
 
-        const prevVideo = currentProject.video_tasks?.find(
+        const prevVideo = currentProject?.video_tasks?.find(
             (t: any) => t.id === prevFrame.selected_video_id && t.status === "completed"
         );
         if (!prevVideo) {
@@ -205,8 +208,8 @@ export default function StoryboardComposer() {
 
         setExtractingFrameId(frameId);
         try {
-            const updatedProject = await api.extractLastFrame(currentProject.id, frameId, prevVideo.id);
-            updateProject(currentProject.id, updatedProject);
+            const updatedProject = await api.extractLastFrame(currentProject!.id, frameId, prevVideo.id);
+            updateProject(currentProject!.id, updatedProject);
         } catch (error: any) {
             console.error("Failed to extract last frame:", error);
             alert(error?.response?.data?.detail || "Failed to extract last frame");
@@ -340,30 +343,17 @@ export default function StoryboardComposer() {
 
             const receipt = await api.renderFrame(currentProject.id, frame.id, compositionData, finalPrompt, batchSize);
             enqueueReceipts(currentProject.id, [receipt]);
-            const pollInterval = setInterval(async () => {
-                try {
-                    const job = await api.getTask(receipt.job_id);
-                    upsertJobs([job]);
-                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                        clearInterval(pollInterval);
-                        const updatedProject = await api.getProject(currentProject.id);
-                        useProjectStore.getState().updateProject(currentProject.id, updatedProject);
-                        removeRenderingFrame(frame.id);
-                        if (["failed", "timed_out"].includes(job.status)) {
-                            alert(job.error_message || "Render failed. See console for details.");
-                        }
-                    }
-                } catch (pollError: any) {
-                    clearInterval(pollInterval);
-                    removeRenderingFrame(frame.id);
-                    alert(pollError?.message || "Render failed. See console for details.");
-                }
-            }, 2000);
-            return;
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
+            const updatedProject = await api.getProject(currentProject.id);
+            useProjectStore.getState().updateProject(currentProject.id, updatedProject);
+            if (["failed", "timed_out"].includes(job.status)) {
+                alert(job.error_message || "Render failed. See console for details.");
+            }
 
         } catch (error) {
             console.error("Render failed:", error);
             alert("Render failed. See console for details.");
+        } finally {
             removeRenderingFrame(frame.id);
         }
     };
@@ -415,7 +405,7 @@ export default function StoryboardComposer() {
                             </button>
                         </div>
 
-                        {currentProject?.frames?.map((frame: any, index: number) => (
+                        {sortedFrames.map((frame: any, index: number) => (
                             <>
                                 <motion.div
                                     key={frame.id}
@@ -428,7 +418,7 @@ export default function StoryboardComposer() {
                                 >
                                     {/* Frame Number */}
                                     <div className="absolute -left-3 -top-3 w-8 h-8 rounded-full bg-[#222] border border-white/10 flex items-center justify-center text-xs font-bold text-gray-400 shadow-lg z-10">
-                                        {index + 1}
+                                        {typeof frame.frame_order === "number" ? frame.frame_order + 1 : index + 1}
                                     </div>
 
                                     {/* Image Preview */}
@@ -539,7 +529,7 @@ export default function StoryboardComposer() {
                                                 </button>
                                                 <button
                                                     onClick={(e) => handleMoveFrame(index, 'down', e)}
-                                                    disabled={index === (currentProject.frames?.length || 0) - 1}
+                                                    disabled={index === sortedFrames.length - 1}
                                                     className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                     data-tip="Move Down"
                                                 >
@@ -562,8 +552,8 @@ export default function StoryboardComposer() {
                                                 <Upload size={14} />
                                             </button>
                                             {index > 0 && (() => {
-                                                const prevFrame = currentProject.frames?.[index - 1];
-                                                const prevVideoCompleted = prevFrame?.selected_video_id && currentProject.video_tasks?.find(
+                                                const prevFrame = sortedFrames[index - 1];
+                                                const prevVideoCompleted = prevFrame?.selected_video_id && currentProject?.video_tasks?.find(
                                                     (t: any) => t.id === prevFrame.selected_video_id && t.status === "completed"
                                                 );
                                                 return prevVideoCompleted ? (
@@ -646,9 +636,9 @@ export default function StoryboardComposer() {
 
             {/* Storyboard Frame Editor Modal */}
             <AnimatePresence>
-                {editingFrameId && currentProject?.frames?.find((f: any) => f.id === editingFrameId) && (
+                {editingFrameId && sortedFrames.find((f: any) => f.id === editingFrameId) && (
                     <StoryboardFrameEditor
-                        frame={currentProject.frames.find((f: any) => f.id === editingFrameId)}
+                        frame={sortedFrames.find((f: any) => f.id === editingFrameId)}
                         onClose={() => setEditingFrameId(null)}
                     />
                 )}

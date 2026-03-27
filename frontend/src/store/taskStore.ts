@@ -9,6 +9,7 @@ interface TaskStore {
     enqueueReceipts: (projectId: string, receipts: TaskReceipt[]) => void;
     upsertJobs: (jobs: TaskJob[]) => void;
     fetchJob: (jobId: string) => Promise<TaskJob>;
+    waitForJob: (jobId: string, options?: { intervalMs?: number; maxAttempts?: number }) => Promise<TaskJob>;
     fetchProjectJobs: (projectId: string, statuses?: string[]) => Promise<TaskJob[]>;
     cancelJob: (jobId: string) => Promise<TaskJob>;
     retryJob: (jobId: string) => Promise<TaskJob>;
@@ -64,6 +65,20 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     fetchJob: async (jobId) => {
         const job = await api.getTask(jobId);
         get().upsertJobs([job]);
+        return job;
+    },
+
+    waitForJob: async (jobId, options) => {
+        const intervalMs = options?.intervalMs ?? 1000;
+        const maxAttempts = options?.maxAttempts ?? 180;
+        let job = await get().fetchJob(jobId);
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                return job;
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+            job = await get().fetchJob(jobId);
+        }
         return job;
     },
 

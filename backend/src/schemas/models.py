@@ -97,6 +97,7 @@ class VideoTask(BaseModel):
 
 class Character(BaseModel):
     id: str = Field(..., description="角色的唯一标识")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     name: str = Field(..., description="角色名称")
     description: str = Field(..., description="角色外貌与性格描述")
     
@@ -154,6 +155,7 @@ class Character(BaseModel):
 
 class Scene(BaseModel):
     id: str = Field(..., description="场景的唯一标识")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     name: str = Field(..., description="地点或场景名称")
     description: str = Field(..., description="环境的视觉描述")
     visual_weight: int = Field(3, description="视觉权重（1-5）")
@@ -171,6 +173,7 @@ class Scene(BaseModel):
 
 class Prop(BaseModel):
     id: str = Field(..., description="道具的唯一标识")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     name: str = Field(..., description="物体名称")
     description: str = Field(..., description="物体的视觉描述")
     video_url: Optional[str] = None
@@ -189,6 +192,7 @@ class Prop(BaseModel):
 
 class StoryboardFrame(BaseModel):
     id: str = Field(..., description="分镜帧的唯一标识")
+    frame_order: int = Field(0, description="分镜帧在项目中的排序序号")
     scene_id: str = Field(..., description="关联的场景 ID")
     character_ids: List[str] = Field(default_factory=list, description="该帧中出现的角色 ID 列表")
     prop_ids: List[str] = Field(default_factory=list, description="该帧中出现的道具 ID 列表")

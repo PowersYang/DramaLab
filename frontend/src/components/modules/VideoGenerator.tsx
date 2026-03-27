@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 import VideoCreator from "./VideoCreator";
@@ -15,6 +15,7 @@ export default function VideoGenerator() {
     const jobsById = useTaskStore((state) => state.jobsById);
     const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
     const [tasks, setTasks] = useState<VideoTask[]>([]);
+    const previousActiveJobIdsRef = useRef<string[]>([]);
 
     // Shared state for Remix functionality
     const [remixData, setRemixData] = useState<Partial<VideoTask> | null>(null);
@@ -61,33 +62,71 @@ export default function VideoGenerator() {
         }
     }, [currentProject?.video_tasks]);
 
-    // Poll for updates
-    useEffect(() => {
-        if (!currentProject) return;
+    const activeJobIds = useMemo(() => {
+        if (!currentProject) return [];
         const projectJobIds = jobIdsByProject[currentProject.id] || [];
-        const activeJobs = projectJobIds
-            .map((jobId) => jobsById[jobId])
-            .filter((job) => job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status));
-        if (activeJobs.length === 0) return;
+        return projectJobIds.filter((jobId) => {
+            const job = jobsById[jobId];
+            return job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status);
+        });
+    }, [currentProject, jobIdsByProject, jobsById]);
 
-        const interval = setInterval(async () => {
+    // Poll active jobs only; this keeps任务状态同步和项目详情刷新解耦。
+    useEffect(() => {
+        if (!currentProject || activeJobIds.length === 0) return;
+
+        let cancelled = false;
+        let timeoutId: number | null = null;
+
+        const pollActiveJobs = async () => {
             try {
-                const jobs = await fetchProjectJobs(currentProject.id);
-                const hasFinishedJobs = jobs.some((job) => ["succeeded", "failed", "cancelled", "timed_out"].includes(job.status));
-                if (hasFinishedJobs) {
-                    const project = await api.getProject(currentProject.id);
-                    if (project.video_tasks) {
-                        setTasks(project.video_tasks);
-                        updateProject(currentProject.id, { video_tasks: project.video_tasks });
-                    }
-                }
+                await fetchProjectJobs(currentProject.id, ["queued", "claimed", "running", "retry_waiting", "cancel_requested"]);
             } catch (error) {
-                console.error("Failed to poll project status:", error);
+                console.error("Failed to poll active project jobs:", error);
+            } finally {
+                if (!cancelled) {
+                    timeoutId = window.setTimeout(pollActiveJobs, 3000);
+                }
             }
-        }, 3000);
+        };
 
-        return () => clearInterval(interval);
-    }, [fetchProjectJobs, currentProject?.id, jobIdsByProject, jobsById, updateProject]);
+        timeoutId = window.setTimeout(pollActiveJobs, 3000);
+        return () => {
+            cancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [activeJobIds, currentProject?.id, fetchProjectJobs]);
+
+    // 只有“活跃任务刚结束”时才刷新视频产物，避免历史 completed job 导致重复刷新。
+    useEffect(() => {
+        if (!currentProject) {
+            previousActiveJobIdsRef.current = [];
+            return;
+        }
+
+        const previousIds = previousActiveJobIdsRef.current;
+        const activeIdSet = new Set(activeJobIds);
+        const finishedJobIds = previousIds.filter((jobId) => !activeIdSet.has(jobId));
+        previousActiveJobIdsRef.current = activeJobIds;
+
+        if (finishedJobIds.length === 0) return;
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const project = await api.getProject(currentProject.id);
+                if (cancelled || !project.video_tasks) return;
+                setTasks(project.video_tasks);
+                updateProject(currentProject.id, { video_tasks: project.video_tasks });
+            } catch (error) {
+                console.error("Failed to refresh video tasks after job completion:", error);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeJobIds, currentProject, updateProject]);
 
     const handleTaskCreated = (updatedProject: any) => {
         if (updatedProject.video_tasks) {

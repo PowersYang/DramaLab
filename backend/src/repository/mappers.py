@@ -394,23 +394,40 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
         if not project_ids:
             return {}
         query = query.filter(ProjectRecord.id.in_(project_ids))
-    project_records = query.all()
+    project_records = query.order_by(ProjectRecord.created_at.asc(), ProjectRecord.id.asc()).all()
     if not project_records:
         return {}
 
     project_ids = [record.id for record in project_records]
     # 子资源默认全部走活跃态过滤，这样项目聚合读出来就是“当前视图”，不是历史快照全集。
-    characters = _active(session.query(CharacterRecord)).filter(CharacterRecord.owner_type == "project", CharacterRecord.owner_id.in_(project_ids)).all()
-    scenes = _active(session.query(SceneRecord)).filter(SceneRecord.owner_type == "project", SceneRecord.owner_id.in_(project_ids)).all()
-    props = _active(session.query(PropRecord)).filter(PropRecord.owner_type == "project", PropRecord.owner_id.in_(project_ids)).all()
+    characters = _active(session.query(CharacterRecord)).filter(
+        CharacterRecord.owner_type == "project",
+        CharacterRecord.owner_id.in_(project_ids),
+    ).order_by(CharacterRecord.owner_id.asc(), CharacterRecord.created_at.asc(), CharacterRecord.id.asc()).all()
+    scenes = _active(session.query(SceneRecord)).filter(
+        SceneRecord.owner_type == "project",
+        SceneRecord.owner_id.in_(project_ids),
+    ).order_by(SceneRecord.owner_id.asc(), SceneRecord.created_at.asc(), SceneRecord.id.asc()).all()
+    props = _active(session.query(PropRecord)).filter(
+        PropRecord.owner_type == "project",
+        PropRecord.owner_id.in_(project_ids),
+    ).order_by(PropRecord.owner_id.asc(), PropRecord.created_at.asc(), PropRecord.id.asc()).all()
     frames = _active(session.query(StoryboardFrameRecord)).filter(StoryboardFrameRecord.project_id.in_(project_ids)).order_by(StoryboardFrameRecord.project_id, StoryboardFrameRecord.frame_order).all()
-    tasks = _active(session.query(VideoTaskRecord)).filter(VideoTaskRecord.project_id.in_(project_ids)).all()
+    tasks = _active(session.query(VideoTaskRecord)).filter(
+        VideoTaskRecord.project_id.in_(project_ids)
+    ).order_by(VideoTaskRecord.project_id.asc(), VideoTaskRecord.created_at.asc(), VideoTaskRecord.id.asc()).all()
 
     character_ids = [record.id for record in characters]
     scene_ids = [record.id for record in scenes]
     prop_ids = [record.id for record in props]
     frame_ids = [record.id for record in frames]
-    unit_records = _active(session.query(CharacterAssetUnitRecord)).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).all() if character_ids else []
+    unit_records = _active(session.query(CharacterAssetUnitRecord)).filter(
+        CharacterAssetUnitRecord.character_id.in_(character_ids)
+    ).order_by(
+        CharacterAssetUnitRecord.character_id.asc(),
+        CharacterAssetUnitRecord.image_updated_at.asc(),
+        CharacterAssetUnitRecord.id.asc(),
+    ).all() if character_ids else []
     unit_ids = [record.id for record in unit_records]
 
     image_variant_records = _active(session.query(ImageVariantRecord)).filter(
@@ -461,6 +478,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
         )
         character = Character(
             id=record.id,
+            created_at=record.created_at,
             name=record.name,
             description=record.description,
             age=record.age,
@@ -502,6 +520,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     for record in scenes:
         scene = Scene(
             id=record.id,
+            created_at=record.created_at,
             name=record.name,
             description=record.description,
             visual_weight=record.visual_weight,
@@ -520,6 +539,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     for record in props:
         prop = Prop(
             id=record.id,
+            created_at=record.created_at,
             name=record.name,
             description=record.description,
             video_url=record.video_url,
@@ -539,6 +559,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     for record in frames:
         frame = StoryboardFrame(
             id=record.id,
+            frame_order=record.frame_order,
             scene_id=record.scene_id,
             character_ids=record.character_ids or [],
             prop_ids=record.prop_ids or [],

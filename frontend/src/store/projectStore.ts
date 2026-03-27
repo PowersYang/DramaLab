@@ -33,6 +33,7 @@ export interface VideoTask {
 
 export interface Character {
     id: string;
+    created_at?: string | number;
     name: string;
     description?: string;
     age?: string;
@@ -68,6 +69,7 @@ export interface Character {
 
 export interface Scene {
     id: string;
+    created_at?: string | number;
     name: string;
     description: string;
     image_url?: string;
@@ -82,6 +84,7 @@ export interface Scene {
 
 export interface Prop {
     id: string;
+    created_at?: string | number;
     name: string;
     description: string;
     image_url?: string;
@@ -94,6 +97,7 @@ export interface Prop {
 
 export interface StoryboardFrame {
     id: string;
+    frame_order?: number;
     scene_id: string;
     image_url?: string;
     image_asset?: ImageAsset;
@@ -312,6 +316,74 @@ export interface Project {
     episode_number?: number;
 }
 
+const sortStoryboardFrames = (frames: any[] | undefined): any[] => {
+    if (!Array.isArray(frames)) {
+        return [];
+    }
+
+    // 统一按后端 frame_order 排序，避免页面渲染依赖数组偶然顺序。
+    return [...frames].sort((a, b) => {
+        const orderA = typeof a?.frame_order === 'number' ? a.frame_order : Number.MAX_SAFE_INTEGER;
+        const orderB = typeof b?.frame_order === 'number' ? b.frame_order : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) {
+            return orderA - orderB;
+        }
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+    });
+};
+
+const parseSortableTime = (value: string | number | undefined | null): number => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+    }
+    if (typeof value === 'string') {
+        const parsed = Date.parse(value);
+        if (!Number.isNaN(parsed)) {
+            return parsed;
+        }
+    }
+    return Number.MAX_SAFE_INTEGER;
+};
+
+const sortByCreatedAt = <T extends { created_at?: string | number; id?: string }>(items: T[] | undefined): T[] => {
+    if (!Array.isArray(items)) {
+        return [];
+    }
+
+    return [...items].sort((a, b) => {
+        const timeA = parseSortableTime(a?.created_at);
+        const timeB = parseSortableTime(b?.created_at);
+        if (timeA !== timeB) {
+            return timeA - timeB;
+        }
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+    });
+};
+
+const sortVideoTasks = <T extends { created_at?: string | number; id?: string }>(items: T[] | undefined): T[] => {
+    return sortByCreatedAt(items);
+};
+
+const normalizeProject = (project: any): any => {
+    if (!project) {
+        return project;
+    }
+
+    const normalizeAssetOwner = (item: any) => ({
+        ...item,
+        ...(Array.isArray(item?.video_assets) ? { video_assets: sortVideoTasks(item.video_assets) } : {}),
+    });
+
+    return {
+        ...project,
+        ...(Array.isArray(project.characters) ? { characters: sortByCreatedAt(project.characters).map(normalizeAssetOwner) } : {}),
+        ...(Array.isArray(project.scenes) ? { scenes: sortByCreatedAt(project.scenes).map(normalizeAssetOwner) } : {}),
+        ...(Array.isArray(project.props) ? { props: sortByCreatedAt(project.props).map(normalizeAssetOwner) } : {}),
+        ...(Array.isArray(project.frames) ? { frames: sortStoryboardFrames(project.frames) } : {}),
+        ...(Array.isArray(project.video_tasks) ? { video_tasks: sortVideoTasks(project.video_tasks) } : {}),
+    };
+};
+
 interface ProjectStore {
     projects: Project[];
     currentProject: Project | null;
@@ -375,15 +447,16 @@ export const useProjectStore = create<ProjectStore>()(
             selectedFrameId: null,
 
             // Sync projects from backend
-            setProjects: (projects: Project[]) => set({ projects }),
+            setProjects: (projects: Project[]) => set({ projects: projects.map((project) => normalizeProject(project)) }),
 
             createProject: async (title: string, text: string, skipAnalysis: boolean = false) => {
                 set({ isLoading: true });
                 try {
                     const project = await api.createProject(title, text, skipAnalysis);
+                    const normalizedProject = normalizeProject(project);
                     set((state) => ({
-                        projects: [...state.projects, project],
-                        currentProject: project,
+                        projects: [...state.projects, normalizedProject],
+                        currentProject: normalizedProject,
                         isLoading: false,
                     }));
                 } catch (error) {
@@ -401,18 +474,11 @@ export const useProjectStore = create<ProjectStore>()(
                     if (currentProject && currentProject.id) {
                         const receipt = await api.reparseProject(currentProject.id, script);
                         useTaskStore.getState().enqueueReceipts(currentProject.id, [receipt]);
-                        let job = await useTaskStore.getState().fetchJob(receipt.job_id);
-                        for (let attempt = 0; attempt < 180; attempt += 1) {
-                            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                                break;
-                            }
-                            await new Promise((resolve) => window.setTimeout(resolve, 2000));
-                            job = await useTaskStore.getState().fetchJob(receipt.job_id);
-                        }
+                        const job = await useTaskStore.getState().waitForJob(receipt.job_id, { intervalMs: 2000 });
                         if (job.status !== "succeeded") {
                             throw new Error(job.error_message || "重新解析项目失败");
                         }
-                        const project = await api.getProject(currentProject.id);
+                        const project = normalizeProject(await api.getProject(currentProject.id));
                         set((state) => ({
                             projects: state.projects.map((p) =>
                                 p.id === project.id ? { ...project, updatedAt: new Date().toISOString() } : p
@@ -441,7 +507,7 @@ export const useProjectStore = create<ProjectStore>()(
                 // First, try to set from local cache for immediate feedback
                 const cachedProject = get().projects.find((p) => p.id === id);
                 if (cachedProject) {
-                    set({ currentProject: cachedProject });
+                    set({ currentProject: normalizeProject(cachedProject) });
                 }
 
                 // Then fetch latest data from backend
@@ -450,10 +516,10 @@ export const useProjectStore = create<ProjectStore>()(
                     if (response.ok) {
                         const rawData = await response.json();
                         // Transform data to match frontend model (snake_case -> camelCase for specific fields)
-                        const latestProject = {
+                        const latestProject = normalizeProject({
                             ...rawData,
                             originalText: rawData.original_text
-                        };
+                        });
 
                         // Update both currentProject and projects array with latest data
                         set((state) => ({
@@ -470,13 +536,14 @@ export const useProjectStore = create<ProjectStore>()(
             },
 
             updateProject: (id: string, data: Partial<Project>) => {
+                const normalizedData = normalizeProject(data);
                 set((state) => ({
                     projects: state.projects.map((p) =>
-                        p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
+                        p.id === id ? normalizeProject({ ...p, ...normalizedData, updatedAt: new Date().toISOString() }) : p
                     ),
                     currentProject:
                         state.currentProject?.id === id
-                            ? { ...state.currentProject, ...data, updatedAt: new Date().toISOString() }
+                            ? normalizeProject({ ...state.currentProject, ...normalizedData, updatedAt: new Date().toISOString() })
                             : state.currentProject,
                 }));
             },
@@ -507,40 +574,25 @@ export const useProjectStore = create<ProjectStore>()(
                 try {
                     const receipt = await api.analyzeScriptForStyles(scriptId, text);
                     useTaskStore.getState().enqueueReceipts(scriptId, [receipt]);
-                    await new Promise<void>((resolve, reject) => {
-                        const poll = setInterval(async () => {
-                            try {
-                                const job = await api.getTask(receipt.job_id);
-                                useTaskStore.getState().upsertJobs([job]);
-                                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                                    clearInterval(poll);
-                                    if (job.status !== "succeeded") {
-                                        reject(new Error(job.error_message || "风格分析失败"));
-                                        return;
-                                    }
-                                    const recommendations = job.result_json?.recommendations || [];
-                                    const current = get().currentProject;
-                                    if (current) {
-                                        const updatedArtDirection = {
-                                            ...current.art_direction,
-                                            ai_recommendations: recommendations
-                                        } as ArtDirection;
+                    const job = await useTaskStore.getState().waitForJob(receipt.job_id, { intervalMs: 2000 });
+                    if (job.status !== "succeeded") {
+                        throw new Error(job.error_message || "风格分析失败");
+                    }
+                    const recommendations = job.result_json?.recommendations || [];
+                    const current = get().currentProject;
+                    if (current) {
+                        const updatedArtDirection = {
+                            ...current.art_direction,
+                            ai_recommendations: recommendations
+                        } as ArtDirection;
 
-                                        set((state) => ({
-                                            currentProject: state.currentProject ? {
-                                                ...state.currentProject,
-                                                art_direction: updatedArtDirection
-                                            } : null
-                                        }));
-                                    }
-                                    resolve();
-                                }
-                            } catch (error) {
-                                clearInterval(poll);
-                                reject(error);
-                            }
-                        }, 2000);
-                    });
+                        set((state) => ({
+                            currentProject: state.currentProject ? {
+                                ...state.currentProject,
+                                art_direction: updatedArtDirection
+                            } : null
+                        }));
+                    }
 
                 } catch (error) {
                     console.error("Failed to analyze art style:", error);

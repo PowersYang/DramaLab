@@ -9,7 +9,7 @@ import uuid
 from typing import Any
 
 from ...common.log import get_logger
-from ...repository import ProjectRepository
+from ...repository import ProjectRepository, StoryboardFrameRepository
 from ...schemas.models import AssetUnit, ImageAsset, ImageVariant
 from ...utils.datetime import utc_now
 
@@ -22,6 +22,7 @@ class AssetService:
 
     def __init__(self):
         self.project_repository = ProjectRepository()
+        self.storyboard_frame_repository = StoryboardFrameRepository()
 
     def toggle_lock(self, script_id: str, asset_id: str, asset_type: str):
         """切换项目资产的锁定状态。"""
@@ -240,10 +241,17 @@ class AssetService:
         video = next((video for video in project.video_tasks if video.id == video_id), None)
         if not video:
             raise ValueError("Video task not found")
-        frame.selected_video_id = video_id
-        frame.video_url = video.video_url
-        frame.updated_at = utc_now()
-        return self._save_project(project)
+        # 这里只更新分镜帧与已存在视频任务之间的绑定关系，避免为了一个选中态重写整项目图。
+        self.storyboard_frame_repository.patch(
+            script_id,
+            frame_id,
+            {
+                "selected_video_id": video_id,
+                "video_url": video.video_url,
+                "updated_at": utc_now(),
+            },
+        )
+        return self.project_repository.get(script_id)
 
     def upload_frame_image(self, script_id: str, frame_id: str, image_path: str):
         """上传手工分镜图，并把它作为候选图保存。"""

@@ -28,7 +28,7 @@ interface PreviewResult {
 type Step = 1 | 2 | 3;
 
 export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportFileDialogProps) {
-    const fetchJob = useTaskStore((state) => state.fetchJob);
+    const waitForJob = useTaskStore((state) => state.waitForJob);
     // Step state
     const [step, setStep] = useState<Step>(1);
 
@@ -115,14 +115,7 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportF
         setError(null);
         try {
             const receipt = await api.importFilePreview(file, suggestedEpisodes);
-            let job = await fetchJob(receipt.job_id);
-            for (let attempt = 0; attempt < 180; attempt += 1) {
-                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                    break;
-                }
-                await new Promise((resolve) => window.setTimeout(resolve, 2000));
-                job = await fetchJob(receipt.job_id);
-            }
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "分析失败，请重试");
             }
@@ -153,14 +146,7 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportF
                 episodes: previewResult.episodes,
                 import_id: previewResult.import_id,
             });
-            let job = await fetchJob(receipt.job_id);
-            for (let attempt = 0; attempt < 180; attempt += 1) {
-                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
-                    break;
-                }
-                await new Promise((resolve) => window.setTimeout(resolve, 2000));
-                job = await fetchJob(receipt.job_id);
-            }
+            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "创建系列失败");
             }
