@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api, API_URL } from '@/lib/api';
+import { useTaskStore } from '@/store/taskStore';
 
 export interface ImageVariant {
     id: string;
@@ -493,38 +494,42 @@ export const useProjectStore = create<ProjectStore>()(
             analyzeArtStyle: async (scriptId: string, text: string) => {
                 set({ isAnalyzingArtStyle: true });
                 try {
-                    const data = await api.analyzeScriptForStyles(scriptId, text);
+                    const receipt = await api.analyzeScriptForStyles(scriptId, text);
+                    useTaskStore.getState().enqueueReceipts(scriptId, [receipt]);
+                    await new Promise<void>((resolve, reject) => {
+                        const poll = setInterval(async () => {
+                            try {
+                                const job = await api.getTask(receipt.job_id);
+                                useTaskStore.getState().upsertJobs([job]);
+                                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                                    clearInterval(poll);
+                                    if (job.status !== "succeeded") {
+                                        reject(new Error(job.error_message || "风格分析失败"));
+                                        return;
+                                    }
+                                    const recommendations = job.result_json?.recommendations || [];
+                                    const current = get().currentProject;
+                                    if (current) {
+                                        const updatedArtDirection = {
+                                            ...current.art_direction,
+                                            ai_recommendations: recommendations
+                                        } as ArtDirection;
 
-                    // Update the project with new recommendations
-                    // We need to fetch the latest project state to ensure we don't overwrite other changes
-                    // But for now, let's assume we just want to update the recommendations
-
-                    // Actually, analyzeScriptForStyles just returns recommendations, it doesn't save them to the project yet
-                    // The user needs to select one.
-                    // BUT, to persist them, we should probably save them to the project immediately if possible?
-                    // Or just return them?
-                    // The issue is: if we navigate away, we lose the return value.
-                    // So we MUST save them to the project or store them in the store.
-
-                    // Let's store them in the current project in the store
-                    const current = get().currentProject;
-                    if (current) {
-                        const updatedArtDirection = {
-                            ...current.art_direction,
-                            ai_recommendations: data.recommendations
-                        } as ArtDirection;
-
-                        // Update local state
-                        set((state) => ({
-                            currentProject: state.currentProject ? {
-                                ...state.currentProject,
-                                art_direction: updatedArtDirection
-                            } : null
-                        }));
-
-                        // Also try to save to backend if we have an active art direction
-                        // If not, we just keep it in memory until user saves
-                    }
+                                        set((state) => ({
+                                            currentProject: state.currentProject ? {
+                                                ...state.currentProject,
+                                                art_direction: updatedArtDirection
+                                            } : null
+                                        }));
+                                    }
+                                    resolve();
+                                }
+                            } catch (error) {
+                                clearInterval(poll);
+                                reject(error);
+                            }
+                        }, 2000);
+                    });
 
                 } catch (error) {
                     console.error("Failed to analyze art style:", error);

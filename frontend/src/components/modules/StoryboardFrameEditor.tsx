@@ -6,6 +6,7 @@ import { X, RefreshCw, Check, AlertTriangle, Image as ImageIcon, Lock, Unlock, C
 import { api, API_URL } from "@/lib/api";
 import { VariantSelector } from "../common/VariantSelector";
 import { useProjectStore } from "@/store/projectStore";
+import { useTaskStore } from "@/store/taskStore";
 
 interface StoryboardFrameEditorProps {
     frame: any;
@@ -15,6 +16,8 @@ interface StoryboardFrameEditorProps {
 export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: StoryboardFrameEditorProps) {
     const currentProject = useProjectStore(state => state.currentProject);
     const updateProject = useProjectStore(state => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const upsertJobs = useTaskStore((state) => state.upsertJobs);
 
     // Get the latest frame data from the store (instead of using stale prop)
     const frame = useMemo(() => {
@@ -40,18 +43,37 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
             // The api.renderFrame expects compositionData.
             // If we don't pass it, pipeline uses existing.
 
-            const updatedProject = await api.renderFrame(
+            const receipt = await api.renderFrame(
                 currentProject.id,
                 frame.id,
                 null, // Use existing composition data
                 prompt,
                 batchSize
             );
-            updateProject(currentProject.id, updatedProject);
+            enqueueReceipts(currentProject.id, [receipt]);
+            const pollInterval = setInterval(async () => {
+                try {
+                    const job = await api.getTask(receipt.job_id);
+                    upsertJobs([job]);
+                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                        clearInterval(pollInterval);
+                        const updatedProject = await api.getProject(currentProject.id);
+                        updateProject(currentProject.id, updatedProject);
+                        setIsGenerating(false);
+                        if (["failed", "timed_out"].includes(job.status)) {
+                            alert(job.error_message || "Failed to generate frame");
+                        }
+                    }
+                } catch (pollError: any) {
+                    clearInterval(pollInterval);
+                    setIsGenerating(false);
+                    alert(pollError?.message || "Failed to generate frame");
+                }
+            }, 2000);
+            return;
         } catch (error) {
             console.error("Failed to generate frame:", error);
             alert("Failed to generate frame");
-        } finally {
             setIsGenerating(false);
         }
     };

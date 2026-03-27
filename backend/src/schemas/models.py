@@ -66,10 +66,14 @@ class VideoTask(BaseModel):
     project_id: str
     frame_id: Optional[str] = Field(None, description="该视频所属的分镜帧 ID")
     asset_id: Optional[str] = Field(None, description="该视频所属的素材 ID")
+    source_job_id: Optional[str] = Field(None, description="创建该业务视频记录的统一任务 ID")
+    provider_task_id: Optional[str] = Field(None, description="下游模型供应商返回的任务 ID")
     image_url: str
     prompt: str
     status: str = "pending"  # pending、processing、completed、failed
     video_url: Optional[str] = None
+    failed_reason: Optional[str] = Field(None, description="失败原因摘要，供前端快速展示")
+    completed_at: Optional[datetime] = Field(None, description="视频任务完成时间")
     duration: int = Field(5, description="视频时长（秒，具体范围取决于模型）")
     seed: Optional[int] = Field(None, description="随机种子，用于复现结果")
     resolution: str = Field("720p", description="视频分辨率")

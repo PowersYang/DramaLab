@@ -4,16 +4,20 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, RefreshCw, Copy, Download, Trash2, AlertCircle } from "lucide-react";
 
-import { VideoTask, API_URL } from "@/lib/api";
+import { TaskJob, VideoTask } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
+import { useTaskStore } from "@/store/taskStore";
 
 interface VideoQueueProps {
     tasks: VideoTask[];
+    jobs: TaskJob[];
     onRemix: (task: VideoTask) => void;
 }
 
-export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
+export default function VideoQueue({ tasks, jobs, onRemix }: VideoQueueProps) {
     const [filter, setFilter] = useState<"all" | "processing" | "completed" | "failed">("all");
+    const cancelJob = useTaskStore((state) => state.cancelJob);
+    const retryJob = useTaskStore((state) => state.retryJob);
 
     const filteredTasks = tasks.filter(t => {
         if (filter === "all") return true;
@@ -21,7 +25,14 @@ export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
         return t.status === filter;
     }).reverse(); // Newest first
 
-    const processingCount = tasks.filter(t => t.status === "pending" || t.status === "processing").length;
+    const filteredJobs = jobs.filter((job) => {
+        if (filter === "all") return true;
+        if (filter === "processing") return ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status);
+        if (filter === "failed") return ["failed", "timed_out"].includes(job.status);
+        return false;
+    }).reverse();
+
+    const processingCount = jobs.filter(job => ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status)).length;
 
     return (
         <div className="h-full flex flex-col bg-black/40 backdrop-blur-sm border-l border-white/5">
@@ -40,6 +51,7 @@ export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
                         { id: "all", label: "全部" },
                         { id: "processing", label: "进行中" },
                         { id: "completed", label: "已完成" },
+                        { id: "failed", label: "失败" },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -58,11 +70,14 @@ export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
             {/* Task List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <AnimatePresence mode="popLayout">
+                    {filteredJobs.map((job) => (
+                        <JobCard key={job.id} job={job} onCancel={cancelJob} onRetry={retryJob} />
+                    ))}
                     {filteredTasks.map((task) => (
                         <TaskCard key={task.id} task={task} onRemix={onRemix} />
                     ))}
 
-                    {filteredTasks.length === 0 && (
+                    {filteredTasks.length === 0 && filteredJobs.length === 0 && (
                         <div className="text-center py-10 text-gray-600 text-sm">
                             暂无任务
                         </div>
@@ -70,6 +85,54 @@ export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
                 </AnimatePresence>
             </div>
         </div>
+    );
+}
+
+function JobCard({ job, onCancel, onRetry }: { job: TaskJob; onCancel: (jobId: string) => Promise<TaskJob>; onRetry: (jobId: string) => Promise<TaskJob> }) {
+    const isActive = ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status);
+    const isFailed = ["failed", "timed_out"].includes(job.status);
+    const sourceVideoTaskId = job.payload_json?.video_task_id;
+
+    return (
+        <motion.div
+            layout
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            className={`rounded-xl border p-3 ${isFailed ? "border-red-500/20 bg-red-500/5" : "border-white/10 bg-white/5"}`}
+        >
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                        {isActive ? <Loader2 size={14} className="animate-spin text-primary" /> : <AlertCircle size={14} className="text-red-400" />}
+                        <span className="text-xs font-mono text-gray-400">#{job.id.slice(0, 8)}</span>
+                    </div>
+                    <p className="text-sm text-white">{job.status}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {sourceVideoTaskId ? `video_task=${sourceVideoTaskId.slice(0, 8)}` : job.task_type}
+                    </p>
+                    {job.error_message && <p className="text-xs text-red-300 mt-2 line-clamp-2">{job.error_message}</p>}
+                </div>
+                <div className="flex gap-2">
+                    {isActive && (
+                        <button
+                            onClick={() => void onCancel(job.id)}
+                            className="px-2 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-gray-300"
+                        >
+                            取消
+                        </button>
+                    )}
+                    {isFailed && (
+                        <button
+                            onClick={() => void onRetry(job.id)}
+                            className="px-2 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-gray-300"
+                        >
+                            重试
+                        </button>
+                    )}
+                </div>
+            </div>
+        </motion.div>
     );
 }
 

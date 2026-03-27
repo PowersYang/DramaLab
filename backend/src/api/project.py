@@ -5,9 +5,10 @@
 import asyncio
 from functools import partial
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 
 from ..application.services import CharacterService, ProjectService, PropService, SceneService
+from ..application.tasks import TaskService
 from ..application.workflows import AssetWorkflow
 from ..common.log import get_logger
 from ..providers.text.default_prompts import (
@@ -34,6 +35,7 @@ character_service = CharacterService()
 scene_service = SceneService()
 prop_service = PropService()
 asset_workflow = AssetWorkflow()
+task_service = TaskService()
 
 
 @router.post("/projects", response_model=Script)
@@ -199,19 +201,29 @@ async def update_project_style(script_id: str, request: UpdateStyleRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/generate_assets", response_model=Script)
-async def generate_assets(script_id: str, background_tasks: BackgroundTasks):
+@router.post("/projects/{script_id}/generate_assets")
+async def generate_assets(script_id: str, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """触发项目素材生成。"""
-    _ = background_tasks
     logger.info("PROJECT_API: generate_assets script_id=%s", script_id)
     script = project_service.get_project(script_id)
     if not script:
         logger.warning("PROJECT_API: generate_assets not_found script_id=%s", script_id)
         raise HTTPException(status_code=404, detail="Project not found")
     try:
-        updated_script = asset_workflow.generate_assets(script_id)
-        logger.info("PROJECT_API: generate_assets completed script_id=%s", script_id)
-        return signed_response(updated_script)
+        asset_workflow.prepare_generate_assets(script_id)
+        receipt = task_service.create_job(
+            task_type="asset.generate_batch",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="image",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope="generate-assets",
+        )
+        logger.info("PROJECT_API: generate_assets queued script_id=%s job_id=%s", script_id, receipt.job_id)
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("PROJECT_API: generate_assets failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

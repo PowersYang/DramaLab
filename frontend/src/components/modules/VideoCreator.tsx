@@ -17,20 +17,21 @@ import {
 
 
 import { useProjectStore } from "@/store/projectStore";
-import { api, API_URL, VideoTask } from "@/lib/api";
+import { api, API_URL, TaskReceipt, VideoTask } from "@/lib/api";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder";
 import type { VideoParams } from "@/store/projectStore";
 
 interface VideoCreatorProps {
     onTaskCreated: (project: any) => void;
+    onJobCreated: (receipts: TaskReceipt[]) => void;
     remixData: Partial<VideoTask> | null;
     onRemixClear: () => void;
     params: VideoParams;
     onParamsChange: (params: Partial<VideoParams>) => void;
 }
 
-export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, params, onParamsChange }: VideoCreatorProps) {
+export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, onRemixClear, params, onParamsChange }: VideoCreatorProps) {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
 
@@ -309,9 +310,6 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
             const motionDesc = getMotionDescription();
             const finalPrompt = motionDesc ? `${prompt}, ${motionDesc}` : prompt;
 
-            // Optimistic update - add pending tasks to queue immediately
-            const optimisticTasks: VideoTask[] = [];
-
             // Determine items to process
             // In I2V: process selected images
             // In R2V: process selected images OR a single task if no image selected
@@ -319,51 +317,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
             if (generationMode === 'r2v' && selectedImages.length === 0) {
                 itemsToProcess = [""]; // Dummy item to trigger one iteration
             }
-
-            itemsToProcess.forEach((img, idx) => {
-                let displayUrl = img;
-                if (img && img.startsWith("blob:")) {
-                    displayUrl = uploadingPaths[img] || img;
-                } else if (img && !img.startsWith("http")) {
-                    displayUrl = img;
-                }
-
-                // Determine model based on generation mode
-                const actualModel = generationMode === 'r2v' ? 'wan2.6-r2v' : params.model;
-                const referenceVideos = generationMode === 'r2v'
-                    ? castSlots.filter(s => s.url).map(s => s.url)
-                    : undefined;
-
-                // Create batch_size tasks for each image
-                for (let i = 0; i < params.batchSize; i++) {
-                    optimisticTasks.push({
-                        id: `temp-${Date.now()}-${idx}-${i}`,
-                        project_id: currentProject.id,
-                        image_url: displayUrl, // Might be empty string for R2V
-                        prompt: finalPrompt,
-                        status: "pending",
-                        video_url: undefined,
-                        duration: params.duration,
-                        seed: params.seed,
-                        resolution: params.resolution,
-                        generate_audio: params.generateAudio,
-                        audio_url: params.audioUrl,
-                        prompt_extend: params.promptExtend,
-                        negative_prompt: params.negativePrompt,
-                        model: actualModel,
-                        created_at: Date.now() / 1000,
-                        generation_mode: generationMode,
-                        reference_video_urls: referenceVideos
-                    });
-                }
-            });
-
-            // Immediately update UI with optimistic tasks
-            const optimisticProject = {
-                ...currentProject,
-                video_tasks: [...(currentProject.video_tasks || []), ...optimisticTasks]
-            };
-            onTaskCreated(optimisticProject);
+            const createdReceipts: TaskReceipt[] = [];
 
             // Batch submit for all images
             for (const img of itemsToProcess) {
@@ -403,7 +357,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     ? castSlots.filter(s => s.url).map(s => s.url)
                     : [];
 
-                await api.createVideoTask(
+                const receipts = await api.createVideoTask(
                     currentProject.id,
                     finalImageUrl, // Can be empty string
                     finalPrompt,
@@ -428,6 +382,11 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     params.viduAudio,
                     params.movementAmplitude
                 );
+                createdReceipts.push(...receipts);
+            }
+
+            if (createdReceipts.length > 0) {
+                onJobCreated(createdReceipts);
             }
 
             // Refresh with actual data from server

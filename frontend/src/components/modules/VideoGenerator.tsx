@@ -2,13 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { useProjectStore } from "@/store/projectStore";
+import { useTaskStore } from "@/store/taskStore";
 import VideoCreator from "./VideoCreator";
 import VideoSidebar from "./VideoSidebar";
-import { api, VideoTask } from "@/lib/api";
+import { api, TaskReceipt, VideoTask } from "@/lib/api";
 
 export default function VideoGenerator() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const fetchProjectJobs = useTaskStore((state) => state.fetchProjectJobs);
+    const jobsById = useTaskStore((state) => state.jobsById);
+    const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
     const [tasks, setTasks] = useState<VideoTask[]>([]);
 
     // Shared state for Remix functionality
@@ -58,15 +63,23 @@ export default function VideoGenerator() {
 
     // Poll for updates
     useEffect(() => {
-        const hasActiveTasks = tasks.some(t => t.status === "pending" || t.status === "processing");
-        if (!hasActiveTasks || !currentProject) return;
+        if (!currentProject) return;
+        const projectJobIds = jobIdsByProject[currentProject.id] || [];
+        const activeJobs = projectJobIds
+            .map((jobId) => jobsById[jobId])
+            .filter((job) => job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status));
+        if (activeJobs.length === 0) return;
 
         const interval = setInterval(async () => {
             try {
-                const project = await api.getProject(currentProject.id);
-                if (project.video_tasks) {
-                    setTasks(project.video_tasks);
-                    updateProject(currentProject.id, { video_tasks: project.video_tasks });
+                const jobs = await fetchProjectJobs(currentProject.id);
+                const hasFinishedJobs = jobs.some((job) => ["succeeded", "failed", "cancelled", "timed_out"].includes(job.status));
+                if (hasFinishedJobs) {
+                    const project = await api.getProject(currentProject.id);
+                    if (project.video_tasks) {
+                        setTasks(project.video_tasks);
+                        updateProject(currentProject.id, { video_tasks: project.video_tasks });
+                    }
                 }
             } catch (error) {
                 console.error("Failed to poll project status:", error);
@@ -74,13 +87,18 @@ export default function VideoGenerator() {
         }, 3000);
 
         return () => clearInterval(interval);
-    }, [tasks, currentProject?.id]);
+    }, [fetchProjectJobs, currentProject?.id, jobIdsByProject, jobsById, updateProject]);
 
     const handleTaskCreated = (updatedProject: any) => {
         if (updatedProject.video_tasks) {
             setTasks(updatedProject.video_tasks);
             updateProject(currentProject!.id, { video_tasks: updatedProject.video_tasks });
         }
+    };
+
+    const handleJobCreated = (receipts: TaskReceipt[]) => {
+        if (!currentProject) return;
+        enqueueReceipts(currentProject.id, receipts);
     };
 
     const handleRemix = (task: VideoTask) => {
@@ -116,6 +134,7 @@ export default function VideoGenerator() {
             <div className="w-[70%] h-full border-r border-white/10">
                 <VideoCreator
                     onTaskCreated={handleTaskCreated}
+                    onJobCreated={handleJobCreated}
                     remixData={remixData}
                     onRemixClear={() => setRemixData(null)}
                     params={params}
@@ -127,6 +146,7 @@ export default function VideoGenerator() {
             <div className="w-[30%] h-full">
                 <VideoSidebar
                     tasks={tasks}
+                    projectId={currentProject?.id}
                     onRemix={handleRemix}
                     params={params}
                     setParams={setParams}

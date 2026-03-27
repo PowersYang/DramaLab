@@ -4,21 +4,31 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Settings2, List, RefreshCw, ChevronDown, ChevronUp, Mic, Music, VolumeX, Wand2 } from "lucide-react";
 import VideoQueue from "./VideoQueue";
-import { VideoTask, api } from "@/lib/api";
+import { TaskJob, VideoTask, api } from "@/lib/api";
 import { I2V_MODELS, DurationConfig, ModelParamSupport, VideoParams, GRID_COLS_CLASS } from "@/store/projectStore";
+import { useTaskStore } from "@/store/taskStore";
 
 interface VideoSidebarProps {
     tasks: VideoTask[];
+    projectId?: string;
     onRemix: (task: VideoTask) => void;
     params: VideoParams;
     setParams: (params: VideoParams) => void;
 }
 
-export default function VideoSidebar({ tasks, onRemix, params, setParams }: VideoSidebarProps) {
+export default function VideoSidebar({ tasks, projectId, onRemix, params, setParams }: VideoSidebarProps) {
     const [activeTab, setActiveTab] = useState<"settings" | "queue">("settings");
     const [isUploadingAudio, setIsUploadingAudio] = useState(false);
     const audioInputRef = useRef<HTMLInputElement>(null);
     const [showNegative, setShowNegative] = useState(false);
+    const jobsById = useTaskStore((state) => state.jobsById);
+    const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
+
+    const activeJobs: TaskJob[] = projectId
+        ? (jobIdsByProject[projectId] || [])
+            .map((jobId) => jobsById[jobId])
+            .filter((job): job is TaskJob => !!job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested", "failed", "timed_out"].includes(job.status))
+        : [];
 
     const currentModelConfig = I2V_MODELS.find(m => m.id === params.model);
     const modelParams: ModelParamSupport = currentModelConfig?.params ?? {};
@@ -126,9 +136,9 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
                 >
                     <List size={16} />
                     Queue
-                    {tasks.filter(t => t.status === "pending" || t.status === "processing").length > 0 && (
+                    {activeJobs.length > 0 && (
                         <span className="bg-primary text-white text-[10px] px-1.5 rounded-full">
-                            {tasks.filter(t => t.status === "pending" || t.status === "processing").length}
+                            {activeJobs.length}
                         </span>
                     )}
                 </button>
@@ -600,7 +610,7 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
                             exit={{ opacity: 0, x: 20 }}
                             className="absolute inset-0"
                         >
-                            <VideoQueue tasks={tasks} onRemix={onRemix} />
+                            <VideoQueue tasks={tasks} jobs={activeJobs} onRemix={onRemix} />
                         </motion.div>
                     )}
                 </AnimatePresence>

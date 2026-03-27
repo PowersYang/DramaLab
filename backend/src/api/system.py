@@ -2,17 +2,16 @@
 系统路由：调试检查、文件导入、环境配置与通用工具接口。
 """
 
-import asyncio
 import json
 import os
 import shutil
 import sys
 import uuid
-from functools import partial
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from ..application.tasks import TaskService
 from ..application.services import SystemService
 from src.settings.env_settings import (
     get_env,
@@ -38,6 +37,7 @@ from ..schemas.requests import (
 
 
 router = APIRouter()
+task_service = TaskService()
 system_service = SystemService()
 text_provider = ScriptProcessor()
 
@@ -289,16 +289,20 @@ async def get_env_config():
 async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest):
     """分析剧本内容，并用 LLM 推荐视觉风格。"""
     try:
-        loop = asyncio.get_event_loop()
-        recommendations = await loop.run_in_executor(
-            None,
-            partial(
-                system_service.analyze_script_for_styles,
-                script_id,
-                request.script_text,
-            ),
+        receipt = task_service.create_job(
+            task_type="art_direction.analyze",
+            payload={
+                "project_id": script_id,
+                "script_text": request.script_text,
+            },
+            project_id=script_id,
+            queue_name="llm",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=600,
+            dedupe_scope="art-direction-analyze",
         )
-        return {"recommendations": recommendations}
+        return signed_response(receipt)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:

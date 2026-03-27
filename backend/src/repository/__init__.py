@@ -6,6 +6,9 @@ from .project_repository import ProjectRepository
 from .scene_repository import SceneRepository
 from .series_repository import SeriesRepository
 from .storyboard_frame_repository import StoryboardFrameRepository
+from .task_attempt_repository import TaskAttemptRepository
+from .task_event_repository import TaskEventRepository
+from .task_job_repository import TaskJobRepository
 from .video_task_repository import VideoTaskRepository
 from .video_variant_repository import VideoVariantRepository
 
@@ -18,6 +21,9 @@ __all__ = [
     "SceneRepository",
     "SeriesRepository",
     "StoryboardFrameRepository",
+    "TaskAttemptRepository",
+    "TaskEventRepository",
+    "TaskJobRepository",
     "VideoTaskRepository",
     "VideoVariantRepository",
 ]

@@ -2,8 +2,9 @@
 系列路由：系列基础信息、分集关系、共享素材与系列级配置。
 """
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 
+from ..application.tasks import TaskService
 from ..application.services import SeriesService
 from ..application.workflows import AssetWorkflow, SeriesWorkflow
 from ..common.log import get_logger
@@ -32,6 +33,7 @@ logger = get_logger(__name__)
 series_service = SeriesService()
 series_workflow = SeriesWorkflow()
 asset_workflow = AssetWorkflow()
+task_service = TaskService()
 
 
 @router.post("/series")
@@ -241,7 +243,7 @@ async def get_series_assets(series_id: str):
 async def generate_series_asset(
     series_id: str,
     request: GenerateAssetRequest,
-    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """为系列异步生成单个共享素材。"""
     try:
@@ -253,25 +255,38 @@ async def generate_series_asset(
             request.generation_type,
             request.batch_size,
         )
-        series, task_id = series_workflow.generate_series_asset(
+        asset_workflow.prepare_series_asset_generation(
             series_id,
             request.asset_id,
             request.asset_type,
-            request.style_preset,
-            request.reference_image_url,
-            request.style_prompt,
-            request.generation_type,
-            request.prompt,
-            request.apply_style,
-            request.negative_prompt,
-            request.batch_size,
-            request.model_name,
         )
-        background_tasks.add_task(asset_workflow.process_asset_generation_task, task_id)
-        response_data = series.model_dump()
-        response_data["_task_id"] = task_id
-        logger.info("SERIES_API: generate_series_asset task_created series_id=%s task_id=%s", series_id, task_id)
-        return signed_response(response_data)
+        receipt = task_service.create_job(
+            task_type="series.asset.generate",
+            payload={
+                "series_id": series_id,
+                "asset_id": request.asset_id,
+                "asset_type": request.asset_type,
+                "style_preset": request.style_preset,
+                "reference_image_url": request.reference_image_url,
+                "style_prompt": request.style_prompt,
+                "generation_type": request.generation_type,
+                "prompt": request.prompt,
+                "apply_style": request.apply_style,
+                "negative_prompt": request.negative_prompt,
+                "batch_size": request.batch_size,
+                "model_name": request.model_name,
+            },
+            project_id=None,
+            series_id=series_id,
+            queue_name="image",
+            resource_type=request.asset_type,
+            resource_id=request.asset_id,
+            timeout_seconds=1200,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"series:{series_id}:{request.asset_type}:{request.asset_id}:{request.generation_type}",
+        )
+        logger.info("SERIES_API: generate_series_asset task_created series_id=%s job_id=%s", series_id, receipt.job_id)
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("SERIES_API: generate_series_asset failed series_id=%s detail=%s", series_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

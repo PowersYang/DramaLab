@@ -6,10 +6,11 @@ import os
 import shutil
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 
 from ..application.services import StoryboardFrameService
 from ..application.services import AssetService
+from ..application.tasks import TaskService
 from ..application.workflows import StoryboardWorkflow
 from ..schemas.models import Script
 from ..common import logger, signed_response
@@ -25,24 +26,40 @@ from ..schemas.requests import (
     ToggleFrameLockRequest,
     UpdateFrameRequest,
 )
+from ..schemas.task_models import TaskReceipt
 
 
 router = APIRouter()
 storyboard_frame_service = StoryboardFrameService()
 storyboard_workflow = StoryboardWorkflow()
 asset_service = AssetService()
+task_service = TaskService()
 
 
 @router.post("/projects/{script_id}/storyboard/analyze")
 async def analyze_to_storyboard(
     script_id: str,
     request: AnalyzeToStoryboardRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    """调用 AI 分析脚本文本并重建分镜帧。"""
+    """调用 AI 分析剧本文本并登记独立任务。"""
     try:
         logger.info("STORYBOARD_API: analyze_to_storyboard script_id=%s text_length=%s", script_id, len(request.text or ""))
-        updated_script = storyboard_workflow.analyze_to_storyboard(script_id, request.text)
-        return signed_response(updated_script)
+        receipt = task_service.create_job(
+            task_type="storyboard.analyze",
+            payload={
+                "project_id": script_id,
+                "text": request.text,
+            },
+            project_id=script_id,
+            queue_name="llm",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=600,
+            idempotency_key=idempotency_key,
+            dedupe_scope="storyboard-analyze",
+        )
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("STORYBOARD_API: analyze_to_storyboard failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
@@ -65,12 +82,24 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/generate_storyboard", response_model=Script)
-async def generate_storyboard(script_id: str):
+@router.post("/projects/{script_id}/generate_storyboard", response_model=TaskReceipt)
+async def generate_storyboard(script_id: str, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """触发分镜图生成。"""
     try:
         logger.info("STORYBOARD_API: generate_storyboard script_id=%s", script_id)
-        return signed_response(storyboard_workflow.generate_storyboard(script_id))
+        storyboard_workflow.prepare_generate_storyboard(script_id)
+        receipt = task_service.create_job(
+            task_type="storyboard.generate_all",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="image",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope="generate-storyboard",
+        )
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("STORYBOARD_API: generate_storyboard unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -185,8 +214,8 @@ async def reorder_frames(script_id: str, request: ReorderFramesRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/storyboard/render", response_model=Script)
-async def render_frame(script_id: str, request: RenderFrameRequest):
+@router.post("/projects/{script_id}/storyboard/render", response_model=TaskReceipt)
+async def render_frame(script_id: str, request: RenderFrameRequest, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """根据构图数据重绘指定分镜帧。"""
     try:
         logger.info(
@@ -196,8 +225,23 @@ async def render_frame(script_id: str, request: RenderFrameRequest):
             request.batch_size,
             bool(request.composition_data),
         )
-        updated_script = storyboard_workflow.render_frame(script_id, request.frame_id, request.composition_data, request.prompt, request.batch_size)
-        return signed_response(updated_script)
+        receipt = task_service.create_job(
+            task_type="storyboard.render",
+            payload={
+                "project_id": script_id,
+                "frame_id": request.frame_id,
+                "composition_data": request.composition_data,
+                "prompt": request.prompt,
+                "batch_size": request.batch_size,
+            },
+            project_id=script_id,
+            queue_name="image",
+            resource_type="storyboard_frame",
+            resource_id=request.frame_id,
+            timeout_seconds=1200,
+            idempotency_key=idempotency_key,
+        )
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("STORYBOARD_API: render_frame failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

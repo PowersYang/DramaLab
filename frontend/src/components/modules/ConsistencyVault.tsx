@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Paintbrush, User, MapPin, Box, Lock, Unlock, RefreshCw, Upload, Image as ImageIcon, X, Check, Settings, ChevronRight, Trash2, Plus, Link as LinkIcon } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
-import { getAssetUrl } from "@/lib/utils";
+import { useTaskStore } from "@/store/taskStore";
+import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
@@ -14,6 +15,8 @@ import UploadAssetModal from "../modals/UploadAssetModal";
 export default function ConsistencyVault() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const upsertJobs = useTaskStore((state) => state.upsertJobs);
 
 
 
@@ -93,63 +96,31 @@ export default function ConsistencyVault() {
                 batchSize,
                 currentProject.model_settings?.t2i_model
             );
-
-            const taskId = response._task_id;
-            console.log("[handleGenerate] Got task_id:", taskId);
-
-            // Start polling if we got a task_id
-            if (taskId) {
-                const pollInterval = setInterval(async () => {
-                    try {
-                        const status = await api.getTaskStatus(taskId);
-                        console.log("[Polling] Task status:", status.status);
-
-                        if (status.status === "completed") {
-                            clearInterval(pollInterval);
-                            // Refresh project data
-                            const updatedProject = await api.getProject(currentProject.id);
-                            updateProject(currentProject.id, updatedProject);
-                            console.log("Asset generated successfully (async)");
-
-                            if (removeGeneratingTask) {
-                                removeGeneratingTask(assetId, generationType);
-                            }
-                        } else if (status.status === "failed") {
-                            clearInterval(pollInterval);
-                            console.error("Asset generation failed:", status.error);
-                            alert(status.error || '生成失败，请稍后重试');
-
-                            // Also refresh project to show updated status
-                            try {
-                                const updatedProject = await api.getProject(currentProject.id);
-                                updateProject(currentProject.id, updatedProject);
-                            } catch (refreshError) {
-                                console.error("Failed to refresh project:", refreshError);
-                            }
-
-                            if (removeGeneratingTask) {
-                                removeGeneratingTask(assetId, generationType);
-                            }
-                        }
-                        // If status is "pending" or "processing", continue polling
-                    } catch (pollError: any) {
-                        console.error("Polling error:", pollError);
+            enqueueReceipts(currentProject.id, [response]);
+            const pollInterval = setInterval(async () => {
+                try {
+                    const job = await api.getTask(response.job_id);
+                    upsertJobs([job]);
+                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
                         clearInterval(pollInterval);
-                        alert(`轮询任务状态失败: ${pollError.message || '网络错误'}`);
+                        const updatedProject = await api.getProject(currentProject.id);
+                        updateProject(currentProject.id, updatedProject);
                         if (removeGeneratingTask) {
                             removeGeneratingTask(assetId, generationType);
                         }
+                        if (["failed", "timed_out"].includes(job.status)) {
+                            alert(job.error_message || "生成失败，请稍后重试");
+                        }
                     }
-                }, 2000); // Poll every 2 seconds
-            } else {
-                // Fallback: no task_id means sync response (shouldn't happen, but just in case)
-                console.warn("[handleGenerate] No task_id in response, falling back to sync mode");
-                updateProject(currentProject.id, response);
-                console.log("Asset generated successfully");
-                if (removeGeneratingTask) {
-                    removeGeneratingTask(assetId, generationType);
+                } catch (pollError: any) {
+                    console.error("Polling error:", pollError);
+                    clearInterval(pollInterval);
+                    alert(`轮询任务状态失败: ${pollError.message || '网络错误'}`);
+                    if (removeGeneratingTask) {
+                        removeGeneratingTask(assetId, generationType);
+                    }
                 }
-            }
+            }, 2000);
         } catch (error: any) {
             console.error("Failed to generate asset:", error);
             alert(`启动生成任务失败: ${error.response?.data?.detail || error.message}`);
@@ -204,8 +175,9 @@ export default function ConsistencyVault() {
     };
 
     // Video Handlers
-    const handleGenerateVideo = async (assetId: string, type: string, prompt: string, duration: number, assetSubType: string = "full_body") => {
+    const handleGenerateVideo = async (assetId: string, type: string, prompt: string, duration: number, assetSubType?: string) => {
         if (!currentProject) return;
+        const resolvedAssetSubType = assetSubType || "full_body";
 
         // Validate and map the assetSubType to ensure correct values are passed
         let finalAssetType: 'full_body' | 'head_shot' | 'scene' | 'prop' = 'full_body';
@@ -217,7 +189,7 @@ export default function ConsistencyVault() {
             finalAssetType = "prop";
         } else {
             // For character types, ensure assetSubType is valid
-            if (assetSubType === "head_shot") {
+            if (resolvedAssetSubType === "head_shot") {
                 finalAssetType = "head_shot";
             } else {
                 finalAssetType = "full_body";  // default to full_body
@@ -225,7 +197,7 @@ export default function ConsistencyVault() {
         }
 
         // Use a more specific generation type to avoid state pollution
-        const generationType = assetSubType === "head_shot" ? "video_head_shot" : "video_full_body";
+        const generationType = resolvedAssetSubType === "head_shot" ? "video_head_shot" : "video_full_body";
 
         if (addGeneratingTask) {
             addGeneratingTask(assetId, generationType, 1);
@@ -241,52 +213,31 @@ export default function ConsistencyVault() {
                 undefined, // audioUrl
                 duration
             );
-
-            const taskId = response._task_id;
-            console.log("[handleGenerateVideo] Got task_id:", taskId);
-
-            if (taskId) {
-                // Polling mechanism for video task
-                const pollInterval = setInterval(async () => {
-                    try {
-                        const status = await api.getTaskStatus(taskId);
-                        console.log(`[Video Polling] Task ${taskId} status:`, status.status);
-
-                        if (status.status === "completed") {
-                            clearInterval(pollInterval);
-                            // Refresh project data
-                            const updatedProject = await api.getProject(currentProject.id);
-                            updateProject(currentProject.id, updatedProject);
-                            if (removeGeneratingTask) {
-                                removeGeneratingTask(assetId, generationType);
-                            }
-                            console.log(`[Video Polling] ${generationType} generated successfully`);
-                        } else if (status.status === "failed") {
-                            clearInterval(pollInterval);
-                            alert(`视频生成失败: ${status.error || '生成失败，请稍后重试'}`);
-                            if (removeGeneratingTask) {
-                                removeGeneratingTask(assetId, generationType);
-                            }
-                            // Still refresh to show failed status if any
-                            const updatedProject = await api.getProject(currentProject.id);
-                            updateProject(currentProject.id, updatedProject);
-                        }
-                    } catch (pollError: any) {
-                        console.error("Video polling error:", pollError);
+            enqueueReceipts(currentProject.id, [response]);
+            const pollInterval = setInterval(async () => {
+                try {
+                    const job = await api.getTask(response.job_id);
+                    upsertJobs([job]);
+                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
                         clearInterval(pollInterval);
-                        alert(`视频轮询失败: ${pollError.message || '网络错误'}`);
+                        const updatedProject = await api.getProject(currentProject.id);
+                        updateProject(currentProject.id, updatedProject);
                         if (removeGeneratingTask) {
                             removeGeneratingTask(assetId, generationType);
                         }
+                        if (["failed", "timed_out"].includes(job.status)) {
+                            alert(`视频生成失败: ${job.error_message || '生成失败，请稍后重试'}`);
+                        }
                     }
-                }, 3000); // Poll every 3 seconds for video
-            } else {
-                // Fallback for sync response
-                updateProject(currentProject.id, response);
-                if (removeGeneratingTask) {
-                    removeGeneratingTask(assetId, generationType);
+                } catch (pollError: any) {
+                    console.error("Video polling error:", pollError);
+                    clearInterval(pollInterval);
+                    alert(`视频轮询失败: ${pollError.message || '网络错误'}`);
+                    if (removeGeneratingTask) {
+                        removeGeneratingTask(assetId, generationType);
+                    }
                 }
-            }
+            }, 3000);
         } catch (error: any) {
             console.error("Failed to generate video:", error);
             alert(`启动视频生成失败: ${error.response?.data?.detail || error.message}`);
@@ -460,7 +411,7 @@ export default function ConsistencyVault() {
                             generatingTypes={getAssetGeneratingTypes(selectedAssetId)}
                             stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
                             styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
-                            onGenerateVideo={(prompt: string, duration: number, subType: string) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, duration, subType)}
+                            onGenerateVideo={(prompt: string, duration: number, subType?: string) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, duration, subType)}
                             onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
                         />
                     ) : (
@@ -828,30 +779,47 @@ function ImageWithRetry({ src, alt, className }: { src: string, alt: string, cla
 
 function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClick, onDelete, onUpload }: any) {
     const isLocked = asset.locked || false;
-    const currentProject = useProjectStore((state) => state.currentProject);
-    const updateProject = useProjectStore((state) => state.updateProject);
-
-    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !currentProject) return;
-
-        try {
-            // 1. Upload file
-            const { url } = await api.uploadFile(file);
-
-            // 2. Update asset image
-            const updatedProject = await api.updateAssetImage(currentProject.id, asset.id, type, url);
-
-            // 3. Update local state
-            updateProject(currentProject.id, updatedProject);
-        } catch (error) {
-            console.error("Failed to upload asset image:", error);
-            alert("Failed to upload image");
-        }
+    const getSelectedVariant = (imageAsset?: { selected_id?: string | null; variants?: Array<{ id: string; url: string; created_at?: string | number }> }) => {
+        if (!imageAsset?.variants?.length) return null;
+        return imageAsset.variants.find((variant) => variant.id === imageAsset.selected_id) || imageAsset.variants[0];
     };
 
-    const imageUrl = (type === 'character' ? (asset.avatar_url || asset.image_url) : asset.image_url);
-    const fullImageUrl = getAssetUrl(imageUrl);
+    const resolveAssetPreview = () => {
+        if (type === "character") {
+            const selectedHeadshot = getSelectedVariant(asset.headshot_asset);
+            const selectedFullBody = getSelectedVariant(asset.full_body_asset);
+            const selectedThreeView = getSelectedVariant(asset.three_view_asset);
+            const previewPath =
+                selectedHeadshot?.url
+                || asset.avatar_url
+                || selectedFullBody?.url
+                || asset.full_body_image_url
+                || selectedThreeView?.url
+                || asset.image_url
+                || asset.three_view_image_url
+                || asset.headshot_image_url;
+            const previewTimestamp =
+                selectedHeadshot?.created_at
+                || selectedFullBody?.created_at
+                || selectedThreeView?.created_at
+                || asset.headshot_updated_at
+                || asset.full_body_updated_at
+                || asset.three_view_updated_at;
+            return { previewPath, previewTimestamp };
+        }
+
+        const selectedVariant = getSelectedVariant(asset.image_asset);
+        return {
+            previewPath: selectedVariant?.url || asset.image_url,
+            previewTimestamp: selectedVariant?.created_at,
+        };
+    };
+
+    // 这里统一优先使用选中的 variant，避免顶层 legacy 字段与候选图状态短暂不同步时卡片丢图。
+    const { previewPath, previewTimestamp } = resolveAssetPreview();
+    const fullImageUrl = previewTimestamp
+        ? getAssetUrlWithTimestamp(previewPath, typeof previewTimestamp === "number" ? previewTimestamp : new Date(previewTimestamp).getTime())
+        : getAssetUrl(previewPath);
 
     return (
         <motion.div
@@ -865,7 +833,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
             {/* Image Area */}
             <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80 z-10" />
 
-            {imageUrl ? (
+            {previewPath ? (
                 <ImageWithRetry
                     src={fullImageUrl}
                     alt={asset.name}

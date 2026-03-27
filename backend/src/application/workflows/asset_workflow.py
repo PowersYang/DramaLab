@@ -55,6 +55,56 @@ class AssetWorkflow:
         logger.info("ASSET_WORKFLOW: generate_assets completed script_id=%s", script_id)
         return self._get_project(script_id)
 
+    def prepare_generate_assets(self, script_id: str):
+        """批量素材生成入队前校验项目存在。"""
+        return self._get_project(script_id)
+
+    def prepare_project_asset_generation(
+        self,
+        script_id: str,
+        asset_id: str,
+        asset_type: str,
+    ):
+        """在任务入队前把素材状态切到 processing，便于前端立即感知。"""
+        project = self._get_project(script_id)
+        asset = self._find_asset(project, asset_id, asset_type)
+        asset.status = GenerationStatus.PROCESSING
+        project.updated_at = utc_now()
+        self.project_repository.save(project)
+        return self._get_project(script_id)
+
+    def execute_project_asset_generation(
+        self,
+        script_id: str,
+        asset_id: str,
+        asset_type: str,
+        style_preset: str | None = None,
+        reference_image_url: str | None = None,
+        style_prompt: str | None = None,
+        generation_type: str = "all",
+        prompt: str | None = None,
+        apply_style: bool = True,
+        negative_prompt: str | None = None,
+        batch_size: int = 1,
+        model_name: str | None = None,
+    ):
+        """统一任务系统下的项目素材生成入口。"""
+        project = self._get_project(script_id)
+        return self._generate_project_asset(
+            project,
+            asset_id,
+            asset_type,
+            style_preset=style_preset,
+            reference_image_url=reference_image_url,
+            style_prompt=style_prompt,
+            generation_type=generation_type,
+            prompt=prompt,
+            apply_style=apply_style,
+            negative_prompt=negative_prompt,
+            batch_size=batch_size,
+            model_name=model_name,
+        )
+
     def create_asset_generation_task(
         self,
         script_id: str,
@@ -152,6 +202,50 @@ class AssetWorkflow:
         }
         logger.info("ASSET_WORKFLOW: create_series_asset_generation_task completed task_id=%s", task_id)
         return self._get_series(series_id), task_id
+
+    def prepare_series_asset_generation(
+        self,
+        series_id: str,
+        asset_id: str,
+        asset_type: str,
+    ):
+        series = self._get_series(series_id)
+        asset = self._find_asset(series, asset_id, asset_type)
+        asset.status = GenerationStatus.PROCESSING
+        series.updated_at = utc_now()
+        self.series_repository.save(series)
+        return self._get_series(series_id)
+
+    def execute_series_asset_generation(
+        self,
+        series_id: str,
+        asset_id: str,
+        asset_type: str,
+        style_preset: str | None = None,
+        reference_image_url: str | None = None,
+        style_prompt: str | None = None,
+        generation_type: str = "all",
+        prompt: str | None = None,
+        apply_style: bool = True,
+        negative_prompt: str | None = None,
+        batch_size: int = 1,
+        model_name: str | None = None,
+    ):
+        series = self._get_series(series_id)
+        return self._generate_series_asset(
+            series,
+            asset_id,
+            asset_type,
+            style_preset=style_preset,
+            reference_image_url=reference_image_url,
+            style_prompt=style_prompt,
+            generation_type=generation_type,
+            prompt=prompt,
+            apply_style=apply_style,
+            negative_prompt=negative_prompt,
+            batch_size=batch_size,
+            model_name=model_name,
+        )
 
     def process_asset_generation_task(self, task_id: str):
         """执行已登记的资产生成任务。"""
@@ -268,6 +362,36 @@ class AssetWorkflow:
             logger.exception("ASSET_WORKFLOW: process_motion_ref_task failed script_id=%s task_id=%s", script_id, task_id)
             raise
 
+    def prepare_motion_ref_generation(self, script_id: str, asset_id: str, asset_type: str):
+        """入队前校验目标资产存在。"""
+        project = self._get_project(script_id)
+        self._find_asset(project, asset_id, asset_type)
+        return project
+
+    def execute_motion_ref_generation(
+        self,
+        script_id: str,
+        asset_id: str,
+        asset_type: str,
+        prompt: str | None = None,
+        audio_url: str | None = None,
+        duration: int = 5,
+        batch_size: int = 1,
+    ):
+        """统一任务系统下的动作参考生成入口。"""
+        project = self._get_project(script_id)
+        asset = self._find_asset(project, asset_id, asset_type)
+        self._generate_motion_ref(
+            project=project,
+            asset=asset,
+            asset_type=asset_type,
+            prompt=prompt,
+            audio_url=audio_url,
+            duration=duration,
+            batch_size=batch_size,
+        )
+        return self._get_project(script_id)
+
     def create_asset_video_task(
         self,
         script_id: str,
@@ -277,7 +401,7 @@ class AssetWorkflow:
         duration: int = 5,
         aspect_ratio: str | None = None,
     ):
-        """基于已有资产图片创建一个持久化视频任务。"""
+        """基于已有资产图片创建一个持久化视频任务占位记录。"""
         logger.info("ASSET_WORKFLOW: create_asset_video_task script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
         _ = aspect_ratio
         project = self._get_project(script_id)
@@ -320,7 +444,7 @@ class AssetWorkflow:
         project.updated_at = utc_now()
         self.project_repository.save(project)
         logger.info("ASSET_WORKFLOW: create_asset_video_task completed script_id=%s task_id=%s", script_id, task_id)
-        return self._get_project(script_id), task_id
+        return self._get_project(script_id), task
 
     def _generate_project_asset(self, project, asset_id: str, asset_type: str, **params):
         """生成单个项目资产并持久化更新后的聚合。"""

@@ -8,10 +8,29 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getAssetUrl(path: string | null | undefined): string {
     if (!path) return "";
-    if (path.startsWith("http") || path.startsWith("https") || path.startsWith("blob:")) return path;
+    const normalizedPath = path.trim();
+    if (!normalizedPath) return "";
+
+    // 兼容 OSS 签名地址、浏览器 blob/data URL，以及后端直接返回的根路径静态资源地址。
+    if (
+        normalizedPath.startsWith("http://")
+        || normalizedPath.startsWith("https://")
+        || normalizedPath.startsWith("blob:")
+        || normalizedPath.startsWith("data:")
+    ) {
+        return normalizedPath;
+    }
+
+    if (normalizedPath.startsWith("/api-proxy/files/")) {
+        return normalizedPath;
+    }
+
+    if (normalizedPath.startsWith("/files/")) {
+        return `${API_URL}${normalizedPath}`;
+    }
 
     // Remove leading slash if present to avoid double slashes with API_URL/files/
-    const cleanPath = path.startsWith("/") ? path.slice(1) : path;
+    const cleanPath = normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath;
     return `${API_URL}/files/${cleanPath}`;
 }
 

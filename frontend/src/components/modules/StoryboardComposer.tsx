@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
+import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
@@ -19,6 +20,8 @@ export default function StoryboardComposer() {
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
     const setSelectedFrameId = useProjectStore((state) => state.setSelectedFrameId);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const upsertJobs = useTaskStore((state) => state.upsertJobs);
 
     // Use global rendering state (persists across module switches)
     const renderingFrames = useProjectStore((state) => state.renderingFrames);
@@ -56,14 +59,36 @@ export default function StoryboardComposer() {
 
         setIsAnalyzing(true);
         try {
-            const updatedProject = await api.analyzeToStoryboard(currentProject.id, text);
-            const frameCount = updatedProject.frames?.length || 0;
-            if (frameCount > 0) {
-                updateProject(currentProject.id, updatedProject);
-                alert(`成功生成 ${frameCount} 个分镜帧！`);
-            } else {
-                alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
-            }
+            const receipt = await api.analyzeToStoryboard(currentProject.id, text);
+            enqueueReceipts(currentProject.id, [receipt]);
+            const pollInterval = setInterval(async () => {
+                try {
+                    const job = await api.getTask(receipt.job_id);
+                    upsertJobs([job]);
+                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                        clearInterval(pollInterval);
+                        const updatedProject = await api.getProject(currentProject.id);
+                        const frameCount = updatedProject.frames?.length || 0;
+                        updateProject(currentProject.id, updatedProject);
+                        if (job.status === "succeeded") {
+                            if (frameCount > 0) {
+                                alert(`成功生成 ${frameCount} 个分镜帧！`);
+                            } else {
+                                alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
+                            }
+                        } else {
+                            alert(`分镜生成失败：${job.error_message || "请查看控制台了解详情。"}`);
+                        }
+                        setIsAnalyzing(false);
+                    }
+                } catch (pollError: any) {
+                    clearInterval(pollInterval);
+                    setIsAnalyzing(false);
+                    const detail = extractErrorDetail(pollError, "");
+                    alert(`分镜生成失败：${detail || "请查看控制台了解详情。"}`);
+                }
+            }, 2000);
+            return;
         } catch (error: any) {
             console.error("Analyze to storyboard failed:", error);
             const detail = extractErrorDetail(error, "");
@@ -72,9 +97,7 @@ export default function StoryboardComposer() {
             } else {
                 alert(`分镜生成失败：${detail || "请查看控制台了解详情。"}`);
             }
-        } finally {
-            setIsAnalyzing(false);
-        }
+        } finally {}
     };
 
     const handleImageClick = (frameId: string, e: React.MouseEvent) => {
@@ -290,11 +313,9 @@ export default function StoryboardComposer() {
                 // Use Art Direction style
                 globalStylePrompt = artDirection.style_config.positive_prompt;
             } else {
-                // Fallback to legacy style system
-                const styles = useProjectStore.getState().styles;
-                const selectedStyleId = useProjectStore.getState().selectedStyleId;
-                const currentStyle = styles.find(s => s.id === selectedStyleId);
-                globalStylePrompt = currentStyle?.prompt || "";
+                // 旧版 store 上的 styles/selectedStyleId 已经移除，这里退回为空即可，
+                // 避免分镜渲染继续依赖已废弃的全局风格状态。
+                globalStylePrompt = "";
             }
 
             // Construct final prompt:
@@ -317,16 +338,32 @@ export default function StoryboardComposer() {
                 finalPrompt = parts.join(" . ");
             }
 
-            await api.renderFrame(currentProject.id, frame.id, compositionData, finalPrompt, batchSize);
-
-            // Fetch updated project to get new image URL and timestamp
-            const updatedProject = await api.getProject(currentProject.id);
-            useProjectStore.getState().updateProject(currentProject.id, updatedProject);
+            const receipt = await api.renderFrame(currentProject.id, frame.id, compositionData, finalPrompt, batchSize);
+            enqueueReceipts(currentProject.id, [receipt]);
+            const pollInterval = setInterval(async () => {
+                try {
+                    const job = await api.getTask(receipt.job_id);
+                    upsertJobs([job]);
+                    if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                        clearInterval(pollInterval);
+                        const updatedProject = await api.getProject(currentProject.id);
+                        useProjectStore.getState().updateProject(currentProject.id, updatedProject);
+                        removeRenderingFrame(frame.id);
+                        if (["failed", "timed_out"].includes(job.status)) {
+                            alert(job.error_message || "Render failed. See console for details.");
+                        }
+                    }
+                } catch (pollError: any) {
+                    clearInterval(pollInterval);
+                    removeRenderingFrame(frame.id);
+                    alert(pollError?.message || "Render failed. See console for details.");
+                }
+            }, 2000);
+            return;
 
         } catch (error) {
             console.error("Render failed:", error);
             alert("Render failed. See console for details.");
-        } finally {
             removeRenderingFrame(frame.id);
         }
     };

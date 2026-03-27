@@ -6,10 +6,11 @@ import os
 import shutil
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 
-from ..application.services import AssetService, ProjectService
-from ..application.workflows import AssetWorkflow, MediaWorkflow
+from ..application.services import AssetService, VideoTaskService
+from ..application.tasks import TaskService
+from ..application.workflows import AssetWorkflow
 from ..schemas.models import Script
 from ..common import logger, signed_response
 from ..schemas.requests import (
@@ -24,21 +25,22 @@ from ..schemas.requests import (
     UpdateAssetDescriptionRequest,
     UpdateAssetImageRequest,
 )
+from ..schemas.task_models import TaskReceipt
 from ..utils.oss_utils import OSSImageUploader
 
 
 router = APIRouter()
 asset_service = AssetService()
 asset_workflow = AssetWorkflow()
-project_service = ProjectService()
-media_workflow = MediaWorkflow()
+video_task_service = VideoTaskService()
+task_service = TaskService()
 
 
 @router.post("/projects/{script_id}/assets/generate_motion_ref")
 async def generate_motion_ref(
     script_id: str,
     request: GenerateMotionRefRequest,
-    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """为指定素材生成动作参考视频。"""
     try:
@@ -51,20 +53,31 @@ async def generate_motion_ref(
             request.duration,
             request.batch_size,
         )
-        script, task_id = asset_workflow.generate_motion_ref_task(
+        asset_workflow.prepare_motion_ref_generation(
             script_id=script_id,
             asset_id=request.asset_id,
             asset_type=request.asset_type,
-            prompt=request.prompt,
-            audio_url=request.audio_url,
-            duration=request.duration,
-            batch_size=request.batch_size,
         )
-        background_tasks.add_task(asset_workflow.process_motion_ref_task, script_id, task_id)
-        response_data = script.model_dump()
-        response_data["_task_id"] = task_id
-        logger.info("ASSET_API: generate_motion_ref task_created script_id=%s task_id=%s", script_id, task_id)
-        return signed_response(response_data)
+        receipt = task_service.create_job(
+            task_type="asset.motion_ref.generate",
+            payload={
+                "project_id": script_id,
+                "asset_id": request.asset_id,
+                "asset_type": request.asset_type,
+                "prompt": request.prompt,
+                "audio_url": request.audio_url,
+                "duration": request.duration,
+                "batch_size": request.batch_size,
+            },
+            project_id=script_id,
+            queue_name="video",
+            resource_type=request.asset_type,
+            resource_id=request.asset_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+        )
+        logger.info("ASSET_API: generate_motion_ref task_created script_id=%s job_id=%s", script_id, receipt.job_id)
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("ASSET_API: generate_motion_ref failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
@@ -77,7 +90,7 @@ async def generate_motion_ref(
 async def generate_single_asset(
     script_id: str,
     request: GenerateAssetRequest,
-    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """按指定参数生成单个素材。"""
     try:
@@ -89,25 +102,37 @@ async def generate_single_asset(
             request.generation_type,
             request.batch_size,
         )
-        script, task_id = asset_workflow.create_asset_generation_task(
+        asset_workflow.prepare_project_asset_generation(
             script_id,
             request.asset_id,
             request.asset_type,
-            request.style_preset,
-            request.reference_image_url,
-            request.style_prompt,
-            request.generation_type,
-            request.prompt,
-            request.apply_style,
-            request.negative_prompt,
-            request.batch_size,
-            request.model_name,
         )
-        background_tasks.add_task(asset_workflow.process_asset_generation_task, task_id)
-        response_data = script.model_dump()
-        response_data["_task_id"] = task_id
-        logger.info("ASSET_API: generate_single_asset task_created script_id=%s task_id=%s", script_id, task_id)
-        return signed_response(response_data)
+        receipt = task_service.create_job(
+            task_type="asset.generate",
+            payload={
+                "project_id": script_id,
+                "asset_id": request.asset_id,
+                "asset_type": request.asset_type,
+                "style_preset": request.style_preset,
+                "reference_image_url": request.reference_image_url,
+                "style_prompt": request.style_prompt,
+                "generation_type": request.generation_type,
+                "prompt": request.prompt,
+                "apply_style": request.apply_style,
+                "negative_prompt": request.negative_prompt,
+                "batch_size": request.batch_size,
+                "model_name": request.model_name,
+            },
+            project_id=script_id,
+            queue_name="image",
+            resource_type=request.asset_type,
+            resource_id=request.asset_id,
+            timeout_seconds=1200,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"{request.asset_type}:{request.asset_id}:{request.generation_type}",
+        )
+        logger.info("ASSET_API: generate_single_asset task_created script_id=%s job_id=%s", script_id, receipt.job_id)
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("ASSET_API: generate_single_asset failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
@@ -116,32 +141,16 @@ async def generate_single_asset(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str):
-    """返回素材生成任务的当前状态。"""
-    logger.info("ASSET_API: get_task_status task_id=%s", task_id)
-    status = asset_workflow.get_task_status(task_id)
-    if not status:
-        logger.warning("ASSET_API: get_task_status not_found task_id=%s", task_id)
-        raise HTTPException(status_code=404, detail="Task not found")
-    if status["status"] == "completed":
-        script = project_service.get_project(status["script_id"])
-        if script:
-            status["script"] = signed_response(script).body.decode("utf-8")
-    logger.info("ASSET_API: get_task_status completed task_id=%s status=%s", task_id, status["status"])
-    return status
-
-
 @router.post(
     "/projects/{script_id}/assets/{asset_type}/{asset_id}/generate_video",
-    response_model=Script,
+    response_model=TaskReceipt,
 )
 async def generate_asset_video(
     script_id: str,
     asset_type: str,
     asset_id: str,
     request: GenerateAssetVideoRequest,
-    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """为指定素材生成 I2V 视频。"""
     try:
@@ -152,7 +161,7 @@ async def generate_asset_video(
             asset_type,
             request.duration,
         )
-        script, task_id = asset_workflow.create_asset_video_task(
+        script, task = asset_workflow.create_asset_video_task(
             script_id,
             asset_id,
             asset_type,
@@ -160,9 +169,16 @@ async def generate_asset_video(
             request.duration,
             request.aspect_ratio,
         )
-        background_tasks.add_task(media_workflow.process_video_task, script_id, task_id)
-        logger.info("ASSET_API: generate_asset_video task_created script_id=%s task_id=%s", script_id, task_id)
-        return signed_response(script)
+        receipt = video_task_service.task_service.create_video_generation_job(
+            video_task=task,
+            task_type="video.generate.asset",
+            resource_type=asset_type,
+            resource_id=asset_id,
+            idempotency_key=idempotency_key,
+        )
+        logger.info("ASSET_API: generate_asset_video task_created script_id=%s job_id=%s", script_id, receipt.job_id)
+        _ = script
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("ASSET_API: generate_asset_video failed script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

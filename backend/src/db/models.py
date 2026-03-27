@@ -323,10 +323,14 @@ class VideoTaskRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     project_id: Mapped[str] = mapped_column(String(64), ForeignKey("projects.id"), nullable=False, index=True)
     frame_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     asset_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_job_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     image_url: Mapped[str] = mapped_column(Text, nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     video_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     resolution: Mapped[str] = mapped_column(String(64), default="720p", nullable=False)
@@ -343,3 +347,76 @@ class VideoTaskRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     cfg_scale: Mapped[float | None] = mapped_column(Float, nullable=True)
     vidu_audio: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     movement_amplitude: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class TaskJobRecord(TenantAuditMixin, Base):
+    __tablename__ = "task_jobs"
+    __table_args__ = (
+        Index("ix_task_jobs_queue_sched", "status", "queue_name", "scheduled_at"),
+        Index("ix_task_jobs_project_created", "project_id", "created_at"),
+        Index("ix_task_jobs_series_created", "series_id", "created_at"),
+        Index("ix_task_jobs_resource_created", "resource_type", "resource_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", nullable=False, index=True)
+    queue_name: Mapped[str] = mapped_column(String(32), default="default", nullable=False, index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    series_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    resource_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    result_json: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=1800, nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class TaskAttemptRecord(TenantAuditMixin, Base):
+    __tablename__ = "task_attempts"
+    __table_args__ = (
+        Index("ix_task_attempts_job_attempt", "job_id", "attempt_no"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(64), ForeignKey("task_jobs.id"), nullable=False, index=True)
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(32), default="running", nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metrics_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+
+
+class TaskEventRecord(TenantAuditMixin, Base):
+    __tablename__ = "task_events"
+    __table_args__ = (
+        Index("ix_task_events_job_created", "job_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(64), ForeignKey("task_jobs.id"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

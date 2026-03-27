@@ -16,6 +16,9 @@ from ..db.models import (
     StoryboardFrameRecord,
     VideoTaskRecord,
     VideoVariantRecord,
+    TaskAttemptRecord,
+    TaskEventRecord,
+    TaskJobRecord,
 )
 from ..schemas.models import (
     ArtDirection,
@@ -33,6 +36,7 @@ from ..schemas.models import (
     VideoTask,
     VideoVariant,
 )
+from ..schemas.task_models import TaskAttempt, TaskEvent, TaskJob
 from ..utils.datetime import utc_now
 
 
@@ -161,10 +165,14 @@ def _video_task_from_record(record: VideoTaskRecord) -> VideoTask:
         project_id=record.project_id,
         frame_id=record.frame_id,
         asset_id=record.asset_id,
+        source_job_id=record.source_job_id,
+        provider_task_id=record.provider_task_id,
         image_url=record.image_url,
         prompt=record.prompt,
         status=record.status,
         video_url=record.video_url,
+        failed_reason=record.failed_reason,
+        completed_at=record.completed_at,
         duration=record.duration,
         seed=record.seed,
         resolution=record.resolution,
@@ -192,10 +200,14 @@ def _video_task_record(task: VideoTask, tenant: dict) -> VideoTaskRecord:
         project_id=task.project_id,
         frame_id=task.frame_id,
         asset_id=task.asset_id,
+        source_job_id=task.source_job_id,
+        provider_task_id=task.provider_task_id,
         image_url=task.image_url,
         prompt=task.prompt,
         status=task.status,
         video_url=task.video_url,
+        failed_reason=task.failed_reason,
+        completed_at=task.completed_at,
         duration=task.duration,
         seed=task.seed,
         resolution=task.resolution,
@@ -216,6 +228,161 @@ def _video_task_record(task: VideoTask, tenant: dict) -> VideoTaskRecord:
         updated_at=task.created_at,
         is_deleted=task.is_deleted,
         **tenant,
+    )
+
+
+def _task_job_from_record(record: TaskJobRecord) -> TaskJob:
+    return TaskJob(
+        id=record.id,
+        task_type=record.task_type,
+        status=record.status,
+        queue_name=record.queue_name,
+        priority=record.priority,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        series_id=record.series_id,
+        resource_type=record.resource_type,
+        resource_id=record.resource_id,
+        payload_json=record.payload_json or {},
+        result_json=record.result_json,
+        error_code=record.error_code,
+        error_message=record.error_message,
+        idempotency_key=record.idempotency_key,
+        dedupe_key=record.dedupe_key,
+        max_attempts=record.max_attempts,
+        attempt_count=record.attempt_count,
+        timeout_seconds=record.timeout_seconds,
+        scheduled_at=record.scheduled_at,
+        claimed_at=record.claimed_at,
+        started_at=record.started_at,
+        heartbeat_at=record.heartbeat_at,
+        finished_at=record.finished_at,
+        cancel_requested_at=record.cancel_requested_at,
+        worker_id=record.worker_id,
+        created_by=record.created_by,
+        updated_by=record.updated_by,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _task_job_record(job: TaskJob) -> TaskJobRecord:
+    return TaskJobRecord(
+        id=job.id,
+        task_type=job.task_type,
+        status=job.status,
+        queue_name=job.queue_name,
+        priority=job.priority,
+        organization_id=job.organization_id,
+        workspace_id=job.workspace_id,
+        project_id=job.project_id,
+        series_id=job.series_id,
+        resource_type=job.resource_type,
+        resource_id=job.resource_id,
+        payload_json=job.payload_json,
+        result_json=job.result_json,
+        error_code=job.error_code,
+        error_message=job.error_message,
+        idempotency_key=job.idempotency_key,
+        dedupe_key=job.dedupe_key,
+        max_attempts=job.max_attempts,
+        attempt_count=job.attempt_count,
+        timeout_seconds=job.timeout_seconds,
+        scheduled_at=job.scheduled_at,
+        claimed_at=job.claimed_at,
+        started_at=job.started_at,
+        heartbeat_at=job.heartbeat_at,
+        finished_at=job.finished_at,
+        cancel_requested_at=job.cancel_requested_at,
+        worker_id=job.worker_id,
+        created_by=job.created_by,
+        updated_by=job.updated_by,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+
+
+def _task_attempt_from_record(record: TaskAttemptRecord) -> TaskAttempt:
+    return TaskAttempt(
+        id=record.id,
+        job_id=record.job_id,
+        attempt_no=record.attempt_no,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        created_by=record.created_by,
+        updated_by=record.updated_by,
+        worker_id=record.worker_id,
+        provider_name=record.provider_name,
+        provider_task_id=record.provider_task_id,
+        started_at=record.started_at,
+        ended_at=record.ended_at,
+        outcome=record.outcome,
+        error_code=record.error_code,
+        error_message=record.error_message,
+        metrics_json=record.metrics_json or {},
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _task_attempt_record(attempt: TaskAttempt) -> TaskAttemptRecord:
+    return TaskAttemptRecord(
+        id=attempt.id,
+        job_id=attempt.job_id,
+        attempt_no=attempt.attempt_no,
+        organization_id=attempt.organization_id,
+        workspace_id=attempt.workspace_id,
+        created_by=attempt.created_by,
+        updated_by=attempt.updated_by,
+        worker_id=attempt.worker_id,
+        provider_name=attempt.provider_name,
+        provider_task_id=attempt.provider_task_id,
+        started_at=attempt.started_at,
+        ended_at=attempt.ended_at,
+        outcome=attempt.outcome,
+        error_code=attempt.error_code,
+        error_message=attempt.error_message,
+        metrics_json=attempt.metrics_json,
+        created_at=attempt.created_at,
+        updated_at=attempt.updated_at,
+    )
+
+
+def _task_event_from_record(record: TaskEventRecord) -> TaskEvent:
+    return TaskEvent(
+        id=record.id,
+        job_id=record.job_id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        created_by=record.created_by,
+        updated_by=record.updated_by,
+        event_type=record.event_type,
+        from_status=record.from_status,
+        to_status=record.to_status,
+        progress=record.progress,
+        message=record.message,
+        event_payload_json=record.event_payload_json or {},
+        created_at=record.created_at,
+        updated_at=record.created_at,
+    )
+
+
+def _task_event_record(event: TaskEvent) -> TaskEventRecord:
+    return TaskEventRecord(
+        id=event.id,
+        job_id=event.job_id,
+        organization_id=event.organization_id,
+        workspace_id=event.workspace_id,
+        created_by=event.created_by,
+        updated_by=event.updated_by,
+        event_type=event.event_type,
+        from_status=event.from_status,
+        to_status=event.to_status,
+        progress=event.progress,
+        message=event.message,
+        event_payload_json=event.event_payload_json,
+        created_at=event.created_at,
     )
 
 

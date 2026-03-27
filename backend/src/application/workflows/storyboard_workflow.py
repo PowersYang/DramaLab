@@ -123,6 +123,10 @@ class StoryboardWorkflow:
         logger.info("STORYBOARD_WORKFLOW: generate_storyboard completed script_id=%s", script_id)
         return self._get_project(script_id)
 
+    def prepare_generate_storyboard(self, script_id: str):
+        """批量分镜渲染入队前校验项目存在。"""
+        return self._get_project(script_id)
+
     def render_frame(self, script_id: str, frame_id: str, composition_data, prompt: str, batch_size: int = 1):
         """使用显式构图输入渲染单个分镜帧。"""
         logger.info("STORYBOARD_WORKFLOW: render_frame script_id=%s frame_id=%s batch_size=%s", script_id, frame_id, batch_size)

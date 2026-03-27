@@ -1,16 +1,24 @@
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.staticfiles import StaticFiles
-
+from src.api.asset import router as project_assets_router
+from src.api.project import router as project_core_router
+from src.api.media import router as project_media_router
+from src.api.storyboard import router as project_storyboard_router
+from src.api.series import router as series_router
+from src.api.system import router as system_router
+from src.api.task import router as task_router
+from src.worker.task_worker import TaskWorker
 from src.common import bootstrap_api_environment
 from src.common.log import setup_logging
 from src.common.request_logging import log_request_response
 
+from starlette.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +52,23 @@ def bootstrap_runtime() -> None:
 
 
 def create_app() -> FastAPI:
-    from src.api.asset import router as project_assets_router
-    from src.api.project import router as project_core_router
-    from src.api.media import router as project_media_router
-    from src.api.storyboard import router as project_storyboard_router
-    from src.api.series import router as series_router
-    from src.api.system import router as system_router
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        logger.info("APP: entering lifespan startup")
+        bootstrap_api_environment(logging.getLogger(__name__))
+        # 统一由主入口托管 worker，当前按批次接管了 llm/image/video 三类长任务。
+        task_worker = TaskWorker(queues=["llm", "image", "video"], poll_interval=2.0)
+        task_worker.start_in_thread()
+        app.state.task_worker = task_worker
+        try:
+            yield
+        finally:
+            logger.info("APP: entering lifespan shutdown")
+            task_worker.stop(timeout=5.0)
 
-    app = FastAPI(title="AI Comic Gen API")
+    app = FastAPI(title="AI Comic Gen API", lifespan=lifespan)
     # 在应用创建时补一条汇总日志，方便确认当前实例已经把哪些核心路由装载进来。
     logger.info("APP: creating FastAPI application instance")
-    bootstrap_api_environment(logging.getLogger(__name__))
 
     app.add_middleware(
         CORSMiddleware,
@@ -92,6 +106,7 @@ def create_app() -> FastAPI:
     app.mount("/files", StaticFiles(directory="output"), name="files")
 
     app.include_router(system_router)
+    app.include_router(task_router)
     app.include_router(series_router)
     app.include_router(project_core_router)
     app.include_router(project_assets_router)

@@ -87,6 +87,7 @@ class MediaWorkflow:
 
         try:
             task.status = "processing"
+            task.failed_reason = None
             self.video_task_repository.save(task)
 
             img_path = self._download_temp_image(task.image_url) if task.image_url else None
@@ -99,11 +100,13 @@ class MediaWorkflow:
             )
             task.video_url = self._persist_output(output_path, "video/tasks")
             task.status = "completed"
+            task.completed_at = utc_now()
             logger.info("MEDIA_WORKFLOW: process_video_task completed script_id=%s task_id=%s", script_id, task_id)
         except Exception as exc:
             logger.exception("Failed to process video task")
             logger.error("Video generation failed: %s", exc)
             task.status = "failed"
+            task.failed_reason = str(exc)
         finally:
             self.video_task_repository.save(task)
 

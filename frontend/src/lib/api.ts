@@ -209,10 +209,15 @@ const fetchJson = async (input: string, init?: RequestInit) => {
 export interface VideoTask {
     id: string;
     project_id: string;
+    asset_id?: string;
+    source_job_id?: string;
+    provider_task_id?: string;
     image_url: string;
     prompt: string;
     status: "pending" | "processing" | "completed" | "failed";
     video_url?: string;
+    failed_reason?: string;
+    completed_at?: string;
     duration: number;
     seed?: number;
     resolution: string;
@@ -225,6 +230,40 @@ export interface VideoTask {
     frame_id?: string;
     generation_mode?: string;
     reference_video_urls?: string[];
+}
+
+export interface TaskReceipt {
+    job_id: string;
+    task_type: string;
+    status: "queued" | "claimed" | "running" | "retry_waiting" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "timed_out";
+    queue_name: string;
+    project_id?: string;
+    resource_type?: string;
+    resource_id?: string;
+    source_video_task_id?: string;
+    created_at: string | number;
+}
+
+export interface TaskJob {
+    id: string;
+    task_type: string;
+    status: TaskReceipt["status"];
+    queue_name: string;
+    priority: number;
+    project_id?: string;
+    resource_type?: string;
+    resource_id?: string;
+    payload_json?: Record<string, any>;
+    result_json?: Record<string, any> | null;
+    error_code?: string | null;
+    error_message?: string | null;
+    attempt_count: number;
+    max_attempts: number;
+    heartbeat_at?: string | null;
+    started_at?: string | null;
+    finished_at?: string | null;
+    cancel_requested_at?: string | null;
+    created_at: string | number;
 }
 
 export const api = {
@@ -265,8 +304,13 @@ export const api = {
         return res.data;
     },
 
-    generateAssets: async (scriptId: string) => {
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/generate_assets`);
+    generateAssets: async (scriptId: string): Promise<TaskReceipt> => {
+        const dedupeKey = `generate-assets:${scriptId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/generate_assets`, undefined, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
+        });
         return res.data;
     },
 
@@ -294,7 +338,8 @@ export const api = {
         // Vidu params
         viduAudio?: boolean,
         movementAmplitude?: string
-    ) => {
+    ): Promise<TaskReceipt[]> => {
+        const dedupeKey = `video:${id}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const res = await axios.post(`${API_URL}/projects/${id}/video_tasks`, {
             image_url,
             prompt,
@@ -318,7 +363,36 @@ export const api = {
             // Vidu
             vidu_audio: viduAudio,
             movement_amplitude: movementAmplitude
+        }, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
         });
+        return res.data;
+    },
+
+    getTask: async (jobId: string): Promise<TaskJob> => {
+        const res = await axios.get(`${API_URL}/tasks/${jobId}`);
+        return res.data;
+    },
+
+    listTasks: async (projectId: string, statuses?: string[]): Promise<TaskJob[]> => {
+        const res = await axios.get(`${API_URL}/tasks`, {
+            params: {
+                project_id: projectId,
+                statuses: statuses?.join(","),
+            },
+        });
+        return res.data;
+    },
+
+    cancelTask: async (jobId: string): Promise<TaskJob> => {
+        const res = await axios.post(`${API_URL}/tasks/${jobId}/cancel`);
+        return res.data;
+    },
+
+    retryTask: async (jobId: string): Promise<TaskJob> => {
+        const res = await axios.post(`${API_URL}/tasks/${jobId}/retry`);
         return res.data;
     },
 
@@ -363,7 +437,8 @@ export const api = {
         );
     },
 
-    generateAsset: async (scriptId: string, assetId: string, assetType: string, stylePreset: string, stylePrompt?: string, generationType: string = "all", prompt: string = "", applyStyle: boolean = true, negativePrompt: string = "", batchSize: number = 1, modelName?: string) => {
+    generateAsset: async (scriptId: string, assetId: string, assetType: string, stylePreset: string, stylePrompt?: string, generationType: string = "all", prompt: string = "", applyStyle: boolean = true, negativePrompt: string = "", batchSize: number = 1, modelName?: string): Promise<TaskReceipt> => {
+        const dedupeKey = `asset:${scriptId}:${assetId}:${generationType}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/generate`, {
             asset_id: assetId,
             asset_type: assetType,
@@ -375,15 +450,15 @@ export const api = {
             negative_prompt: negativePrompt,
             batch_size: batchSize,
             model_name: modelName
+        }, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
         });
-        // Now returns { ...script, _task_id: string }
         return res.data;
     },
 
-    getTaskStatus: async (taskId: string) => {
-        const res = await axios.get(`${API_URL}/tasks/${taskId}`);
-        return res.data;
-    },
+    getTaskStatus: async (taskId: string): Promise<TaskJob> => api.getTask(taskId),
 
     generateAssetVideo: async (scriptId: string, assetType: string, assetId: string, data: { prompt?: string, duration?: number, aspect_ratio?: string }) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/${assetType}/${assetId}/generate_video`, data);
@@ -402,7 +477,8 @@ export const api = {
         audioUrl?: string,
         duration: number = 5,
         batchSize: number = 1
-    ): Promise<any & { _task_id?: string }> => {
+    ): Promise<TaskReceipt> => {
+        const dedupeKey = `motion-ref:${scriptId}:${assetId}:${assetType}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/generate_motion_ref`, {
             asset_id: assetId,
             asset_type: assetType,
@@ -410,6 +486,10 @@ export const api = {
             audio_url: audioUrl,
             duration,
             batch_size: batchSize
+        }, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
         });
         return res.data;
     },
@@ -511,7 +591,7 @@ export const api = {
     },
 
     // Art Direction APIs
-    analyzeScriptForStyles: async (scriptId: string, scriptText: string) => {
+    analyzeScriptForStyles: async (scriptId: string, scriptText: string): Promise<TaskReceipt> => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/art_direction/analyze`, {
             script_text: scriptText
         });
@@ -599,12 +679,17 @@ export const api = {
         return res.data;
     },
 
-    renderFrame: async (scriptId: string, frameId: string, compositionData: any, prompt: string, batchSize: number = 1) => {
+    renderFrame: async (scriptId: string, frameId: string, compositionData: any, prompt: string, batchSize: number = 1): Promise<TaskReceipt> => {
+        const dedupeKey = `storyboard-render:${scriptId}:${frameId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/render`, {
             frame_id: frameId,
             composition_data: compositionData,
             prompt: prompt,
             batch_size: batchSize
+        }, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
         });
         return res.data;
     },
@@ -615,9 +700,14 @@ export const api = {
      * Analyzes script text and generates storyboard frames using AI.
      * Replaces existing frames with newly generated ones.
      */
-    analyzeToStoryboard: async (scriptId: string, text: string) => {
+    analyzeToStoryboard: async (scriptId: string, text: string): Promise<TaskReceipt> => {
+        const dedupeKey = `storyboard-analyze:${scriptId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/analyze`, {
             text: text
+        }, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
         });
         return res.data;
     },
@@ -636,8 +726,13 @@ export const api = {
         return res.data;
     },
 
-    generateStoryboard: async (scriptId: string) => {
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/generate_storyboard`);
+    generateStoryboard: async (scriptId: string): Promise<TaskReceipt> => {
+        const dedupeKey = `generate-storyboard:${scriptId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/generate_storyboard`, undefined, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
+        });
         return res.data;
     },
 

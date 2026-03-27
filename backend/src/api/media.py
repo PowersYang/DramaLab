@@ -2,11 +2,11 @@
 项目媒体路由：视频任务、语音音频、混音、合成与导出。
 """
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from ..application.services import ProjectService, VideoTaskService
 from ..application.workflows import MediaWorkflow
-from ..schemas.models import Script, VideoTask
+from ..schemas.models import Script
 from ..common import logger, signed_response
 from ..schemas.requests import (
     BindVoiceRequest,
@@ -15,6 +15,7 @@ from ..schemas.requests import (
     GenerateLineAudioRequest,
     UpdateVoiceParamsRequest,
 )
+from ..schemas.task_models import TaskReceipt
 
 
 router = APIRouter()
@@ -45,13 +46,17 @@ async def generate_audio(script_id: str):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/video_tasks", response_model=list[VideoTask])
+@router.post("/projects/{script_id}/video_tasks", response_model=list[TaskReceipt])
 async def create_video_task(
     script_id: str,
     request: CreateVideoTaskRequest,
-    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    """创建一个或多个视频生成任务。"""
+    """创建一个或多个视频生成任务。
+
+    第一期迁移后，这里只负责落业务占位记录和统一任务回执，
+    真正执行交给独立 worker，不再依赖 API 进程内 BackgroundTasks。
+    """
     try:
         logger.info(
             "MEDIA_API: create_video_task script_id=%s frame_id=%s batch_size=%s model=%s generation_mode=%s",
@@ -61,7 +66,7 @@ async def create_video_task(
             request.model,
             request.generation_mode,
         )
-        tasks = video_task_service.create_tasks(
+        receipts = video_task_service.create_video_generation_jobs(
             script_id=script_id,
             image_url=request.image_url,
             prompt=request.prompt,
@@ -83,11 +88,10 @@ async def create_video_task(
             cfg_scale=request.cfg_scale,
             vidu_audio=request.vidu_audio,
             movement_amplitude=request.movement_amplitude,
+            idempotency_key=idempotency_key,
         )
-        for task in tasks:
-            background_tasks.add_task(media_workflow.process_video_task, script_id, task.id)
-        logger.info("MEDIA_API: create_video_task completed script_id=%s task_count=%s", script_id, len(tasks))
-        return signed_response(tasks)
+        logger.info("MEDIA_API: create_video_task completed script_id=%s job_count=%s", script_id, len(receipts))
+        return signed_response(receipts)
     except Exception as exc:
         logger.exception("MEDIA_API: create_video_task unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
