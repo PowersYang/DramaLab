@@ -6,6 +6,7 @@ from .scene_service import SceneService
 from .series_service import SeriesService
 from .storyboard_frame_service import StoryboardFrameService
 from .system_service import SystemService
+from .tenant_admin_service import TenantAdminService
 from .video_task_service import VideoTaskService
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "SeriesService",
     "StoryboardFrameService",
     "SystemService",
+    "TenantAdminService",
     "VideoTaskService",
 ]
 """

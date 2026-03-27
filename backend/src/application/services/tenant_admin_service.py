@@ -1,0 +1,355 @@
+"""多租户基础对象应用服务。"""
+
+import uuid
+
+from ...common.log import get_logger
+from ...repository import (
+    MembershipRepository,
+    OrganizationRepository,
+    RoleRepository,
+    UserRepository,
+    WorkspaceRepository,
+)
+from ...schemas.models import Membership, Organization, Role, User, Workspace
+from ...utils.datetime import utc_now
+
+
+logger = get_logger(__name__)
+
+
+class TenantAdminService:
+    """统一管理组织、工作区、用户、角色和成员关系。"""
+
+    def __init__(self):
+        self.organization_repository = OrganizationRepository()
+        self.workspace_repository = WorkspaceRepository()
+        self.user_repository = UserRepository()
+        self.role_repository = RoleRepository()
+        self.membership_repository = MembershipRepository()
+
+    def list_organizations(self):
+        """列出全部组织。"""
+        return self.organization_repository.list()
+
+    def get_organization(self, organization_id: str):
+        """读取单个组织。"""
+        return self.organization_repository.get(organization_id)
+
+    def create_organization(self, name: str, slug: str | None = None, status: str = "active"):
+        """创建组织，并提前校验 slug 唯一性。"""
+        if slug and self.organization_repository.get_by_slug(slug):
+            raise ValueError(f"Organization slug already exists: {slug}")
+        now = utc_now()
+        organization = Organization(
+            id=str(uuid.uuid4()),
+            name=name,
+            slug=slug,
+            status=status,
+            created_at=now,
+            updated_at=now,
+        )
+        logger.info("TENANT_ADMIN_SERVICE: create_organization organization_id=%s slug=%s", organization.id, slug)
+        return self.organization_repository.create(organization)
+
+    def update_organization(self, organization_id: str, updates: dict):
+        """更新组织基础字段。"""
+        organization = self.organization_repository.get(organization_id)
+        if organization is None:
+            raise ValueError("Organization not found")
+        slug = updates.get("slug")
+        if slug and slug != organization.slug:
+            existing = self.organization_repository.get_by_slug(slug)
+            if existing and existing.id != organization_id:
+                raise ValueError(f"Organization slug already exists: {slug}")
+        logger.info(
+            "TENANT_ADMIN_SERVICE: update_organization organization_id=%s fields=%s",
+            organization_id,
+            sorted(updates.keys()),
+        )
+        return self.organization_repository.update(organization_id, updates)
+
+    def delete_organization(self, organization_id: str):
+        """仅在没有下游依赖时删除组织。"""
+        organization = self.organization_repository.get(organization_id)
+        if organization is None:
+            raise ValueError("Organization not found")
+        if self.organization_repository.has_dependents(organization_id):
+            raise ValueError("Organization still has dependent workspaces, memberships, billing accounts, projects, or series")
+        self.organization_repository.delete(organization_id)
+        logger.info("TENANT_ADMIN_SERVICE: delete_organization organization_id=%s", organization_id)
+        return {"status": "deleted", "id": organization_id, "name": organization.name}
+
+    def list_workspaces(self, organization_id: str | None = None):
+        """按组织过滤列出工作区。"""
+        return self.workspace_repository.list(organization_id=organization_id)
+
+    def get_workspace(self, workspace_id: str):
+        """读取单个工作区。"""
+        return self.workspace_repository.get(workspace_id)
+
+    def create_workspace(
+        self,
+        name: str,
+        organization_id: str | None = None,
+        slug: str | None = None,
+        status: str = "active",
+    ):
+        """创建工作区，并校验其上游组织存在。"""
+        if organization_id and not self.workspace_repository.organization_exists(organization_id):
+            raise ValueError("Organization not found")
+        now = utc_now()
+        workspace = Workspace(
+            id=str(uuid.uuid4()),
+            organization_id=organization_id,
+            name=name,
+            slug=slug,
+            status=status,
+            created_at=now,
+            updated_at=now,
+        )
+        logger.info(
+            "TENANT_ADMIN_SERVICE: create_workspace workspace_id=%s organization_id=%s",
+            workspace.id,
+            organization_id,
+        )
+        return self.workspace_repository.create(workspace)
+
+    def update_workspace(self, workspace_id: str, updates: dict):
+        """更新工作区基础字段。"""
+        workspace = self.workspace_repository.get(workspace_id)
+        if workspace is None:
+            raise ValueError("Workspace not found")
+        organization_id = updates.get("organization_id")
+        if organization_id and not self.workspace_repository.organization_exists(organization_id):
+            raise ValueError("Organization not found")
+        if "organization_id" in updates and organization_id != workspace.organization_id and self.workspace_repository.has_dependents(workspace_id):
+            raise ValueError("Workspace organization cannot be changed while dependent memberships, projects, or series still exist")
+        logger.info(
+            "TENANT_ADMIN_SERVICE: update_workspace workspace_id=%s fields=%s",
+            workspace_id,
+            sorted(updates.keys()),
+        )
+        return self.workspace_repository.update(workspace_id, updates)
+
+    def delete_workspace(self, workspace_id: str):
+        """仅在没有下游依赖时删除工作区。"""
+        workspace = self.workspace_repository.get(workspace_id)
+        if workspace is None:
+            raise ValueError("Workspace not found")
+        if self.workspace_repository.has_dependents(workspace_id):
+            raise ValueError("Workspace still has dependent memberships, projects, or series")
+        self.workspace_repository.delete(workspace_id)
+        logger.info("TENANT_ADMIN_SERVICE: delete_workspace workspace_id=%s", workspace_id)
+        return {"status": "deleted", "id": workspace_id, "name": workspace.name}
+
+    def list_users(self):
+        """列出全部用户。"""
+        return self.user_repository.list()
+
+    def get_user(self, user_id: str):
+        """读取单个用户。"""
+        return self.user_repository.get(user_id)
+
+    def create_user(self, email: str | None = None, display_name: str | None = None, status: str = "active"):
+        """创建用户，并提前校验邮箱唯一性。"""
+        if email and self.user_repository.get_by_email(email):
+            raise ValueError(f"User email already exists: {email}")
+        now = utc_now()
+        user = User(
+            id=str(uuid.uuid4()),
+            email=email,
+            display_name=display_name,
+            status=status,
+            created_at=now,
+            updated_at=now,
+        )
+        logger.info("TENANT_ADMIN_SERVICE: create_user user_id=%s email=%s", user.id, email)
+        return self.user_repository.create(user)
+
+    def update_user(self, user_id: str, updates: dict):
+        """更新用户基础字段。"""
+        user = self.user_repository.get(user_id)
+        if user is None:
+            raise ValueError("User not found")
+        email = updates.get("email")
+        if email and email != user.email:
+            existing = self.user_repository.get_by_email(email)
+            if existing and existing.id != user_id:
+                raise ValueError(f"User email already exists: {email}")
+        logger.info("TENANT_ADMIN_SERVICE: update_user user_id=%s fields=%s", user_id, sorted(updates.keys()))
+        return self.user_repository.update(user_id, updates)
+
+    def delete_user(self, user_id: str):
+        """仅在没有成员关系引用时删除用户。"""
+        user = self.user_repository.get(user_id)
+        if user is None:
+            raise ValueError("User not found")
+        if self.user_repository.has_memberships(user_id):
+            raise ValueError("User still has dependent memberships")
+        self.user_repository.delete(user_id)
+        logger.info("TENANT_ADMIN_SERVICE: delete_user user_id=%s", user_id)
+        return {"status": "deleted", "id": user_id, "display_name": user.display_name}
+
+    def list_roles(self):
+        """列出全部角色。"""
+        return self.role_repository.list()
+
+    def get_role(self, role_id: str):
+        """读取单个角色。"""
+        return self.role_repository.get(role_id)
+
+    def create_role(self, code: str, name: str, description: str | None = None, is_system: bool = False):
+        """创建角色，并提前校验 code 唯一性。"""
+        if self.role_repository.get_by_code(code):
+            raise ValueError(f"Role code already exists: {code}")
+        now = utc_now()
+        role = Role(
+            id=str(uuid.uuid4()),
+            code=code,
+            name=name,
+            description=description,
+            is_system=is_system,
+            created_at=now,
+            updated_at=now,
+        )
+        logger.info("TENANT_ADMIN_SERVICE: create_role role_id=%s code=%s", role.id, code)
+        return self.role_repository.create(role)
+
+    def update_role(self, role_id: str, updates: dict):
+        """更新角色定义。"""
+        role = self.role_repository.get(role_id)
+        if role is None:
+            raise ValueError("Role not found")
+        code = updates.get("code")
+        if code and code != role.code:
+            existing = self.role_repository.get_by_code(code)
+            if existing and existing.id != role_id:
+                raise ValueError(f"Role code already exists: {code}")
+        logger.info("TENANT_ADMIN_SERVICE: update_role role_id=%s fields=%s", role_id, sorted(updates.keys()))
+        return self.role_repository.update(role_id, updates)
+
+    def delete_role(self, role_id: str):
+        """保护系统角色和已被引用角色不被误删。"""
+        role = self.role_repository.get(role_id)
+        if role is None:
+            raise ValueError("Role not found")
+        if role.is_system:
+            raise ValueError("System role cannot be deleted")
+        if self.role_repository.has_memberships(role_id):
+            raise ValueError("Role still has dependent memberships")
+        self.role_repository.delete(role_id)
+        logger.info("TENANT_ADMIN_SERVICE: delete_role role_id=%s", role_id)
+        return {"status": "deleted", "id": role_id, "code": role.code}
+
+    def list_memberships(
+        self,
+        organization_id: str | None = None,
+        workspace_id: str | None = None,
+        user_id: str | None = None,
+        role_id: str | None = None,
+    ):
+        """按不同维度过滤成员关系。"""
+        return self.membership_repository.list(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            role_id=role_id,
+        )
+
+    def get_membership(self, membership_id: str):
+        """读取单个成员关系。"""
+        return self.membership_repository.get(membership_id)
+
+    def create_membership(
+        self,
+        user_id: str,
+        organization_id: str | None = None,
+        workspace_id: str | None = None,
+        role_id: str | None = None,
+        status: str = "active",
+    ):
+        """创建成员关系，并校验用户、组织、工作区和角色的关联一致性。"""
+        if workspace_id and organization_id is None:
+            workspace = self.workspace_repository.get(workspace_id)
+            organization_id = workspace.organization_id if workspace else organization_id
+        self._validate_membership_dependencies(user_id, organization_id, workspace_id, role_id)
+        if self.membership_repository.exists_conflict(None, organization_id, workspace_id, user_id, role_id):
+            raise ValueError("Membership already exists for the same user, scope, and role")
+        now = utc_now()
+        membership = Membership(
+            id=str(uuid.uuid4()),
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            role_id=role_id,
+            status=status,
+            created_at=now,
+            updated_at=now,
+        )
+        logger.info(
+            "TENANT_ADMIN_SERVICE: create_membership membership_id=%s user_id=%s organization_id=%s workspace_id=%s role_id=%s",
+            membership.id,
+            user_id,
+            organization_id,
+            workspace_id,
+            role_id,
+        )
+        return self.membership_repository.create(membership)
+
+    def update_membership(self, membership_id: str, updates: dict):
+        """更新成员关系，并保持作用域关系合法。"""
+        membership = self.membership_repository.get(membership_id)
+        if membership is None:
+            raise ValueError("Membership not found")
+        next_user_id = updates.get("user_id", membership.user_id)
+        next_organization_id = updates.get("organization_id", membership.organization_id)
+        next_workspace_id = updates.get("workspace_id", membership.workspace_id)
+        next_role_id = updates.get("role_id", membership.role_id)
+        if next_workspace_id and next_organization_id is None:
+            workspace = self.workspace_repository.get(next_workspace_id)
+            next_organization_id = workspace.organization_id if workspace else next_organization_id
+            updates = {**updates, "organization_id": next_organization_id}
+        self._validate_membership_dependencies(next_user_id, next_organization_id, next_workspace_id, next_role_id)
+        if self.membership_repository.exists_conflict(
+            membership_id,
+            next_organization_id,
+            next_workspace_id,
+            next_user_id,
+            next_role_id,
+        ):
+            raise ValueError("Membership already exists for the same user, scope, and role")
+        logger.info(
+            "TENANT_ADMIN_SERVICE: update_membership membership_id=%s fields=%s",
+            membership_id,
+            sorted(updates.keys()),
+        )
+        return self.membership_repository.update(membership_id, updates)
+
+    def delete_membership(self, membership_id: str):
+        """删除单条成员关系。"""
+        membership = self.membership_repository.get(membership_id)
+        if membership is None:
+            raise ValueError("Membership not found")
+        self.membership_repository.delete(membership_id)
+        logger.info("TENANT_ADMIN_SERVICE: delete_membership membership_id=%s", membership_id)
+        return {"status": "deleted", "id": membership_id}
+
+    def _validate_membership_dependencies(
+        self,
+        user_id: str,
+        organization_id: str | None,
+        workspace_id: str | None,
+        role_id: str | None,
+    ) -> None:
+        """确保成员关系指向的对象存在且作用域一致。"""
+        if self.user_repository.get(user_id) is None:
+            raise ValueError("User not found")
+        if organization_id and self.organization_repository.get(organization_id) is None:
+            raise ValueError("Organization not found")
+        workspace = self.workspace_repository.get(workspace_id) if workspace_id else None
+        if workspace_id and workspace is None:
+            raise ValueError("Workspace not found")
+        if role_id and self.role_repository.get(role_id) is None:
+            raise ValueError("Role not found")
+        if workspace and organization_id and workspace.organization_id and workspace.organization_id != organization_id:
+            raise ValueError("Workspace does not belong to the provided organization")

@@ -353,3 +353,62 @@ class Series(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+
+class Organization(BaseModel):
+    """租户下的公司/组织对象。"""
+
+    id: str = Field(..., description="组织唯一标识")
+    name: str = Field(..., description="组织名称")
+    slug: Optional[str] = Field(None, description="组织可读 slug")
+    status: str = Field("active", description="组织状态")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class Workspace(BaseModel):
+    """组织下的工作区对象。"""
+
+    id: str = Field(..., description="工作区唯一标识")
+    organization_id: Optional[str] = Field(None, description="所属组织 ID")
+    name: str = Field(..., description="工作区名称")
+    slug: Optional[str] = Field(None, description="工作区可读 slug")
+    status: str = Field("active", description="工作区状态")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class User(BaseModel):
+    """平台用户对象。"""
+
+    id: str = Field(..., description="用户唯一标识")
+    email: Optional[str] = Field(None, description="邮箱地址")
+    display_name: Optional[str] = Field(None, description="显示名称")
+    status: str = Field("active", description="用户状态")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class Role(BaseModel):
+    """平台角色定义。"""
+
+    id: str = Field(..., description="角色唯一标识")
+    code: str = Field(..., description="角色编码")
+    name: str = Field(..., description="角色名称")
+    description: Optional[str] = Field(None, description="角色说明")
+    is_system: bool = Field(False, description="是否为系统内置角色")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class Membership(BaseModel):
+    """用户与组织/工作区/角色之间的成员关系。"""
+
+    id: str = Field(..., description="成员关系唯一标识")
+    organization_id: Optional[str] = Field(None, description="所属组织 ID")
+    workspace_id: Optional[str] = Field(None, description="所属工作区 ID")
+    user_id: str = Field(..., description="用户 ID")
+    role_id: Optional[str] = Field(None, description="角色 ID")
+    status: str = Field("active", description="成员关系状态")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")

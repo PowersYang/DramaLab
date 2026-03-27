@@ -13,6 +13,7 @@ from src.api.storyboard import router as project_storyboard_router
 from src.api.series import router as series_router
 from src.api.system import router as system_router
 from src.api.task import router as task_router
+from src.api.tenant_admin import router as tenant_admin_router
 from src.worker.task_worker import TaskWorker
 from src.common import bootstrap_api_environment
 from src.common.log import setup_logging
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
 
     app.include_router(system_router)
     app.include_router(task_router)
+    app.include_router(tenant_admin_router)
     app.include_router(series_router)
     app.include_router(project_core_router)
     app.include_router(project_assets_router)

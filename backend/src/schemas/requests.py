@@ -261,6 +261,74 @@ class AddFrameRequest(BaseModel):
     insert_at: Optional[int] = None
 
 
+class CreateOrganizationRequest(BaseModel):
+    name: str
+    slug: Optional[str] = None
+    status: str = "active"
+
+
+class UpdateOrganizationRequest(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    status: Optional[str] = None
+
+
+class CreateWorkspaceRequest(BaseModel):
+    organization_id: Optional[str] = None
+    name: str
+    slug: Optional[str] = None
+    status: str = "active"
+
+
+class UpdateWorkspaceRequest(BaseModel):
+    organization_id: Optional[str] = None
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    status: Optional[str] = None
+
+
+class CreateUserRequest(BaseModel):
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    status: str = "active"
+
+
+class UpdateUserRequest(BaseModel):
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    status: Optional[str] = None
+
+
+class CreateRoleRequest(BaseModel):
+    code: str
+    name: str
+    description: Optional[str] = None
+    is_system: bool = False
+
+
+class UpdateRoleRequest(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_system: Optional[bool] = None
+
+
+class CreateMembershipRequest(BaseModel):
+    organization_id: Optional[str] = None
+    workspace_id: Optional[str] = None
+    user_id: str
+    role_id: Optional[str] = None
+    status: str = "active"
+
+
+class UpdateMembershipRequest(BaseModel):
+    organization_id: Optional[str] = None
+    workspace_id: Optional[str] = None
+    user_id: Optional[str] = None
+    role_id: Optional[str] = None
+    status: Optional[str] = None
+
+
 class CopyFrameRequest(BaseModel):
     frame_id: str
     insert_at: Optional[int] = None
