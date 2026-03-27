@@ -2,7 +2,8 @@
 const isProd = process.env.NODE_ENV === 'production';
 const isDocker = process.env.DOCKER_BUILD === 'true';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:17177';
+// 开发态显式走 127.0.0.1，避免 Node 在 localhost 上优先解析 ::1 导致代理连不上后端。
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:17177';
 
 const nextConfig = {
     output: isProd ? 'export' : undefined,

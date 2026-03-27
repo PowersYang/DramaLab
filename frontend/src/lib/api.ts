@@ -23,7 +23,8 @@ const getApiUrl = (): string => {
         return `${protocol}//${hostname}${port ? ":" + port : ""}`;
     }
 
-    return "http://localhost:17177";
+    // SSR 或少量直接请求场景下也保持和开发代理一致，避免前后端连到不同回环地址。
+    return "http://127.0.0.1:17177";
 };
 
 
@@ -43,7 +44,7 @@ export interface VideoTask {
     audio_url?: string;
     prompt_extend: boolean;
     negative_prompt?: string;
-    created_at: number;
+    created_at: string | number;
     model?: string;
     frame_id?: string;
     generation_mode?: string;

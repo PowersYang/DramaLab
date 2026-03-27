@@ -5,7 +5,7 @@ import { api, API_URL } from '@/lib/api';
 export interface ImageVariant {
     id: string;
     url: string;
-    created_at: number;
+    created_at: string | number;
     prompt_used?: string;
 }
 
@@ -24,7 +24,7 @@ export interface VideoTask {
     status: string;
     video_url?: string;
     duration?: number;
-    created_at: number;
+    created_at: string | number;
     model?: string;
     generation_mode?: string;  // 'i2v' or 'r2v'
     reference_video_urls?: string[];  // Reference videos for R2V
@@ -60,9 +60,9 @@ export interface Character {
     locked?: boolean;
     status?: string;
     is_consistent?: boolean;
-    full_body_updated_at?: number;
-    three_view_updated_at?: number;
-    headshot_updated_at?: number;
+    full_body_updated_at?: string | number;
+    three_view_updated_at?: string | number;
+    headshot_updated_at?: string | number;
 }
 
 export interface Scene {
@@ -283,16 +283,16 @@ export interface Series {
     prompt_config?: PromptConfig;
     model_settings?: ModelSettings;
     episode_ids: string[];
-    created_at: number;
-    updated_at: number;
+    created_at: string | number;
+    updated_at: string | number;
 }
 
 export interface Project {
     id: string;
     title: string;
     originalText: string;
-    created_at?: number;
-    updated_at?: number;
+    created_at?: string | number;
+    updated_at?: string | number;
     characters: Character[];
     scenes: Scene[];
     props: Prop[];

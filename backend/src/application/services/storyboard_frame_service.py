@@ -5,11 +5,11 @@
 避免分镜编辑再走旧的项目整体保存路径。
 """
 
-import time
 import uuid
 
 from ...repository import ProjectRepository, StoryboardFrameRepository
 from ...schemas.models import StoryboardFrame
+from ...utils.datetime import utc_now
 
 
 class StoryboardFrameService:
@@ -25,7 +25,7 @@ class StoryboardFrameService:
         if not frame:
             raise ValueError(f"Frame {frame_id} not found")
         frame.locked = not frame.locked
-        frame.updated_at = time.time()
+        frame.updated_at = utc_now()
         self.frame_repository.save(project_id, frame)
         return self.project_repository.get(project_id)
 
@@ -37,7 +37,7 @@ class StoryboardFrameService:
         for key, value in kwargs.items():
             if value is not None and hasattr(frame, key):
                 setattr(frame, key, value)
-        frame.updated_at = time.time()
+        frame.updated_at = utc_now()
         self.frame_repository.save(project_id, frame)
         return self.project_repository.get(project_id)
 
@@ -78,7 +78,7 @@ class StoryboardFrameService:
             raise ValueError(f"Frame {frame_id} not found")
         new_frame = original_frame.model_copy(deep=True)
         new_frame.id = f"frame_{uuid.uuid4().hex[:8]}"
-        new_frame.updated_at = time.time()
+        new_frame.updated_at = utc_now()
         new_frame.locked = False
         if insert_at is None:
             try:
@@ -96,16 +96,14 @@ class StoryboardFrameService:
             raise ValueError("Script not found")
         frame_map = {frame.id: frame for frame in project.frames}
         project.frames = [frame_map[fid] for fid in frame_ids if fid in frame_map]
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self._save_full_order(project)
         return self.project_repository.get(project_id)
 
     def _save_full_order(self, project):
         """按顺序重写分镜帧记录，因为顺序信息是单独存储的。"""
-        for frame in list(project.frames):
-            self.frame_repository.delete(project.id, frame.id)
         for index, frame in enumerate(project.frames):
             self.frame_repository.save(project.id, frame, frame_order=index)
+        self.frame_repository.reorder(project.id, [frame.id for frame in project.frames])
         project = self.project_repository.get(project.id)
-        project.updated_at = time.time()
-        self.project_repository.save(project)
+        self.project_repository.patch_metadata(project.id, {"updated_at": utc_now()}, expected_version=project.version)

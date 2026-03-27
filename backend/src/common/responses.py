@@ -1,3 +1,4 @@
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from ..utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
@@ -27,4 +28,5 @@ def signed_response(data):
     if uploader.is_configured:
         processed_data = sign_oss_urls_in_data(processed_data, uploader)
 
-    return JSONResponse(content=processed_data)
+    # 业务时间字段已切到 datetime，这里统一做 JSON 安全编码，避免接口返回阶段再抛序列化异常。
+    return JSONResponse(content=jsonable_encoder(processed_data))

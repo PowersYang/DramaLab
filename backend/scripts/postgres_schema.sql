@@ -3,8 +3,8 @@ create table if not exists organizations (
     name varchar(255) not null,
     slug varchar(255),
     status varchar(32) not null default 'active',
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now())
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
 create unique index if not exists ux_organizations_slug on organizations (slug);
@@ -15,8 +15,8 @@ create table if not exists workspaces (
     name varchar(255) not null,
     slug varchar(255),
     status varchar(32) not null default 'active',
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
     constraint fk_workspaces_organization foreign key (organization_id) references organizations (id)
 );
 
@@ -27,8 +27,8 @@ create table if not exists users (
     email varchar(255),
     display_name varchar(255),
     status varchar(32) not null default 'active',
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now())
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
 create unique index if not exists ux_users_email on users (email);
@@ -39,8 +39,8 @@ create table if not exists roles (
     name varchar(255) not null,
     description text,
     is_system boolean not null default false,
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now())
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
 create unique index if not exists ux_roles_code on roles (code);
@@ -52,8 +52,8 @@ create table if not exists memberships (
     user_id varchar(64) not null,
     role_id varchar(64),
     status varchar(32) not null default 'active',
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
     constraint fk_memberships_organization foreign key (organization_id) references organizations (id),
     constraint fk_memberships_workspace foreign key (workspace_id) references workspaces (id),
     constraint fk_memberships_user foreign key (user_id) references users (id),
@@ -72,8 +72,8 @@ create table if not exists billing_accounts (
     status varchar(32) not null default 'draft',
     billing_email varchar(255),
     metadata jsonb not null default '{}'::jsonb,
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
     constraint fk_billing_accounts_organization foreign key (organization_id) references organizations (id),
     constraint fk_billing_accounts_workspace foreign key (workspace_id) references workspaces (id)
 );
@@ -87,8 +87,11 @@ create table if not exists projects (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     title varchar(255) not null,
     original_text text not null,
     style_preset varchar(128) not null default 'realistic',
@@ -98,13 +101,14 @@ create table if not exists projects (
     episode_number integer,
     art_direction jsonb,
     model_settings jsonb not null default '{}'::jsonb,
-    prompt_config jsonb not null default '{}'::jsonb
+    prompt_config jsonb not null default '{}'::jsonb,
+    version integer not null default 1
 );
 
 create index if not exists ix_projects_organization_id on projects (organization_id);
 create index if not exists ix_projects_workspace_id on projects (workspace_id);
 create index if not exists ix_projects_series_id on projects (series_id);
-create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, updated_at);
+create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, is_deleted, updated_at);
 
 create table if not exists series (
     id varchar(64) primary key,
@@ -112,18 +116,22 @@ create table if not exists series (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     title varchar(255) not null,
     description text,
     art_direction jsonb,
     model_settings jsonb not null default '{}'::jsonb,
-    prompt_config jsonb not null default '{}'::jsonb
+    prompt_config jsonb not null default '{}'::jsonb,
+    version integer not null default 1
 );
 
 create index if not exists ix_series_organization_id on series (organization_id);
 create index if not exists ix_series_workspace_id on series (workspace_id);
-create index if not exists ix_series_org_workspace_updated on series (organization_id, workspace_id, updated_at);
+create index if not exists ix_series_org_workspace_updated on series (organization_id, workspace_id, is_deleted, updated_at);
 
 create table if not exists characters (
     id varchar(64) primary key,
@@ -131,8 +139,11 @@ create table if not exists characters (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     owner_type varchar(32) not null,
     owner_id varchar(64) not null,
     name varchar(255) not null,
@@ -154,9 +165,9 @@ create table if not exists characters (
     image_url text,
     avatar_url text,
     is_consistent boolean not null default true,
-    full_body_updated_at double precision not null default extract(epoch from now()),
-    three_view_updated_at double precision not null default 0,
-    headshot_updated_at double precision not null default 0,
+    full_body_updated_at timestamptz not null default now(),
+    three_view_updated_at timestamptz not null default 'epoch'::timestamptz,
+    headshot_updated_at timestamptz not null default 'epoch'::timestamptz,
     base_character_id varchar(64),
     voice_id varchar(128),
     voice_name varchar(255),
@@ -169,7 +180,7 @@ create table if not exists characters (
 
 create index if not exists ix_characters_organization_id on characters (organization_id);
 create index if not exists ix_characters_workspace_id on characters (workspace_id);
-create index if not exists ix_characters_owner on characters (owner_type, owner_id);
+create index if not exists ix_characters_owner on characters (owner_type, owner_id, is_deleted);
 
 create table if not exists scenes (
     id varchar(64) primary key,
@@ -177,8 +188,11 @@ create table if not exists scenes (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     owner_type varchar(32) not null,
     owner_id varchar(64) not null,
     name varchar(255) not null,
@@ -195,7 +209,7 @@ create table if not exists scenes (
 
 create index if not exists ix_scenes_organization_id on scenes (organization_id);
 create index if not exists ix_scenes_workspace_id on scenes (workspace_id);
-create index if not exists ix_scenes_owner on scenes (owner_type, owner_id);
+create index if not exists ix_scenes_owner on scenes (owner_type, owner_id, is_deleted);
 
 create table if not exists props (
     id varchar(64) primary key,
@@ -203,8 +217,11 @@ create table if not exists props (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     owner_type varchar(32) not null,
     owner_id varchar(64) not null,
     name varchar(255) not null,
@@ -222,7 +239,7 @@ create table if not exists props (
 
 create index if not exists ix_props_organization_id on props (organization_id);
 create index if not exists ix_props_workspace_id on props (workspace_id);
-create index if not exists ix_props_owner on props (owner_type, owner_id);
+create index if not exists ix_props_owner on props (owner_type, owner_id, is_deleted);
 
 create table if not exists character_asset_units (
     id varchar(64) primary key,
@@ -230,22 +247,25 @@ create table if not exists character_asset_units (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     character_id varchar(64) not null,
     unit_type varchar(32) not null,
     selected_image_id varchar(64),
     selected_video_id varchar(64),
     image_prompt text,
     video_prompt text,
-    image_updated_at double precision not null default extract(epoch from now()),
-    video_updated_at double precision not null default 0,
+    image_updated_at timestamptz not null default now(),
+    video_updated_at timestamptz not null default 'epoch'::timestamptz,
     constraint fk_character_asset_units_character foreign key (character_id) references characters (id)
 );
 
 create index if not exists ix_character_asset_units_organization_id on character_asset_units (organization_id);
 create index if not exists ix_character_asset_units_workspace_id on character_asset_units (workspace_id);
-create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type);
+create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type) where is_deleted = false;
 
 create table if not exists image_variants (
     id varchar(64) primary key,
@@ -253,8 +273,11 @@ create table if not exists image_variants (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     owner_type varchar(32) not null,
     owner_id varchar(64) not null,
     variant_group varchar(64) not null,
@@ -267,7 +290,7 @@ create table if not exists image_variants (
 
 create index if not exists ix_image_variants_organization_id on image_variants (organization_id);
 create index if not exists ix_image_variants_workspace_id on image_variants (workspace_id);
-create index if not exists ix_image_variants_owner on image_variants (owner_type, owner_id, variant_group);
+create index if not exists ix_image_variants_owner on image_variants (owner_type, owner_id, is_deleted, variant_group);
 
 create table if not exists video_variants (
     id varchar(64) primary key,
@@ -275,8 +298,11 @@ create table if not exists video_variants (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     owner_type varchar(32) not null,
     owner_id varchar(64) not null,
     variant_group varchar(64) not null,
@@ -289,7 +315,7 @@ create table if not exists video_variants (
 
 create index if not exists ix_video_variants_organization_id on video_variants (organization_id);
 create index if not exists ix_video_variants_workspace_id on video_variants (workspace_id);
-create index if not exists ix_video_variants_owner on video_variants (owner_type, owner_id, variant_group);
+create index if not exists ix_video_variants_owner on video_variants (owner_type, owner_id, is_deleted, variant_group);
 
 create table if not exists storyboard_frames (
     id varchar(64) primary key,
@@ -297,8 +323,11 @@ create table if not exists storyboard_frames (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     project_id varchar(64) not null,
     frame_order integer not null,
     scene_id varchar(64) not null,
@@ -338,7 +367,7 @@ create table if not exists storyboard_frames (
 create index if not exists ix_storyboard_frames_organization_id on storyboard_frames (organization_id);
 create index if not exists ix_storyboard_frames_workspace_id on storyboard_frames (workspace_id);
 create index if not exists ix_storyboard_frames_project_id on storyboard_frames (project_id);
-create index if not exists ix_storyboard_frames_project on storyboard_frames (project_id, frame_order);
+create index if not exists ix_storyboard_frames_project on storyboard_frames (project_id, is_deleted, frame_order);
 
 create table if not exists video_tasks (
     id varchar(64) primary key,
@@ -346,8 +375,11 @@ create table if not exists video_tasks (
     workspace_id varchar(64),
     created_by varchar(64),
     updated_by varchar(64),
-    created_at double precision not null default extract(epoch from now()),
-    updated_at double precision not null default extract(epoch from now()),
+    deleted_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    is_deleted boolean not null default false,
     project_id varchar(64) not null,
     frame_id varchar(64),
     asset_id varchar(64),
@@ -377,5 +409,5 @@ create table if not exists video_tasks (
 create index if not exists ix_video_tasks_organization_id on video_tasks (organization_id);
 create index if not exists ix_video_tasks_workspace_id on video_tasks (workspace_id);
 create index if not exists ix_video_tasks_project_id on video_tasks (project_id);
-create index if not exists ix_video_tasks_project on video_tasks (project_id, created_at);
+create index if not exists ix_video_tasks_project on video_tasks (project_id, is_deleted, created_at);
 create index if not exists ix_video_tasks_owner_asset on video_tasks (asset_id, frame_id);

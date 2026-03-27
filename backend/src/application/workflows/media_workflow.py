@@ -16,6 +16,7 @@ from ...providers.export.export_provider import ExportManager
 from ...repository import ProjectRepository, VideoTaskRepository
 from ...utils.path_safety import safe_resolve_path, validate_safe_id
 from ...utils import get_logger
+from ...utils.datetime import utc_now
 from ...utils.system_check import get_ffmpeg_install_instructions, get_ffmpeg_path
 from ...utils.oss_utils import OSSImageUploader, is_object_key
 
@@ -43,7 +44,7 @@ class MediaWorkflow:
             if frame.status == "completed" and frame.video_url:
                 continue
             self.video_provider.generate_clip(frame)
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self._get_project(script_id)
 
@@ -66,7 +67,7 @@ class MediaWorkflow:
             if frame.video_url:
                 self.audio_provider.generate_sfx_from_video(frame)
             self.audio_provider.generate_bgm(frame)
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self._get_project(script_id)
 
@@ -101,7 +102,7 @@ class MediaWorkflow:
 
         project = self._get_project(script_id)
         self._sync_asset_video_task(project, task)
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
 
     def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float, pitch: float, volume: int):
@@ -114,7 +115,7 @@ class MediaWorkflow:
             speaker = next((item for item in project.characters if item.id == frame.character_ids[0]), None)
             if speaker:
                 self.audio_provider.generate_dialogue(frame, speaker, speed, pitch, volume)
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self._get_project(script_id)
 
@@ -199,7 +200,7 @@ class MediaWorkflow:
             try:
                 subprocess.run(cmd, check=True, capture_output=True, timeout=600)
                 project.merged_video_url = self._persist_output(output_path, "video/merged")
-                project.updated_at = time.time()
+                project.updated_at = utc_now()
                 self.project_repository.save(project)
                 return self._get_project(script_id)
             except subprocess.TimeoutExpired:
@@ -217,7 +218,7 @@ class MediaWorkflow:
             project.merged_video_url = self._persist_output(export_local_path, "export")
         else:
             project.merged_video_url = export_url
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return {"url": project.merged_video_url}
 

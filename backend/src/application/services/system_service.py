@@ -9,7 +9,6 @@
 - 风格分析
 """
 
-import time
 import uuid
 from typing import Any
 
@@ -21,6 +20,7 @@ from ...providers.text.default_prompts import (
     DEFAULT_STORYBOARD_POLISH_PROMPT,
     DEFAULT_VIDEO_POLISH_PROMPT,
 )
+from ...utils.datetime import utc_now
 from .series_service import SeriesService
 
 
@@ -68,8 +68,8 @@ class SystemService:
             script = self.text_provider.create_draft_script(episode_title, episode_text)
             script.series_id = series.id
             script.episode_number = episode_number
-            script.updated_at = time.time()
-            self.project_repository.save(script)
+            script.updated_at = utc_now()
+            self.project_repository.create(script)
 
             if script.id not in series.episode_ids:
                 series.episode_ids.append(script.id)
@@ -82,8 +82,8 @@ class SystemService:
                 }
             )
 
-        series.updated_at = time.time()
-        self.series_repository.save(series)
+        series.updated_at = utc_now()
+        self.series_repository.replace_graph(series)
         return {
             "series": series.model_dump(),
             "episodes": created_episodes,
@@ -115,8 +115,11 @@ class SystemService:
             custom_styles=custom_styles or [],
             ai_recommendations=ai_recommendations or [],
         )
-        script.updated_at = time.time()
-        self.project_repository.save(script)
+        self.project_repository.patch_metadata(
+            script_id,
+            {"art_direction": script.art_direction.model_dump(mode="json"), "updated_at": utc_now()},
+            expected_version=script.version,
+        )
         return self.project_repository.get(script_id)
 
     def get_effective_prompt(self, script_id: str, field: str) -> str:

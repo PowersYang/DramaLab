@@ -5,11 +5,10 @@
 替代过去以 pipeline 为中心的项目写入路径。
 """
 
-import time
-
 from ...repository import ProjectRepository, SeriesRepository
 from ...providers import ScriptProcessor
 from ...schemas.models import ModelSettings, PromptConfig
+from ...utils.datetime import utc_now
 
 
 class ProjectService:
@@ -26,7 +25,7 @@ class ProjectService:
             project = self.text_provider.create_draft_script(title, text)
         else:
             project = self.text_provider.parse_novel(title, text)
-        self.project_repository.save(project)
+        self.project_repository.create(project)
         return project
 
     def reparse_project(self, script_id: str, text: str):
@@ -39,7 +38,7 @@ class ProjectService:
         # 重新解析时只替换结构化内容，保留标识、租户占位字段和用户已编辑配置。
         reparsed.id = existing.id
         reparsed.created_at = existing.created_at
-        reparsed.updated_at = time.time()
+        reparsed.updated_at = utc_now()
         reparsed.art_direction = existing.art_direction
         reparsed.model_settings = existing.model_settings
         reparsed.style_preset = existing.style_preset
@@ -52,7 +51,7 @@ class ProjectService:
         reparsed.created_by = existing.created_by
         reparsed.updated_by = existing.updated_by
 
-        self.project_repository.save(reparsed)
+        self.project_repository.replace_graph(reparsed)
         return reparsed
 
     def list_projects(self):
@@ -73,10 +72,10 @@ class ProjectService:
             series = self.series_repository.get(project.series_id)
             if series and script_id in series.episode_ids:
                 series.episode_ids.remove(script_id)
-                series.updated_at = time.time()
-                self.series_repository.save(series)
+                series.updated_at = utc_now()
+                self.series_repository.replace_graph(series)
 
-        self.project_repository.delete(script_id)
+        self.project_repository.soft_delete(script_id)
         return {"status": "deleted", "id": script_id, "title": project.title}
 
     def sync_descriptions(self, script_id: str):
@@ -97,20 +96,18 @@ class ProjectService:
             if hasattr(prop, "prompt"):
                 prop.prompt = None
 
-        project.updated_at = time.time()
-        self.project_repository.save(project)
-        return project
+        return self.project_repository.replace_graph(project)
 
     def update_style(self, script_id: str, style_preset: str, style_prompt: str | None = None):
         """更新项目级视觉风格选择。"""
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Script not found")
-        project.style_preset = style_preset
-        project.style_prompt = style_prompt
-        project.updated_at = time.time()
-        self.project_repository.save(project)
-        return project
+        return self.project_repository.patch_metadata(
+            script_id,
+            {"style_preset": style_preset, "style_prompt": style_prompt, "updated_at": utc_now()},
+            expected_version=project.version,
+        )
 
     def update_model_settings(self, script_id: str, **updates):
         """增量更新项目上的模型设置字段。"""
@@ -118,9 +115,11 @@ class ProjectService:
         if not project:
             raise ValueError("Script not found")
         project.model_settings = project.model_settings.model_copy(update={k: v for k, v in updates.items() if v is not None})
-        project.updated_at = time.time()
-        self.project_repository.save(project)
-        return project
+        return self.project_repository.patch_metadata(
+            script_id,
+            {"model_settings": project.model_settings.model_dump(mode="json"), "updated_at": utc_now()},
+            expected_version=project.version,
+        )
 
     def get_prompt_config(self, script_id: str):
         """返回提示词配置，缺省时给出空配置对象。"""
@@ -134,11 +133,14 @@ class ProjectService:
         project = self.get_project(script_id)
         if not project:
             raise ValueError("Project not found")
-        project.prompt_config = PromptConfig(
+        prompt_config = PromptConfig(
             storyboard_polish=storyboard_polish,
             video_polish=video_polish,
             r2v_polish=r2v_polish,
         )
-        project.updated_at = time.time()
-        self.project_repository.save(project)
-        return project.prompt_config
+        self.project_repository.patch_metadata(
+            script_id,
+            {"prompt_config": prompt_config.model_dump(mode="json"), "updated_at": utc_now()},
+            expected_version=project.version,
+        )
+        return prompt_config

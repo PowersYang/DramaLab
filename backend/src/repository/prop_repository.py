@@ -5,39 +5,54 @@ from .mappers import _insert_prop, _video_task_record, hydrate_project_map, hydr
 from .owner_context import load_owner_context, owner_tenant_kwargs
 from ..db.models import ImageVariantRecord, PropRecord, VideoTaskRecord
 from ..schemas.models import Prop
+from ..utils.datetime import utc_now
 
 
 class PropRepository(BaseRepository[Prop]):
-    def list_by_owner(self, owner_type: str, owner_id: str) -> List[Prop]:
+    def list_by_owner(self, owner_type: str, owner_id: str, include_deleted: bool = False) -> List[Prop]:
         with self._with_session() as session:
             if owner_type == "project":
-                project = hydrate_project_map(session, {owner_id}).get(owner_id)
+                project = hydrate_project_map(session, {owner_id}, include_deleted=include_deleted).get(owner_id)
                 return project.props if project else []
             if owner_type == "series":
-                series = hydrate_series_map(session, {owner_id}).get(owner_id)
+                series = hydrate_series_map(session, {owner_id}, include_deleted=include_deleted).get(owner_id)
                 return series.props if series else []
             raise ValueError(f"Unsupported owner_type: {owner_type}")
 
-    def get(self, owner_type: str, owner_id: str, prop_id: str) -> Prop | None:
-        for prop in self.list_by_owner(owner_type, owner_id):
+    def get(self, owner_type: str, owner_id: str, prop_id: str, include_deleted: bool = False) -> Prop | None:
+        for prop in self.list_by_owner(owner_type, owner_id, include_deleted=include_deleted):
             if prop.id == prop_id:
                 return prop
         return None
 
-    def save(self, owner_type: str, owner_id: str, prop: Prop) -> Prop:
+    def create(self, owner_type: str, owner_id: str, prop: Prop) -> Prop:
         with self._with_session() as session:
             ctx = load_owner_context(session, owner_type, owner_id)
-            self.delete(owner_type, owner_id, prop.id, session=session)
             _insert_prop(session, prop, owner_type, owner_id, owner_tenant_kwargs(ctx))
             if owner_type == "project":
-                session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id == owner_id, VideoTaskRecord.asset_id == prop.id).delete(synchronize_session=False)
                 for task in prop.video_assets:
-                    session.add(_video_task_record(task, owner_tenant_kwargs(ctx)))
+                    session.merge(_video_task_record(task, owner_tenant_kwargs(ctx)))
         return prop
 
-    def delete(self, owner_type: str, owner_id: str, prop_id: str, session=None) -> None:
+    def patch(self, owner_type: str, owner_id: str, prop_id: str, patch: dict) -> Prop:
+        with self._with_session() as session:
+            record = self._get_active(session, PropRecord, prop_id)
+            if record is None or record.owner_type != owner_type or record.owner_id != owner_id:
+                raise ValueError(f"Prop {prop_id} not found")
+            self._patch_record(record, patch)
+            return self.get(owner_type, owner_id, prop_id)
+
+    def soft_delete(self, owner_type: str, owner_id: str, prop_id: str, deleted_by: str | None = None, session=None) -> None:
         with self._with_session(session) as active_session:
-            active_session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "prop", ImageVariantRecord.owner_id == prop_id).delete(synchronize_session=False)
-            active_session.query(PropRecord).filter(PropRecord.id == prop_id, PropRecord.owner_type == owner_type, PropRecord.owner_id == owner_id).delete(synchronize_session=False)
+            now = utc_now()
+            active_session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "prop", ImageVariantRecord.owner_id == prop_id, ImageVariantRecord.is_deleted.is_(False)).update({"is_deleted": True, "deleted_at": now, "updated_at": now, "deleted_by": deleted_by}, synchronize_session=False)
+            active_session.query(PropRecord).filter(PropRecord.id == prop_id, PropRecord.owner_type == owner_type, PropRecord.owner_id == owner_id, PropRecord.is_deleted.is_(False)).update({"is_deleted": True, "deleted_at": now, "updated_at": now, "deleted_by": deleted_by}, synchronize_session=False)
             if owner_type == "project":
-                active_session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id == owner_id, VideoTaskRecord.asset_id == prop_id).delete(synchronize_session=False)
+                active_session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id == owner_id, VideoTaskRecord.asset_id == prop_id, VideoTaskRecord.is_deleted.is_(False)).update({"is_deleted": True, "deleted_at": now, "updated_at": now, "deleted_by": deleted_by}, synchronize_session=False)
+
+    def save(self, owner_type: str, owner_id: str, prop: Prop) -> Prop:
+        self.soft_delete(owner_type, owner_id, prop.id)
+        return self.create(owner_type, owner_id, prop)
+
+    def delete(self, owner_type: str, owner_id: str, prop_id: str, session=None) -> None:
+        self.soft_delete(owner_type, owner_id, prop_id, session=session)

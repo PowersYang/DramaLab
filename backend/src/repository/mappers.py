@@ -1,6 +1,6 @@
 from collections import defaultdict
+from datetime import datetime
 from typing import Iterable
-import time
 import uuid
 
 from sqlalchemy.orm import Session
@@ -33,13 +33,14 @@ from ..schemas.models import (
     VideoTask,
     VideoVariant,
 )
+from ..utils.datetime import utc_now
 
 
 CHARACTER_UNIT_TYPES = ("full_body", "three_views", "head_shot")
 
 
-def _now() -> float:
-    return time.time()
+def _now() -> datetime:
+    return utc_now()
 
 
 def _new_id(prefix: str) -> str:
@@ -60,6 +61,26 @@ def _audit_time_kwargs(domain_obj) -> dict:
         "created_at": getattr(domain_obj, "created_at", _now()),
         "updated_at": getattr(domain_obj, "updated_at", _now()),
     }
+
+
+def _soft_delete_query(query, deleted_by: str | None = None) -> None:
+    # 聚合级 replace 现在不再物理删除旧图，而是先整体软删，再 merge 新图。
+    payload = {
+        "is_deleted": True,
+        "deleted_at": _now(),
+        "updated_at": _now(),
+    }
+    if hasattr(query.column_descriptions[0].get("entity"), "deleted_by"):
+        payload["deleted_by"] = deleted_by
+    query.update(payload, synchronize_session=False)
+
+
+def _active(query):
+    # hydrate 默认只拼装未删除对象，避免把历史数据重新暴露给当前业务读模型。
+    entity = query.column_descriptions[0].get("entity")
+    if entity is not None and hasattr(entity, "is_deleted"):
+        return query.filter(entity.is_deleted.is_(False))
+    return query
 
 
 def _image_variant_record(owner_type: str, owner_id: str, variant_group: str, variant: ImageVariant, tenant: dict) -> ImageVariantRecord:
@@ -161,6 +182,7 @@ def _video_task_from_record(record: VideoTaskRecord) -> VideoTask:
         vidu_audio=record.vidu_audio,
         movement_amplitude=record.movement_amplitude,
         created_at=record.created_at,
+        is_deleted=record.is_deleted,
     )
 
 
@@ -192,12 +214,15 @@ def _video_task_record(task: VideoTask, tenant: dict) -> VideoTaskRecord:
         movement_amplitude=task.movement_amplitude,
         created_at=task.created_at,
         updated_at=task.created_at,
+        is_deleted=task.is_deleted,
         **tenant,
     )
 
 
-def hydrate_project_map(session: Session, project_ids: set[str] | None = None) -> dict[str, Script]:
+def hydrate_project_map(session: Session, project_ids: set[str] | None = None, include_deleted: bool = False) -> dict[str, Script]:
     query = session.query(ProjectRecord)
+    if not include_deleted:
+        query = _active(query)
     if project_ids is not None:
         if not project_ids:
             return {}
@@ -207,20 +232,21 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None) -
         return {}
 
     project_ids = [record.id for record in project_records]
-    characters = session.query(CharacterRecord).filter(CharacterRecord.owner_type == "project", CharacterRecord.owner_id.in_(project_ids)).all()
-    scenes = session.query(SceneRecord).filter(SceneRecord.owner_type == "project", SceneRecord.owner_id.in_(project_ids)).all()
-    props = session.query(PropRecord).filter(PropRecord.owner_type == "project", PropRecord.owner_id.in_(project_ids)).all()
-    frames = session.query(StoryboardFrameRecord).filter(StoryboardFrameRecord.project_id.in_(project_ids)).order_by(StoryboardFrameRecord.project_id, StoryboardFrameRecord.frame_order).all()
-    tasks = session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id.in_(project_ids)).all()
+    # 子资源默认全部走活跃态过滤，这样项目聚合读出来就是“当前视图”，不是历史快照全集。
+    characters = _active(session.query(CharacterRecord)).filter(CharacterRecord.owner_type == "project", CharacterRecord.owner_id.in_(project_ids)).all()
+    scenes = _active(session.query(SceneRecord)).filter(SceneRecord.owner_type == "project", SceneRecord.owner_id.in_(project_ids)).all()
+    props = _active(session.query(PropRecord)).filter(PropRecord.owner_type == "project", PropRecord.owner_id.in_(project_ids)).all()
+    frames = _active(session.query(StoryboardFrameRecord)).filter(StoryboardFrameRecord.project_id.in_(project_ids)).order_by(StoryboardFrameRecord.project_id, StoryboardFrameRecord.frame_order).all()
+    tasks = _active(session.query(VideoTaskRecord)).filter(VideoTaskRecord.project_id.in_(project_ids)).all()
 
     character_ids = [record.id for record in characters]
     scene_ids = [record.id for record in scenes]
     prop_ids = [record.id for record in props]
     frame_ids = [record.id for record in frames]
-    unit_records = session.query(CharacterAssetUnitRecord).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).all() if character_ids else []
+    unit_records = _active(session.query(CharacterAssetUnitRecord)).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).all() if character_ids else []
     unit_ids = [record.id for record in unit_records]
 
-    image_variant_records = session.query(ImageVariantRecord).filter(
+    image_variant_records = _active(session.query(ImageVariantRecord)).filter(
         ((ImageVariantRecord.owner_type == "character") & (ImageVariantRecord.owner_id.in_(character_ids))) |
         ((ImageVariantRecord.owner_type == "character_asset_unit") & (ImageVariantRecord.owner_id.in_(unit_ids))) |
         ((ImageVariantRecord.owner_type == "scene") & (ImageVariantRecord.owner_id.in_(scene_ids))) |
@@ -228,7 +254,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None) -
         ((ImageVariantRecord.owner_type == "storyboard_frame") & (ImageVariantRecord.owner_id.in_(frame_ids)))
     ).all() if (character_ids or unit_ids or scene_ids or prop_ids or frame_ids) else []
 
-    video_variant_records = session.query(VideoVariantRecord).filter(
+    video_variant_records = _active(session.query(VideoVariantRecord)).filter(
         (VideoVariantRecord.owner_type == "character_asset_unit") & (VideoVariantRecord.owner_id.in_(unit_ids))
     ).all() if unit_ids else []
 
@@ -404,14 +430,17 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None) -
             workspace_id=record.workspace_id,
             created_by=record.created_by,
             updated_by=record.updated_by,
+            version=record.version,
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
     return result
 
 
-def hydrate_series_map(session: Session, series_ids: set[str] | None = None) -> dict[str, Series]:
+def hydrate_series_map(session: Session, series_ids: set[str] | None = None, include_deleted: bool = False) -> dict[str, Series]:
     query = session.query(SeriesRecord)
+    if not include_deleted:
+        query = _active(query)
     if series_ids is not None:
         if not series_ids:
             return {}
@@ -421,18 +450,18 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None) -> 
         return {}
 
     series_ids = [record.id for record in series_records]
-    characters = session.query(CharacterRecord).filter(CharacterRecord.owner_type == "series", CharacterRecord.owner_id.in_(series_ids)).all()
-    scenes = session.query(SceneRecord).filter(SceneRecord.owner_type == "series", SceneRecord.owner_id.in_(series_ids)).all()
-    props = session.query(PropRecord).filter(PropRecord.owner_type == "series", PropRecord.owner_id.in_(series_ids)).all()
-    unit_records = session.query(CharacterAssetUnitRecord).filter(CharacterAssetUnitRecord.character_id.in_([record.id for record in characters])).all() if characters else []
+    characters = _active(session.query(CharacterRecord)).filter(CharacterRecord.owner_type == "series", CharacterRecord.owner_id.in_(series_ids)).all()
+    scenes = _active(session.query(SceneRecord)).filter(SceneRecord.owner_type == "series", SceneRecord.owner_id.in_(series_ids)).all()
+    props = _active(session.query(PropRecord)).filter(PropRecord.owner_type == "series", PropRecord.owner_id.in_(series_ids)).all()
+    unit_records = _active(session.query(CharacterAssetUnitRecord)).filter(CharacterAssetUnitRecord.character_id.in_([record.id for record in characters])).all() if characters else []
     unit_ids = [record.id for record in unit_records]
-    image_variant_records = session.query(ImageVariantRecord).filter(
+    image_variant_records = _active(session.query(ImageVariantRecord)).filter(
         ((ImageVariantRecord.owner_type == "character") & (ImageVariantRecord.owner_id.in_([record.id for record in characters]))) |
         ((ImageVariantRecord.owner_type == "character_asset_unit") & (ImageVariantRecord.owner_id.in_(unit_ids))) |
         ((ImageVariantRecord.owner_type == "scene") & (ImageVariantRecord.owner_id.in_([record.id for record in scenes]))) |
         ((ImageVariantRecord.owner_type == "prop") & (ImageVariantRecord.owner_id.in_([record.id for record in props])))
     ).all() if (characters or scenes or props or unit_ids) else []
-    video_variant_records = session.query(VideoVariantRecord).filter(
+    video_variant_records = _active(session.query(VideoVariantRecord)).filter(
         (VideoVariantRecord.owner_type == "character_asset_unit") & (VideoVariantRecord.owner_id.in_(unit_ids))
     ).all() if unit_ids else []
 
@@ -533,7 +562,7 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None) -> 
             )
         )
 
-    projects = session.query(ProjectRecord.id, ProjectRecord.series_id).filter(ProjectRecord.series_id.in_(series_ids)).all()
+    projects = _active(session.query(ProjectRecord.id, ProjectRecord.series_id)).filter(ProjectRecord.series_id.in_(series_ids)).all()
     episode_ids_by_series = defaultdict(list)
     for project_id, series_id in projects:
         episode_ids_by_series[series_id].append(project_id)
@@ -555,6 +584,7 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None) -> 
             workspace_id=record.workspace_id,
             created_by=record.created_by,
             updated_by=record.updated_by,
+            version=record.version,
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
@@ -563,16 +593,14 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None) -> 
 
 def replace_project_graph(session: Session, items: list[Script]) -> None:
     incoming_ids = {item.id for item in items}
-    existing_ids = {record.id for record in session.query(ProjectRecord.id).all()}
+    existing_ids = {record.id for record in _active(session.query(ProjectRecord.id)).all()}
     missing_ids = existing_ids - incoming_ids
 
-    _delete_project_graph(session, incoming_ids | missing_ids)
-    if missing_ids:
-        session.query(ProjectRecord).filter(ProjectRecord.id.in_(missing_ids)).delete(synchronize_session=False)
+    _soft_delete_project_graph(session, incoming_ids | missing_ids)
 
     for project in items:
         tenant = _tenant_kwargs(project)
-        session.add(
+        session.merge(
             ProjectRecord(
                 id=project.id,
                 title=project.title,
@@ -585,6 +613,10 @@ def replace_project_graph(session: Session, items: list[Script]) -> None:
                 art_direction=project.art_direction.model_dump(mode="json") if project.art_direction else None,
                 model_settings=project.model_settings.model_dump(mode="json"),
                 prompt_config=project.prompt_config.model_dump(mode="json"),
+                version=project.version,
+                is_deleted=False,
+                deleted_at=None,
+                deleted_by=None,
                 **tenant,
                 **_audit_time_kwargs(project),
             )
@@ -594,16 +626,14 @@ def replace_project_graph(session: Session, items: list[Script]) -> None:
 
 def replace_series_graph(session: Session, items: list[Series]) -> None:
     incoming_ids = {item.id for item in items}
-    existing_ids = {record.id for record in session.query(SeriesRecord.id).all()}
+    existing_ids = {record.id for record in _active(session.query(SeriesRecord.id)).all()}
     missing_ids = existing_ids - incoming_ids
 
-    _delete_series_graph(session, incoming_ids | missing_ids)
-    if missing_ids:
-        session.query(SeriesRecord).filter(SeriesRecord.id.in_(missing_ids)).delete(synchronize_session=False)
+    _soft_delete_series_graph(session, incoming_ids | missing_ids)
 
     for series in items:
         tenant = _tenant_kwargs(series)
-        session.add(
+        session.merge(
             SeriesRecord(
                 id=series.id,
                 title=series.title,
@@ -611,6 +641,10 @@ def replace_series_graph(session: Session, items: list[Series]) -> None:
                 art_direction=series.art_direction.model_dump(mode="json") if series.art_direction else None,
                 model_settings=series.model_settings.model_dump(mode="json"),
                 prompt_config=series.prompt_config.model_dump(mode="json"),
+                version=series.version,
+                is_deleted=False,
+                deleted_at=None,
+                deleted_by=None,
                 **tenant,
                 **_audit_time_kwargs(series),
             )
@@ -618,58 +652,57 @@ def replace_series_graph(session: Session, items: list[Series]) -> None:
         _insert_series_children(session, series, tenant)
 
 
-def _delete_project_graph(session: Session, project_ids: set[str]) -> None:
+def _soft_delete_project_graph(session: Session, project_ids: set[str], deleted_by: str | None = None) -> None:
     if not project_ids:
         return
-    character_ids = [row[0] for row in session.query(CharacterRecord.id).filter(CharacterRecord.owner_type == "project", CharacterRecord.owner_id.in_(project_ids)).all()]
-    scene_ids = [row[0] for row in session.query(SceneRecord.id).filter(SceneRecord.owner_type == "project", SceneRecord.owner_id.in_(project_ids)).all()]
-    prop_ids = [row[0] for row in session.query(PropRecord.id).filter(PropRecord.owner_type == "project", PropRecord.owner_id.in_(project_ids)).all()]
-    frame_ids = [row[0] for row in session.query(StoryboardFrameRecord.id).filter(StoryboardFrameRecord.project_id.in_(project_ids)).all()]
-    unit_ids = [row[0] for row in session.query(CharacterAssetUnitRecord.id).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).all()] if character_ids else []
+    character_ids = [row[0] for row in _active(session.query(CharacterRecord.id)).filter(CharacterRecord.owner_type == "project", CharacterRecord.owner_id.in_(project_ids)).all()]
+    scene_ids = [row[0] for row in _active(session.query(SceneRecord.id)).filter(SceneRecord.owner_type == "project", SceneRecord.owner_id.in_(project_ids)).all()]
+    prop_ids = [row[0] for row in _active(session.query(PropRecord.id)).filter(PropRecord.owner_type == "project", PropRecord.owner_id.in_(project_ids)).all()]
+    frame_ids = [row[0] for row in _active(session.query(StoryboardFrameRecord.id)).filter(StoryboardFrameRecord.project_id.in_(project_ids)).all()]
+    unit_ids = [row[0] for row in _active(session.query(CharacterAssetUnitRecord.id)).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).all()] if character_ids else []
 
-    if character_ids:
-        session.query(CharacterAssetUnitRecord).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).delete(synchronize_session=False)
     if unit_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character_asset_unit", ImageVariantRecord.owner_id.in_(unit_ids)).delete(synchronize_session=False)
-        session.query(VideoVariantRecord).filter(VideoVariantRecord.owner_type == "character_asset_unit", VideoVariantRecord.owner_id.in_(unit_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character_asset_unit", ImageVariantRecord.owner_id.in_(unit_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(VideoVariantRecord).filter(VideoVariantRecord.owner_type == "character_asset_unit", VideoVariantRecord.owner_id.in_(unit_ids), VideoVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(CharacterAssetUnitRecord).filter(CharacterAssetUnitRecord.character_id.in_(character_ids), CharacterAssetUnitRecord.is_deleted.is_(False)), deleted_by)
     if character_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character", ImageVariantRecord.owner_id.in_(character_ids)).delete(synchronize_session=False)
-        session.query(CharacterRecord).filter(CharacterRecord.id.in_(character_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character", ImageVariantRecord.owner_id.in_(character_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(CharacterRecord).filter(CharacterRecord.id.in_(character_ids), CharacterRecord.is_deleted.is_(False)), deleted_by)
     if scene_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "scene", ImageVariantRecord.owner_id.in_(scene_ids)).delete(synchronize_session=False)
-        session.query(SceneRecord).filter(SceneRecord.id.in_(scene_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "scene", ImageVariantRecord.owner_id.in_(scene_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(SceneRecord).filter(SceneRecord.id.in_(scene_ids), SceneRecord.is_deleted.is_(False)), deleted_by)
     if prop_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "prop", ImageVariantRecord.owner_id.in_(prop_ids)).delete(synchronize_session=False)
-        session.query(PropRecord).filter(PropRecord.id.in_(prop_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "prop", ImageVariantRecord.owner_id.in_(prop_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(PropRecord).filter(PropRecord.id.in_(prop_ids), PropRecord.is_deleted.is_(False)), deleted_by)
     if frame_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "storyboard_frame", ImageVariantRecord.owner_id.in_(frame_ids)).delete(synchronize_session=False)
-        session.query(StoryboardFrameRecord).filter(StoryboardFrameRecord.id.in_(frame_ids)).delete(synchronize_session=False)
-    session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id.in_(project_ids)).delete(synchronize_session=False)
-    session.query(ProjectRecord).filter(ProjectRecord.id.in_(project_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "storyboard_frame", ImageVariantRecord.owner_id.in_(frame_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(StoryboardFrameRecord).filter(StoryboardFrameRecord.id.in_(frame_ids), StoryboardFrameRecord.is_deleted.is_(False)), deleted_by)
+    _soft_delete_query(session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id.in_(project_ids), VideoTaskRecord.is_deleted.is_(False)), deleted_by)
+    _soft_delete_query(session.query(ProjectRecord).filter(ProjectRecord.id.in_(project_ids), ProjectRecord.is_deleted.is_(False)), deleted_by)
 
 
-def _delete_series_graph(session: Session, series_ids: set[str]) -> None:
+def _soft_delete_series_graph(session: Session, series_ids: set[str], deleted_by: str | None = None) -> None:
     if not series_ids:
         return
-    character_ids = [row[0] for row in session.query(CharacterRecord.id).filter(CharacterRecord.owner_type == "series", CharacterRecord.owner_id.in_(series_ids)).all()]
-    scene_ids = [row[0] for row in session.query(SceneRecord.id).filter(SceneRecord.owner_type == "series", SceneRecord.owner_id.in_(series_ids)).all()]
-    prop_ids = [row[0] for row in session.query(PropRecord.id).filter(PropRecord.owner_type == "series", PropRecord.owner_id.in_(series_ids)).all()]
-    unit_ids = [row[0] for row in session.query(CharacterAssetUnitRecord.id).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).all()] if character_ids else []
+    character_ids = [row[0] for row in _active(session.query(CharacterRecord.id)).filter(CharacterRecord.owner_type == "series", CharacterRecord.owner_id.in_(series_ids)).all()]
+    scene_ids = [row[0] for row in _active(session.query(SceneRecord.id)).filter(SceneRecord.owner_type == "series", SceneRecord.owner_id.in_(series_ids)).all()]
+    prop_ids = [row[0] for row in _active(session.query(PropRecord.id)).filter(PropRecord.owner_type == "series", PropRecord.owner_id.in_(series_ids)).all()]
+    unit_ids = [row[0] for row in _active(session.query(CharacterAssetUnitRecord.id)).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).all()] if character_ids else []
 
     if unit_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character_asset_unit", ImageVariantRecord.owner_id.in_(unit_ids)).delete(synchronize_session=False)
-        session.query(VideoVariantRecord).filter(VideoVariantRecord.owner_type == "character_asset_unit", VideoVariantRecord.owner_id.in_(unit_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character_asset_unit", ImageVariantRecord.owner_id.in_(unit_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(VideoVariantRecord).filter(VideoVariantRecord.owner_type == "character_asset_unit", VideoVariantRecord.owner_id.in_(unit_ids), VideoVariantRecord.is_deleted.is_(False)), deleted_by)
     if character_ids:
-        session.query(CharacterAssetUnitRecord).filter(CharacterAssetUnitRecord.character_id.in_(character_ids)).delete(synchronize_session=False)
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character", ImageVariantRecord.owner_id.in_(character_ids)).delete(synchronize_session=False)
-        session.query(CharacterRecord).filter(CharacterRecord.id.in_(character_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(CharacterAssetUnitRecord).filter(CharacterAssetUnitRecord.character_id.in_(character_ids), CharacterAssetUnitRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "character", ImageVariantRecord.owner_id.in_(character_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(CharacterRecord).filter(CharacterRecord.id.in_(character_ids), CharacterRecord.is_deleted.is_(False)), deleted_by)
     if scene_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "scene", ImageVariantRecord.owner_id.in_(scene_ids)).delete(synchronize_session=False)
-        session.query(SceneRecord).filter(SceneRecord.id.in_(scene_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "scene", ImageVariantRecord.owner_id.in_(scene_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(SceneRecord).filter(SceneRecord.id.in_(scene_ids), SceneRecord.is_deleted.is_(False)), deleted_by)
     if prop_ids:
-        session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "prop", ImageVariantRecord.owner_id.in_(prop_ids)).delete(synchronize_session=False)
-        session.query(PropRecord).filter(PropRecord.id.in_(prop_ids)).delete(synchronize_session=False)
-    session.query(SeriesRecord).filter(SeriesRecord.id.in_(series_ids)).delete(synchronize_session=False)
+        _soft_delete_query(session.query(ImageVariantRecord).filter(ImageVariantRecord.owner_type == "prop", ImageVariantRecord.owner_id.in_(prop_ids), ImageVariantRecord.is_deleted.is_(False)), deleted_by)
+        _soft_delete_query(session.query(PropRecord).filter(PropRecord.id.in_(prop_ids), PropRecord.is_deleted.is_(False)), deleted_by)
+    _soft_delete_query(session.query(SeriesRecord).filter(SeriesRecord.id.in_(series_ids), SeriesRecord.is_deleted.is_(False)), deleted_by)
 
 
 def _insert_project_children(session: Session, project: Script, tenant: dict) -> None:
@@ -689,7 +722,7 @@ def _insert_project_children(session: Session, project: Script, tenant: dict) ->
     for order, frame in enumerate(project.frames):
         _insert_frame(session, frame, project.id, order, tenant)
     for task in task_map.values():
-        session.add(_video_task_record(task, tenant))
+        session.merge(_video_task_record(task, tenant))
 
 
 def _insert_series_children(session: Session, series: Series, tenant: dict) -> None:
@@ -702,7 +735,7 @@ def _insert_series_children(session: Session, series: Series, tenant: dict) -> N
 
 
 def _insert_character(session: Session, character: Character, owner_type: str, owner_id: str, tenant: dict) -> None:
-    session.add(
+    session.merge(
         CharacterRecord(
             id=character.id,
             owner_type=owner_type,
@@ -737,6 +770,9 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
             voice_volume=character.voice_volume,
             locked=character.locked,
             status=character.status,
+            is_deleted=False,
+            deleted_at=None,
+            deleted_by=None,
             **tenant,
             **_audit_time_kwargs(character),
         )
@@ -747,12 +783,12 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
         ("headshot_asset", character.headshot_asset or ImageAsset()),
     ):
         for variant in image_asset.variants:
-            session.add(_image_variant_record("character", character.id, group_name, variant, tenant))
+            session.merge(_image_variant_record("character", character.id, group_name, variant, tenant))
 
     for unit_type in CHARACTER_UNIT_TYPES:
         unit = getattr(character, unit_type, None) or AssetUnit()
-        unit_id = _new_id(f"{character.id}_{unit_type}")
-        session.add(
+        unit_id = f"{character.id}_{unit_type}"
+        session.merge(
             CharacterAssetUnitRecord(
                 id=unit_id,
                 character_id=character.id,
@@ -763,18 +799,21 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
                 video_prompt=unit.video_prompt,
                 image_updated_at=unit.image_updated_at,
                 video_updated_at=unit.video_updated_at,
+                is_deleted=False,
+                deleted_at=None,
+                deleted_by=None,
                 **tenant,
                 **_audit_time_kwargs(character),
             )
         )
         for variant in unit.image_variants:
-            session.add(_image_variant_record("character_asset_unit", unit_id, "image_variants", variant, tenant))
+            session.merge(_image_variant_record("character_asset_unit", unit_id, "image_variants", variant, tenant))
         for variant in unit.video_variants:
-            session.add(_video_variant_record("character_asset_unit", unit_id, "video_variants", variant, tenant))
+            session.merge(_video_variant_record("character_asset_unit", unit_id, "video_variants", variant, tenant))
 
 
 def _insert_scene(session: Session, scene: Scene, owner_type: str, owner_id: str, tenant: dict) -> None:
-    session.add(
+    session.merge(
         SceneRecord(
             id=scene.id,
             owner_type=owner_type,
@@ -789,16 +828,19 @@ def _insert_scene(session: Session, scene: Scene, owner_type: str, owner_id: str
             video_prompt=scene.video_prompt,
             locked=scene.locked,
             status=scene.status,
+            is_deleted=False,
+            deleted_at=None,
+            deleted_by=None,
             **tenant,
             **_audit_time_kwargs(scene),
         )
     )
     for variant in (scene.image_asset.variants if scene.image_asset else []):
-        session.add(_image_variant_record("scene", scene.id, "image_asset", variant, tenant))
+        session.merge(_image_variant_record("scene", scene.id, "image_asset", variant, tenant))
 
 
 def _insert_prop(session: Session, prop: Prop, owner_type: str, owner_id: str, tenant: dict) -> None:
-    session.add(
+    session.merge(
         PropRecord(
             id=prop.id,
             owner_type=owner_type,
@@ -814,16 +856,19 @@ def _insert_prop(session: Session, prop: Prop, owner_type: str, owner_id: str, t
             video_prompt=prop.video_prompt,
             locked=prop.locked,
             status=prop.status,
+            is_deleted=False,
+            deleted_at=None,
+            deleted_by=None,
             **tenant,
             **_audit_time_kwargs(prop),
         )
     )
     for variant in (prop.image_asset.variants if prop.image_asset else []):
-        session.add(_image_variant_record("prop", prop.id, "image_asset", variant, tenant))
+        session.merge(_image_variant_record("prop", prop.id, "image_asset", variant, tenant))
 
 
 def _insert_frame(session: Session, frame: StoryboardFrame, project_id: str, order: int, tenant: dict) -> None:
-    session.add(
+    session.merge(
         StoryboardFrameRecord(
             id=frame.id,
             project_id=project_id,
@@ -861,10 +906,13 @@ def _insert_frame(session: Session, frame: StoryboardFrame, project_id: str, ord
             status=frame.status,
             updated_at=frame.updated_at,
             created_at=frame.updated_at,
+            is_deleted=False,
+            deleted_at=None,
+            deleted_by=None,
             **tenant,
         )
     )
     for variant in (frame.image_asset.variants if frame.image_asset else []):
-        session.add(_image_variant_record("storyboard_frame", frame.id, "image_asset", variant, tenant))
+        session.merge(_image_variant_record("storyboard_frame", frame.id, "image_asset", variant, tenant))
     for variant in (frame.rendered_image_asset.variants if frame.rendered_image_asset else []):
-        session.add(_image_variant_record("storyboard_frame", frame.id, "rendered_image_asset", variant, tenant))
+        session.merge(_image_variant_record("storyboard_frame", frame.id, "rendered_image_asset", variant, tenant))

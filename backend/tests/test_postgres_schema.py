@@ -54,11 +54,14 @@ class PostgresSchemaSqlTest(unittest.TestCase):
         self.assertIn("id varchar(64) primary key", sql)
         self.assertIn("model_settings jsonb not null default '{}'::jsonb", sql)
         self.assertIn("reference_video_urls jsonb not null default '[]'::jsonb", sql)
+        self.assertIn("is_deleted boolean not null default false", sql)
+        self.assertIn("deleted_at timestamptz", sql)
+        self.assertIn("version integer not null default 1", sql)
         self.assertIn(
-            "create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type)",
+            "create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type) where is_deleted = false",
             sql,
         )
         self.assertIn(
-            "create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, updated_at)",
+            "create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, is_deleted, updated_at)",
             sql,
         )

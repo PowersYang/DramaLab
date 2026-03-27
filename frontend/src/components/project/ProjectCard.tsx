@@ -12,9 +12,15 @@ interface ProjectCardProps {
 
 export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
     const router = useRouter();
+    const parseDate = (value?: string | number | null) => {
+        // 项目卡片需要同时兼容旧缓存里的时间戳和新接口返回的 datetime 字符串。
+        if (value == null) return null;
+        if (typeof value === "number") return new Date(value * 1000);
+        return new Date(value);
+    };
     const createdDate = project.createdAt
         ? new Date(project.createdAt)
-        : (project.created_at ? new Date(project.created_at * 1000) : null);
+        : parseDate(project.created_at);
 
     const handleOpen = () => {
         window.location.hash = `#/project/${project.id}`;

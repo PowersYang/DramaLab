@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -13,8 +14,8 @@ class OwnerContext:
     workspace_id: str | None
     created_by: str | None
     updated_by: str | None
-    created_at: float
-    updated_at: float
+    created_at: datetime
+    updated_at: datetime
 
 
 def load_owner_context(session: Session, owner_type: str, owner_id: str) -> OwnerContext:
@@ -27,7 +28,7 @@ def load_owner_context(session: Session, owner_type: str, owner_id: str) -> Owne
     else:
         raise ValueError(f"Unsupported owner_type: {owner_type}")
 
-    if record is None:
+    if record is None or getattr(record, "is_deleted", False):
         raise ValueError(f"{owner_type} {owner_id} not found")
 
     return OwnerContext(

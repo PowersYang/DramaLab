@@ -19,6 +19,14 @@ const ImportFileDialog = dynamic(() => import("@/components/series/ImportFileDia
 const SettingsPage = dynamic(() => import("@/components/settings/SettingsPage"), { ssr: false });
 const AssetLibraryPage = dynamic(() => import("@/components/library/AssetLibraryPage"), { ssr: false });
 
+const parseDateMs = (value?: string | number | null) => {
+  // 兼容历史秒级时间戳和新引入的 ISO datetime，首页排序与展示都走这一层兜底。
+  if (value == null) return 0;
+  if (typeof value === "number") return value * 1000;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
 // ── Create Series Dialog ──
 function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [title, setTitle] = useState("");
@@ -265,7 +273,7 @@ function SeriesCard({
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700/30">
         <div className="flex items-center gap-2 text-xs text-gray-400">
           <Calendar size={12} />
-          <span>{new Date(series.created_at * 1000).toLocaleDateString('zh-CN')}</span>
+          <span>{parseDateMs(series.created_at) ? new Date(parseDateMs(series.created_at)).toLocaleDateString('zh-CN') : '-'}</span>
         </div>
         <div className="flex items-center gap-1 text-primary text-xs font-medium">
           <Play size={14} />
@@ -480,11 +488,11 @@ export default function Home() {
   // Build mixed list: series + standalone projects, sorted by creation time descending
   type ListItem = { type: 'series'; data: Series; sortTime: number } | { type: 'project'; data: Project; sortTime: number };
   const mixedList: ListItem[] = [
-    ...seriesList.map((s) => ({ type: 'series' as const, data: s, sortTime: s.created_at * 1000 })),
+    ...seriesList.map((s) => ({ type: 'series' as const, data: s, sortTime: parseDateMs(s.created_at) })),
     ...standaloneProjects.map((p) => ({
       type: 'project' as const,
       data: p,
-      sortTime: p.createdAt ? new Date(p.createdAt).getTime() : ((p.created_at || 0) * 1000),
+      sortTime: p.createdAt ? new Date(p.createdAt).getTime() : parseDateMs(p.created_at),
     })),
   ].sort((a, b) => b.sortTime - a.sortTime);
 

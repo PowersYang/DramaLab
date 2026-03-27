@@ -6,12 +6,12 @@
 
 import os
 import shutil
-import time
 import uuid
 from typing import Any
 
 from ...repository import ProjectRepository
 from ...schemas.models import AssetUnit, ImageAsset, ImageVariant
+from ...utils.datetime import utc_now
 from ...utils.oss_utils import OSSImageUploader
 
 
@@ -181,7 +181,7 @@ class AssetService:
                 raise ValueError(f"Invalid upload_type for character: {upload_type}")
             target_unit.image_variants.append(new_variant)
             target_unit.selected_image_id = new_variant.id
-            target_unit.image_updated_at = time.time()
+            target_unit.image_updated_at = utc_now()
             legacy.variants.append(new_variant.model_copy(deep=True))
             legacy.selected_id = new_variant.id
         elif asset_type in {"scene", "prop"}:
@@ -215,7 +215,7 @@ class AssetService:
             raise ValueError("Video task not found")
         frame.selected_video_id = video_id
         frame.video_url = video.video_url
-        frame.updated_at = time.time()
+        frame.updated_at = utc_now()
         return self._save_project(project)
 
     def upload_frame_image(self, script_id: str, frame_id: str, image_path: str):
@@ -240,7 +240,7 @@ class AssetService:
         frame.rendered_image_asset.variants.append(variant)
         frame.rendered_image_asset.selected_id = variant.id
         frame.rendered_image_url = image_url
-        frame.updated_at = time.time()
+        frame.updated_at = utc_now()
         return self._save_project(project)
 
     def _get_project(self, script_id: str):
@@ -268,7 +268,7 @@ class AssetService:
 
     def _save_project(self, project):
         """持久化项目聚合变更，并返回最新读取结果。"""
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self.project_repository.get(project.id)
 

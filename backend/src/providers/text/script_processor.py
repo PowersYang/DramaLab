@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from ...schemas.models import Character, GenerationStatus, Prop, Scene, Script, StoryboardFrame
 
 from ...utils import get_logger
+from ...utils.datetime import utc_now
 from .default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
     DEFAULT_STORYBOARD_POLISH_PROMPT,
@@ -177,8 +178,8 @@ class ScriptProcessor:
             scenes=scenes,
             props=props,
             frames=frames,
-            created_at=time.time(),
-            updated_at=time.time(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
         )
 
     def create_draft_script(self, title: str, text: str) -> Script:
@@ -191,8 +192,8 @@ class ScriptProcessor:
             scenes=[],
             props=[],
             frames=[],
-            created_at=time.time(),
-            updated_at=time.time(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
         )
 
     def split_into_episodes(self, text: str, suggested_episodes: int = 3) -> List[Dict[str, Any]]:

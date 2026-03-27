@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from enum import Enum
-import time
 from pydantic import BaseModel, Field
+from ..utils.datetime import epoch_start, utc_now
 
 class AspectRatio(str, Enum):
     SQUARE = "1:1"
@@ -18,7 +19,7 @@ class GenerationStatus(str, Enum):
 class ImageVariant(BaseModel):
     id: str = Field(..., description="这张候选图的唯一标识")
     url: str = Field(..., description="图片地址")
-    created_at: float = Field(default_factory=time.time, description="创建时间戳")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     prompt_used: Optional[str] = Field(None, description="生成这张图时使用的提示词")
     is_favorited: bool = Field(False, description="这张图是否已收藏或置顶；置顶后不会被自动删除")
     # 新增：上传来源标记
@@ -36,7 +37,7 @@ class VideoVariant(BaseModel):
     """用于动作参考的视频版本。"""
     id: str = Field(..., description="这条视频的唯一标识")
     url: str = Field(..., description="视频地址")
-    created_at: float = Field(default_factory=time.time, description="创建时间戳")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     prompt_used: Optional[str] = Field(None, description="生成这条视频时使用的提示词")
     audio_url: Optional[str] = Field(None, description="驱动音频地址（用于口型同步）")
     source_image_id: Optional[str] = Field(None, description="作为源输入的静态图片 ID")
@@ -57,8 +58,8 @@ class AssetUnit(BaseModel):
     video_prompt: Optional[str] = Field(None, description="动作参考生成时使用的提示词")
     
     # 用于一致性追踪的时间戳
-    image_updated_at: float = Field(default_factory=time.time, description="最近一次更新图片的时间戳")
-    video_updated_at: float = Field(0.0, description="最近一次更新动作参考的时间戳")
+    image_updated_at: datetime = Field(default_factory=utc_now, description="最近一次更新图片的时间")
+    video_updated_at: datetime = Field(default_factory=epoch_start, description="最近一次更新动作参考的时间")
 
 class VideoTask(BaseModel):
     id: str
@@ -87,7 +88,8 @@ class VideoTask(BaseModel):
     # Vidu 相关参数
     vidu_audio: Optional[bool] = Field(None, description="Vidu 是否输出音频")
     movement_amplitude: Optional[str] = Field(None, description="Vidu 动作幅度：auto/small/medium/large")
-    created_at: float = Field(default_factory=time.time)
+    created_at: datetime = Field(default_factory=utc_now)
+    is_deleted: bool = Field(False, description="软删除标记")
 
 class Character(BaseModel):
     id: str = Field(..., description="角色的唯一标识")
@@ -133,9 +135,9 @@ class Character(BaseModel):
     is_consistent: bool = Field(True, description="派生素材是否与全身主素材保持一致")
     
     # 用于一致性追踪的时间戳（旧版，现已迁移到 AssetUnit）
-    full_body_updated_at: float = Field(default_factory=time.time, description="[LEGACY] 最近一次更新全身图的时间戳")
-    three_view_updated_at: float = Field(0.0, description="[LEGACY] 最近一次更新三视图的时间戳")
-    headshot_updated_at: float = Field(0.0, description="[LEGACY] 最近一次更新头像的时间戳")
+    full_body_updated_at: datetime = Field(default_factory=utc_now, description="[LEGACY] 最近一次更新全身图的时间")
+    three_view_updated_at: datetime = Field(default_factory=epoch_start, description="[LEGACY] 最近一次更新三视图的时间")
+    headshot_updated_at: datetime = Field(default_factory=epoch_start, description="[LEGACY] 最近一次更新头像的时间")
 
     base_character_id: Optional[str] = Field(None, description="若该角色是变体，则为其基础角色 ID")
     voice_id: Optional[str] = Field(None, description="要使用的语音模型 ID")
@@ -228,7 +230,7 @@ class StoryboardFrame(BaseModel):
     selected_video_id: Optional[str] = Field(None, description="该帧当前选中的 VideoTask ID")
     locked: bool = Field(False, description="该帧是否锁定，锁定后不再重新生成")
     status: GenerationStatus = GenerationStatus.PENDING
-    updated_at: float = Field(default_factory=time.time, description="最近一次更新时间戳")
+    updated_at: datetime = Field(default_factory=utc_now, description="最近一次更新时间")
 
 class ModelSettings(BaseModel):
     """不同生成阶段对应的模型配置。"""
@@ -290,9 +292,10 @@ class Script(BaseModel):
     workspace_id: Optional[str] = Field(None, description="所属工作区 ID")
     created_by: Optional[str] = Field(None, description="创建人 ID")
     updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    version: int = Field(1, description="乐观锁版本号")
 
-    created_at: float
-    updated_at: float
+    created_at: datetime
+    updated_at: datetime
 
 
 class Series(BaseModel):
@@ -323,6 +326,7 @@ class Series(BaseModel):
     workspace_id: Optional[str] = Field(None, description="所属工作区 ID")
     created_by: Optional[str] = Field(None, description="创建人 ID")
     updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    version: int = Field(1, description="乐观锁版本号")
 
-    created_at: float
-    updated_at: float
+    created_at: datetime
+    updated_at: datetime

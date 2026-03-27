@@ -7,7 +7,6 @@
 
 import os
 import subprocess
-import time
 import uuid
 
 from ...providers import ScriptProcessor, StorageProvider, StoryboardGenerator
@@ -17,6 +16,7 @@ from ...schemas.models import GenerationStatus, ImageAsset, ImageVariant, Storyb
 from ...providers.text.default_prompts import DEFAULT_STORYBOARD_POLISH_PROMPT
 from ...utils.path_safety import safe_resolve_path, validate_safe_id
 from ...utils import get_logger
+from ...utils.datetime import utc_now
 from ...utils.system_check import get_ffmpeg_path
 
 logger = get_logger(__name__)
@@ -70,7 +70,7 @@ class StoryboardWorkflow:
             )
 
         project.frames = new_frames
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self._get_project(script_id)
 
@@ -95,12 +95,12 @@ class StoryboardWorkflow:
                 frame.image_prompt_cn = result.get("prompt_cn")
                 frame.image_prompt_en = result.get("prompt_en")
                 frame.image_prompt = result.get("prompt_en")
-                frame.updated_at = time.time()
+                frame.updated_at = utc_now()
                 frame_found = True
                 break
 
         if frame_found:
-            project.updated_at = time.time()
+            project.updated_at = utc_now()
             self.project_repository.save(project)
 
         return {
@@ -113,7 +113,7 @@ class StoryboardWorkflow:
         """为项目分镜中所有待处理帧批量渲染图片。"""
         project = self._get_project(script_id)
         self.image_provider.generate_storyboard(project)
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self._get_project(script_id)
 
@@ -128,7 +128,7 @@ class StoryboardWorkflow:
         if composition_data:
             frame.composition_data = composition_data
         frame.image_prompt = prompt
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
 
         try:
@@ -172,12 +172,12 @@ class StoryboardWorkflow:
                 size=effective_size,
                 model_name=project.model_settings.i2i_model,
             )
-            project.updated_at = time.time()
+            project.updated_at = utc_now()
             self.project_repository.save(project)
             return self._get_project(script_id)
         except Exception:
             frame.status = GenerationStatus.FAILED
-            project.updated_at = time.time()
+            project.updated_at = utc_now()
             self.project_repository.save(project)
             raise
 
@@ -242,8 +242,8 @@ class StoryboardWorkflow:
         frame.rendered_image_asset.selected_id = variant.id
         frame.rendered_image_url = image_url
         frame.image_url = image_url
-        frame.updated_at = time.time()
-        project.updated_at = time.time()
+        frame.updated_at = utc_now()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self._get_project(script_id)
 

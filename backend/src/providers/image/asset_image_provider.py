@@ -17,6 +17,7 @@ from ...schemas.models import (
 
 from ...models.image import WanxImageModel
 from ...utils import get_logger
+from ...utils.datetime import utc_now
 from ...utils.oss_utils import OSSImageUploader, is_object_key
 
 logger = get_logger(__name__)
@@ -142,7 +143,7 @@ class AssetGenerator:
                         variant = ImageVariant(
                             id=variant_id,
                             url=rel_fullbody_path,
-                            created_at=time.time(),
+                            created_at=utc_now(),
                             prompt_used=generation_prompt,
                         )
                         character.full_body_asset.variants.insert(0, variant)
@@ -170,7 +171,7 @@ class AssetGenerator:
                     except Exception as exc:
                         logger.error("Failed to upload full body variant %s/%s to OSS: %s", index + 1, batch_size, exc)
 
-                character.full_body_updated_at = time.time()
+                character.full_body_updated_at = utc_now()
                 if successful_generations == 0:
                     raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
                 if generation_type == "full_body":
@@ -229,7 +230,7 @@ class AssetGenerator:
                         rel_sheet_path = os.path.relpath(sheet_path, "output")
                         if not character.three_view_asset:
                             character.three_view_asset = ImageAsset()
-                        variant = ImageVariant(id=variant_id, url=rel_sheet_path, created_at=time.time(), prompt_used=generation_prompt)
+                        variant = ImageVariant(id=variant_id, url=rel_sheet_path, created_at=utc_now(), prompt_used=generation_prompt)
                         character.three_view_asset.variants.insert(0, variant)
                         cleanup_old_variants(character.three_view_asset)
                         if not character.three_view_asset.selected_id or batch_size == 1:
@@ -255,7 +256,7 @@ class AssetGenerator:
                     except Exception as exc:
                         logger.error("Failed to upload three view variant %s/%s to OSS: %s", index + 1, batch_size, exc)
 
-                character.three_view_updated_at = time.time()
+                character.three_view_updated_at = utc_now()
                 if successful_generations == 0:
                     raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
 
@@ -276,7 +277,7 @@ class AssetGenerator:
                         rel_avatar_path = os.path.relpath(avatar_path, "output")
                         if not character.headshot_asset:
                             character.headshot_asset = ImageAsset()
-                        variant = ImageVariant(id=variant_id, url=rel_avatar_path, created_at=time.time(), prompt_used=generation_prompt)
+                        variant = ImageVariant(id=variant_id, url=rel_avatar_path, created_at=utc_now(), prompt_used=generation_prompt)
                         character.headshot_asset.variants.insert(0, variant)
                         cleanup_old_variants(character.headshot_asset)
                         if not character.headshot_asset.selected_id or batch_size == 1:
@@ -302,7 +303,7 @@ class AssetGenerator:
                     except Exception as exc:
                         logger.error("Failed to upload headshot variant %s/%s to OSS: %s", index + 1, batch_size, exc)
 
-                character.headshot_updated_at = time.time()
+                character.headshot_updated_at = utc_now()
                 if successful_generations == 0:
                     raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
 
@@ -336,7 +337,7 @@ class AssetGenerator:
                 rel_path = os.path.relpath(output_path, "output")
                 if not scene.image_asset:
                     scene.image_asset = ImageAsset()
-                variant = ImageVariant(id=variant_id, url=rel_path, created_at=time.time(), prompt_used=prompt)
+                variant = ImageVariant(id=variant_id, url=rel_path, created_at=utc_now(), prompt_used=prompt)
                 scene.image_asset.variants.insert(0, variant)
                 if not scene.image_asset.selected_id or batch_size == 1:
                     scene.image_asset.selected_id = variant_id
@@ -375,7 +376,7 @@ class AssetGenerator:
                 rel_path = os.path.relpath(output_path, "output")
                 if not prop.image_asset:
                     prop.image_asset = ImageAsset()
-                variant = ImageVariant(id=variant_id, url=rel_path, created_at=time.time(), prompt_used=prompt)
+                variant = ImageVariant(id=variant_id, url=rel_path, created_at=utc_now(), prompt_used=prompt)
                 prop.image_asset.variants.insert(0, variant)
                 if not prop.image_asset.selected_id or batch_size == 1:
                     prop.image_asset.selected_id = variant_id

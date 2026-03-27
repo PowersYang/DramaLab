@@ -1,10 +1,11 @@
-import time
+from datetime import datetime
 
-from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
+from ..utils.datetime import epoch_start, utc_now
 
 
 # Keep ORM models portable across SQLite tests and PostgreSQL production.
@@ -17,8 +18,14 @@ class TenantAuditMixin:
     workspace_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class SoftDeleteMixin:
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class OrganizationRecord(Base):
@@ -28,8 +35,8 @@ class OrganizationRecord(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
 class WorkspaceRecord(Base):
@@ -40,8 +47,8 @@ class WorkspaceRecord(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
 class UserRecord(Base):
@@ -51,8 +58,8 @@ class UserRecord(Base):
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
 class RoleRecord(Base):
@@ -63,8 +70,8 @@ class RoleRecord(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
 class MembershipRecord(Base):
@@ -76,8 +83,8 @@ class MembershipRecord(Base):
     user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.id"), nullable=False, index=True)
     role_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("roles.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
 class BillingAccountRecord(Base):
@@ -89,11 +96,11 @@ class BillingAccountRecord(Base):
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     billing_metadata: Mapped[dict] = mapped_column("metadata", JSON_TYPE, default=dict, nullable=False)
-    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
-class ProjectRecord(TenantAuditMixin, Base):
+class ProjectRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "projects"
     __table_args__ = (
         Index("ix_projects_org_workspace_updated", "organization_id", "workspace_id", "updated_at"),
@@ -110,9 +117,10 @@ class ProjectRecord(TenantAuditMixin, Base):
     art_direction: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
-class SeriesRecord(TenantAuditMixin, Base):
+class SeriesRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "series"
     __table_args__ = (
         Index("ix_series_org_workspace_updated", "organization_id", "workspace_id", "updated_at"),
@@ -124,9 +132,10 @@ class SeriesRecord(TenantAuditMixin, Base):
     art_direction: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
-class CharacterRecord(TenantAuditMixin, Base):
+class CharacterRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "characters"
     __table_args__ = (
         Index("ix_characters_owner", "owner_type", "owner_id"),
@@ -154,9 +163,9 @@ class CharacterRecord(TenantAuditMixin, Base):
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_consistent: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    full_body_updated_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    three_view_updated_at: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    headshot_updated_at: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    full_body_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    three_view_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=epoch_start, nullable=False)
+    headshot_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=epoch_start, nullable=False)
     base_character_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     voice_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     voice_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -167,7 +176,7 @@ class CharacterRecord(TenantAuditMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
 
 
-class SceneRecord(TenantAuditMixin, Base):
+class SceneRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "scenes"
     __table_args__ = (
         Index("ix_scenes_owner", "owner_type", "owner_id"),
@@ -188,7 +197,7 @@ class SceneRecord(TenantAuditMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
 
 
-class PropRecord(TenantAuditMixin, Base):
+class PropRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "props"
     __table_args__ = (
         Index("ix_props_owner", "owner_type", "owner_id"),
@@ -210,7 +219,7 @@ class PropRecord(TenantAuditMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
 
 
-class CharacterAssetUnitRecord(TenantAuditMixin, Base):
+class CharacterAssetUnitRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "character_asset_units"
     __table_args__ = (
         Index("ix_character_asset_units_character", "character_id", "unit_type", unique=True),
@@ -223,11 +232,11 @@ class CharacterAssetUnitRecord(TenantAuditMixin, Base):
     selected_video_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     video_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
-    image_updated_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
-    video_updated_at: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    image_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    video_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=epoch_start, nullable=False)
 
 
-class ImageVariantRecord(TenantAuditMixin, Base):
+class ImageVariantRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "image_variants"
     __table_args__ = (
         Index("ix_image_variants_owner", "owner_type", "owner_id", "variant_group"),
@@ -244,7 +253,7 @@ class ImageVariantRecord(TenantAuditMixin, Base):
     upload_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
-class VideoVariantRecord(TenantAuditMixin, Base):
+class VideoVariantRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "video_variants"
     __table_args__ = (
         Index("ix_video_variants_owner", "owner_type", "owner_id", "variant_group"),
@@ -261,7 +270,7 @@ class VideoVariantRecord(TenantAuditMixin, Base):
     is_favorited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
-class StoryboardFrameRecord(TenantAuditMixin, Base):
+class StoryboardFrameRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "storyboard_frames"
     __table_args__ = (
         Index("ix_storyboard_frames_project", "project_id", "frame_order"),
@@ -303,7 +312,7 @@ class StoryboardFrameRecord(TenantAuditMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
 
 
-class VideoTaskRecord(TenantAuditMixin, Base):
+class VideoTaskRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "video_tasks"
     __table_args__ = (
         Index("ix_video_tasks_project", "project_id", "created_at"),

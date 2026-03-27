@@ -1,7 +1,6 @@
 """分镜渲染用的具体图片生成实现。"""
 
 import os
-import time
 import uuid
 from typing import Any, Dict, List
 
@@ -16,6 +15,7 @@ from ...schemas.models import (
 
 from ...models.image import WanxImageModel
 from ...utils import get_logger
+from ...utils.datetime import utc_now
 from ...utils.oss_utils import OSSImageUploader, is_object_key
 
 logger = get_logger(__name__)
@@ -154,7 +154,7 @@ class StoryboardGenerator:
                 logger.info("[Storyboard] Calling model.generate with %s reference images using model %s", len(asset_ref_paths), model_name or "default")
                 self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
                 rel_path = os.path.relpath(output_path, "output")
-                variant = ImageVariant(id=variant_id, url=rel_path, prompt=prompt, created_at=time.time())
+                variant = ImageVariant(id=variant_id, url=rel_path, prompt=prompt, created_at=utc_now())
                 frame.rendered_image_asset.variants.append(variant)
                 frame.rendered_image_asset.selected_id = variant_id
 
@@ -163,7 +163,7 @@ class StoryboardGenerator:
                 frame.rendered_image_url = selected_variant.url
                 frame.image_url = selected_variant.url
 
-            frame.updated_at = time.time()
+            frame.updated_at = utc_now()
             frame.status = GenerationStatus.COMPLETED
 
             try:

@@ -4,11 +4,11 @@
 这里把角色 CRUD 和语音相关更新从项目整体写入路径里拆开。
 """
 
-import time
 import uuid
 
 from ...repository import CharacterRepository, ProjectRepository
 from ...schemas.models import Character, GenerationStatus
+from ...utils.datetime import utc_now
 
 
 class CharacterService:
@@ -43,9 +43,8 @@ class CharacterService:
             if character_id in frame.character_ids:
                 frame.character_ids = [cid for cid in frame.character_ids if cid != character_id]
         project.characters = [c for c in project.characters if c.id != character_id]
-        project.updated_at = time.time()
-        self.project_repository.save(project)
-        return project
+        project.updated_at = utc_now()
+        return self.project_repository.replace_graph(project)
 
     def bind_voice(self, project_id: str, character_id: str, voice_id: str, voice_name: str):
         """为角色绑定 TTS 音色。"""

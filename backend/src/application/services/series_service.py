@@ -4,11 +4,11 @@
 这里管理系列元数据、分集绑定，以及属于系列聚合的共享资产编辑。
 """
 
-import time
 import uuid
 
 from ...repository import ProjectRepository, SeriesRepository
 from ...schemas.models import PromptConfig, Series
+from ...utils.datetime import utc_now
 
 
 class SeriesService:
@@ -24,10 +24,10 @@ class SeriesService:
             id=str(uuid.uuid4()),
             title=title,
             description=description,
-            created_at=time.time(),
-            updated_at=time.time(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
         )
-        self.series_repository.save(series)
+        self.series_repository.create(series)
         return series
 
     def list_series(self):
@@ -46,9 +46,8 @@ class SeriesService:
         for key, value in updates.items():
             if hasattr(series, key) and key not in ("id", "created_at", "episode_ids"):
                 setattr(series, key, value)
-        series.updated_at = time.time()
-        self.series_repository.save(series)
-        return series
+        series.updated_at = utc_now()
+        return self.series_repository.replace_graph(series)
 
     def delete_series(self, series_id: str):
         """删除系列，并解除所有已关联分集。"""
@@ -60,9 +59,9 @@ class SeriesService:
             if project:
                 project.series_id = None
                 project.episode_number = None
-                project.updated_at = time.time()
-                self.project_repository.save(project)
-        self.series_repository.delete(series_id)
+                project.updated_at = utc_now()
+                self.project_repository.patch_metadata(ep_id, {"series_id": None, "episode_number": None, "updated_at": utc_now()}, expected_version=project.version)
+        self.series_repository.soft_delete(series_id)
 
     def add_episode(self, series_id: str, script_id: str, episode_number: int | None = None):
         """把现有项目挂到系列下，必要时先从旧系列迁出。"""
@@ -76,16 +75,16 @@ class SeriesService:
             old_series = self.series_repository.get(project.series_id)
             if old_series and script_id in old_series.episode_ids:
                 old_series.episode_ids.remove(script_id)
-                old_series.updated_at = time.time()
-                self.series_repository.save(old_series)
+                old_series.updated_at = utc_now()
+                self.series_repository.replace_graph(old_series)
         if script_id not in series.episode_ids:
             series.episode_ids.append(script_id)
         project.series_id = series_id
         project.episode_number = episode_number or len(series.episode_ids)
-        project.updated_at = time.time()
-        series.updated_at = time.time()
-        self.project_repository.save(project)
-        self.series_repository.save(series)
+        project.updated_at = utc_now()
+        series.updated_at = utc_now()
+        self.project_repository.patch_metadata(script_id, {"series_id": series_id, "episode_number": project.episode_number, "updated_at": utc_now()}, expected_version=project.version)
+        self.series_repository.replace_graph(series)
         return series
 
     def remove_episode(self, series_id: str, script_id: str):
@@ -99,11 +98,10 @@ class SeriesService:
         if project:
             project.series_id = None
             project.episode_number = None
-            project.updated_at = time.time()
-            self.project_repository.save(project)
-        series.updated_at = time.time()
-        self.series_repository.save(series)
-        return series
+            project.updated_at = utc_now()
+            self.project_repository.patch_metadata(script_id, {"series_id": None, "episode_number": None, "updated_at": utc_now()}, expected_version=project.version)
+        series.updated_at = utc_now()
+        return self.series_repository.replace_graph(series)
 
     def get_episodes(self, series_id: str):
         """列出当前挂在该系列下的项目。"""
@@ -122,9 +120,8 @@ class SeriesService:
         if not series:
             raise ValueError("Series not found")
         series.model_settings = series.model_settings.model_copy(update={k: v for k, v in updates.items() if v is not None})
-        series.updated_at = time.time()
-        self.series_repository.save(series)
-        return series
+        series.updated_at = utc_now()
+        return self.series_repository.patch_metadata(series_id, {"updated_at": utc_now(), "model_settings": series.model_settings.model_dump(mode="json")}, expected_version=series.version)
 
     def toggle_asset_lock(self, series_id: str, asset_id: str, asset_type: str):
         """切换系列共享资产的锁定状态。"""
@@ -133,9 +130,8 @@ class SeriesService:
             raise ValueError("Series not found")
         asset = self._find_series_asset(series, asset_id, asset_type)
         asset.locked = not asset.locked
-        series.updated_at = time.time()
-        self.series_repository.save(series)
-        return series
+        series.updated_at = utc_now()
+        return self.series_repository.replace_graph(series)
 
     def update_asset_image(self, series_id: str, asset_id: str, asset_type: str, image_url: str):
         """更新系列共享资产当前选中的图片地址。"""
@@ -146,9 +142,8 @@ class SeriesService:
         asset.image_url = image_url
         if asset_type == "character":
             asset.avatar_url = image_url
-        series.updated_at = time.time()
-        self.series_repository.save(series)
-        return series
+        series.updated_at = utc_now()
+        return self.series_repository.replace_graph(series)
 
     def update_asset_attributes(self, series_id: str, asset_id: str, asset_type: str, attributes: dict):
         """增量更新系列共享资产的可变属性。"""
@@ -159,9 +154,8 @@ class SeriesService:
         for key, value in attributes.items():
             if hasattr(asset, key):
                 setattr(asset, key, value)
-        series.updated_at = time.time()
-        self.series_repository.save(series)
-        return series
+        series.updated_at = utc_now()
+        return self.series_repository.replace_graph(series)
 
     def _find_series_asset(self, series, asset_id: str, asset_type: str):
         """按逻辑类型和 id 解析系列中的共享资产对象。"""

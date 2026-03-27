@@ -5,10 +5,10 @@
 """
 
 import copy
-import time
 import uuid
 
 from ...repository import SeriesRepository
+from ...utils.datetime import utc_now
 from .asset_workflow import AssetWorkflow
 
 
@@ -60,6 +60,6 @@ class SeriesWorkflow:
                 target.props.append(new_asset)
             imported_ids.append(asset_id)
 
-        target.updated_at = time.time()
+        target.updated_at = utc_now()
         self.series_repository.save(target)
         return target, imported_ids, skipped_ids

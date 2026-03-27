@@ -13,6 +13,7 @@ from ...providers import AssetGenerator, VideoModelProvider
 from ...providers.image.asset_image_provider import ASPECT_RATIO_TO_SIZE
 from ...repository import ProjectRepository, SeriesRepository
 from ...schemas.models import GenerationStatus, VideoTask, VideoVariant
+from ...utils.datetime import utc_now
 
 
 # 这里先保留进程内任务表，只用于过渡期的异步编排。
@@ -69,7 +70,7 @@ class AssetWorkflow:
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
 
         task_id = str(uuid.uuid4())
@@ -82,7 +83,7 @@ class AssetWorkflow:
             "status": "pending",
             "progress": 0,
             "error": None,
-            "created_at": time.time(),
+            "created_at": utc_now(),
             "params": {
                 "style_preset": style_preset,
                 "reference_image_url": reference_image_url,
@@ -116,7 +117,7 @@ class AssetWorkflow:
         series = self._get_series(series_id)
         asset = self._find_asset(series, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
-        series.updated_at = time.time()
+        series.updated_at = utc_now()
         self.series_repository.save(series)
 
         task_id = str(uuid.uuid4())
@@ -129,7 +130,7 @@ class AssetWorkflow:
             "status": "pending",
             "progress": 0,
             "error": None,
-            "created_at": time.time(),
+            "created_at": utc_now(),
             "params": {
                 "style_preset": style_preset,
                 "reference_image_url": reference_image_url,
@@ -212,7 +213,7 @@ class AssetWorkflow:
             "status": "pending",
             "progress": 0,
             "error": None,
-            "created_at": time.time(),
+            "created_at": utc_now(),
             "params": {
                 "prompt": prompt,
                 "audio_url": audio_url,
@@ -292,26 +293,26 @@ class AssetWorkflow:
             duration=duration,
             resolution="720p",
             model="wan2.6-i2v",
-            created_at=time.time(),
+            created_at=utc_now(),
         )
 
         project.video_tasks.append(task)
         target_asset.video_assets.append(task)
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return self._get_project(script_id), task_id
 
     def _generate_project_asset(self, project, asset_id: str, asset_type: str, **params):
         """生成单个项目资产并持久化更新后的聚合。"""
         self._generate_asset_common(project, asset_id, asset_type, **params)
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
         return project
 
     def _generate_series_asset(self, series, asset_id: str, asset_type: str, **params):
         """生成单个系列资产并持久化更新后的聚合。"""
         self._generate_asset_common(series, asset_id, asset_type, **params)
-        series.updated_at = time.time()
+        series.updated_at = utc_now()
         self.series_repository.save(series)
         return series
 
@@ -446,7 +447,7 @@ class AssetWorkflow:
                 if not asset_unit.selected_video_id:
                     asset_unit.selected_video_id = variant.id
                 asset_unit.video_prompt = prompt
-                asset_unit.video_updated_at = time.time()
+                asset_unit.video_updated_at = utc_now()
                 generated_videos.append(variant)
             else:
                 task = VideoTask(
@@ -458,7 +459,7 @@ class AssetWorkflow:
                     status="completed",
                     video_url=result["video_url"],
                     duration=duration,
-                    created_at=time.time(),
+                    created_at=utc_now(),
                     generate_audio=bool(audio_url),
                     model="wan2.6-i2v",
                     generation_mode="i2v",
@@ -470,7 +471,7 @@ class AssetWorkflow:
         if batch_size > 0 and not generated_videos:
             raise RuntimeError(f"Failed to generate any motion reference videos for {asset_type}")
 
-        project.updated_at = time.time()
+        project.updated_at = utc_now()
         self.project_repository.save(project)
 
     def _build_style_prompts(

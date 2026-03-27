@@ -4,11 +4,11 @@
 场景 CRUD 统一放在这里，避免控制器再通过单体式 pipeline 更新整个项目聚合。
 """
 
-import time
 import uuid
 
 from ...repository import ProjectRepository, SceneRepository
 from ...schemas.models import GenerationStatus, Scene
+from ...utils.datetime import utc_now
 
 
 class SceneService:
@@ -42,6 +42,5 @@ class SceneService:
             if frame.scene_id == scene_id:
                 frame.scene_id = ""
         project.scenes = [s for s in project.scenes if s.id != scene_id]
-        project.updated_at = time.time()
-        self.project_repository.save(project)
-        return project
+        project.updated_at = utc_now()
+        return self.project_repository.replace_graph(project)

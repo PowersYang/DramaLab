@@ -1,5 +1,5 @@
 import tempfile
-import time
+from src.utils.datetime import utc_now
 import unittest
 from pathlib import Path
 
@@ -48,7 +48,7 @@ class RepositoryPersistenceTest(unittest.TestCase):
         )
 
         repository = ProjectRepository()
-        now = time.time()
+        now = utc_now()
         project_task = VideoTask(
             id="task_1",
             project_id="project_1",
@@ -137,7 +137,7 @@ class RepositoryPersistenceTest(unittest.TestCase):
         from src.schemas.models import AssetUnit, Character, ImageVariant, Series
 
         repository = SeriesRepository()
-        now = time.time()
+        now = utc_now()
         series = Series(
             id="series_1",
             title="Series 1",
@@ -171,7 +171,7 @@ class RepositoryPersistenceTest(unittest.TestCase):
         from src.repository import CharacterRepository, ProjectRepository
         from src.schemas.models import Character, Script
 
-        now = time.time()
+        now = utc_now()
         ProjectRepository().sync([
             Script(
                 id="project_child_1",
@@ -209,12 +209,13 @@ class RepositoryPersistenceTest(unittest.TestCase):
 
         repository.delete("project", "project_child_1", "char_child_1")
         self.assertEqual(repository.list_by_owner("project", "project_child_1"), [])
+        self.assertIsNotNone(repository.get("project", "project_child_1", "char_child_1", include_deleted=True))
 
     def test_child_repositories_support_independent_frame_and_task_crud(self):
         from src.repository import ProjectRepository, StoryboardFrameRepository, VideoTaskRepository
         from src.schemas.models import ImageAsset, ImageVariant, Script, StoryboardFrame, VideoTask
 
-        now = time.time()
+        now = utc_now()
         ProjectRepository().sync([
             Script(
                 id="project_child_2",
@@ -269,6 +270,32 @@ class RepositoryPersistenceTest(unittest.TestCase):
         reloaded_project = ProjectRepository().list_map()["project_child_2"]
         self.assertEqual(reloaded_project.frames, [])
         self.assertEqual(reloaded_project.video_tasks, [])
+        self.assertIsNotNone(task_repo.get("project_child_2", "task_child_1", include_deleted=True))
+
+    def test_project_soft_delete_hides_graph_from_default_queries(self):
+        from src.repository import ProjectRepository
+        from src.schemas.models import Character, Script
+
+        now = utc_now()
+        repository = ProjectRepository()
+        repository.create(
+            Script(
+                id="project_soft_delete",
+                title="Soft Delete",
+                original_text="text",
+                characters=[Character(id="char_soft_1", name="Alice", description="lead")],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        repository.soft_delete("project_soft_delete")
+        self.assertIsNone(repository.get("project_soft_delete"))
+        self.assertIsNotNone(repository.get("project_soft_delete", include_deleted=True))
 
 
 if __name__ == "__main__":

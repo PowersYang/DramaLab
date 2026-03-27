@@ -4,11 +4,11 @@
 这里承接道具相关变更，使其能独立于项目聚合整体读写周期演进。
 """
 
-import time
 import uuid
 
 from ...repository import ProjectRepository, PropRepository
 from ...schemas.models import GenerationStatus, Prop
+from ...utils.datetime import utc_now
 
 
 class PropService:
@@ -42,6 +42,5 @@ class PropService:
             if prop_id in frame.prop_ids:
                 frame.prop_ids = [pid for pid in frame.prop_ids if pid != prop_id]
         project.props = [prop for prop in project.props if prop.id != prop_id]
-        project.updated_at = time.time()
-        self.project_repository.save(project)
-        return project
+        project.updated_at = utc_now()
+        return self.project_repository.replace_graph(project)
