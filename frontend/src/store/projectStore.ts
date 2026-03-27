@@ -459,7 +459,8 @@ interface ProjectStore {
     // Series State
     seriesList: Series[];
     currentSeries: Series | null;
-    fetchSeriesList: () => Promise<void>;
+    setSeriesList: (seriesList: Series[]) => void;
+    fetchSeriesList: () => Promise<Series[]>;
     fetchSeries: (id: string) => Promise<void>;
     createSeries: (title: string, description?: string) => Promise<Series>;
     deleteSeries: (id: string) => Promise<void>;
@@ -670,13 +671,16 @@ export const useProjectStore = create<ProjectStore>()(
             // Series State
             seriesList: [],
             currentSeries: null,
+            setSeriesList: (seriesList: Series[]) => set({ seriesList }),
 
             fetchSeriesList: async () => {
                 try {
                     const seriesList = await api.listSeries();
                     set({ seriesList });
+                    return seriesList;
                 } catch (error) {
                     console.error('Failed to fetch series list:', error);
+                    return [];
                 }
             },
 
@@ -721,7 +725,7 @@ export const useProjectStore = create<ProjectStore>()(
             name: 'project-storage',
             partialize: (state) => ({
                 projects: state.projects,
-
+                seriesList: state.seriesList,
                 generatingTasks: state.generatingTasks // Now persisting this to maintain state across refreshes
             }),
         }

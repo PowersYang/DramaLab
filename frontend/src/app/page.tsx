@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Plus, FolderOpen, RefreshCw, Library, Calendar, Play, Trash2, FileUp, X, ChevronDown, FileText } from "lucide-react";
+import { Plus, FolderOpen, Library, Calendar, Play, Trash2, FileUp, X, ChevronDown, FileText } from "lucide-react";
 import { useProjectStore, Series, Project } from "@/store/projectStore";
 import ProjectCard from "@/components/project/ProjectCard";
 import CreateProjectDialog from "@/components/project/CreateProjectDialog";
@@ -322,7 +322,6 @@ export default function Home() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSeriesDialogOpen, setIsSeriesDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [showCreateDropdown, setShowCreateDropdown] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | 'project' | 'series' | 'series-episode' | 'library' | 'settings'>('home');
   const [activeTab, setActiveTab] = useState<GlobalTab>("workspace");
@@ -330,74 +329,108 @@ export default function Home() {
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [episodeId, setEpisodeId] = useState<string | null>(null);
   const [seriesEpisodes, setSeriesEpisodes] = useState<Record<string, Project[]>>({});
-  const [episodesLoading, setEpisodesLoading] = useState(false);
+  const [episodesLoadingBySeries, setEpisodesLoadingBySeries] = useState<Record<string, boolean>>({});
   const projects = useProjectStore((state) => state.projects);
   const seriesList = useProjectStore((state) => state.seriesList);
   const deleteProject = useProjectStore((state) => state.deleteProject);
   const deleteSeries = useProjectStore((state) => state.deleteSeries);
   const setProjects = useProjectStore((state) => state.setProjects);
-  const fetchSeriesList = useProjectStore((state) => state.fetchSeriesList);
+  const setSeriesList = useProjectStore((state) => state.setSeriesList);
 
-  // Sync projects and series from backend on mount
+  const refreshWorkspaceData = async () => {
+    try {
+      const [backendProjects, backendSeries] = await Promise.all([
+        api.getProjects(),
+        api.listSeries(),
+      ]);
+      // 工作区首页始终以后端最新列表为准，哪怕后端当前返回空数组，也不能继续保留旧缓存。
+      setProjects(backendProjects || []);
+      setSeriesList(backendSeries || []);
+    } catch (error) {
+      console.error("Failed to refresh workspace data:", error);
+    }
+  };
+
+  // 首屏进入工作区时自动刷新，不再依赖手动“同步”按钮。
   useEffect(() => {
-    syncProjects();
-    fetchSeriesList();
+    void refreshWorkspaceData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load episodes for all series when seriesList changes
+  useEffect(() => {
+    if (currentView !== "home") {
+      return;
+    }
+    void refreshWorkspaceData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentView]);
+
+  useEffect(() => {
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === "visible" && currentView === "home") {
+        void refreshWorkspaceData();
+      }
+    };
+    const handleWindowFocus = () => {
+      if (currentView === "home") {
+        void refreshWorkspaceData();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentView]);
+
+  // 系列卡片先展示出来，再让每个系列独立补分集，避免首页被全局 loading 拖慢。
   useEffect(() => {
     if (seriesList.length === 0) return;
-    loadAllSeriesEpisodes();
+    void loadAllSeriesEpisodes(seriesList.map((series) => series.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seriesList]);
 
-  const loadAllSeriesEpisodes = async () => {
-    setEpisodesLoading(true);
+  const loadAllSeriesEpisodes = async (seriesIds: string[]) => {
+    if (seriesIds.length === 0) {
+      return;
+    }
+    setEpisodesLoadingBySeries((prev) => ({
+      ...prev,
+      ...Object.fromEntries(seriesIds.map((id) => [id, true])),
+    }));
     try {
       const results = await Promise.all(
-        seriesList.map(async (s) => {
-          const eps = await api.getSeriesEpisodes(s.id);
-          return [s.id, eps] as const;
+        seriesIds.map(async (seriesId) => {
+          const eps = await api.getSeriesEpisodes(seriesId);
+          return [seriesId, eps] as const;
         })
       );
-      const map: Record<string, Project[]> = {};
-      for (const [id, eps] of results) {
-        map[id] = eps;
-      }
-      setSeriesEpisodes(map);
+      setSeriesEpisodes((prev) => ({
+        ...prev,
+        ...Object.fromEntries(results),
+      }));
     } catch (error) {
       console.error("Failed to load series episodes:", error);
     } finally {
-      setEpisodesLoading(false);
+      setEpisodesLoadingBySeries((prev) => ({
+        ...prev,
+        ...Object.fromEntries(seriesIds.map((id) => [id, false])),
+      }));
     }
   };
 
   const refreshSeriesEpisodes = async (sid: string) => {
     try {
+      setEpisodesLoadingBySeries((prev) => ({ ...prev, [sid]: true }));
       const eps = await api.getSeriesEpisodes(sid);
       setSeriesEpisodes((prev) => ({ ...prev, [sid]: eps }));
     } catch (error) {
       console.error("Failed to refresh series episodes:", error);
-    }
-  };
-
-  const syncProjects = async () => {
-    setIsSyncing(true);
-    try {
-      const backendProjects = await api.getProjects();
-      if (backendProjects && backendProjects.length > 0) {
-        setProjects(backendProjects);
-      }
-    } catch (error) {
-      console.error("Failed to sync projects from backend:", error);
     } finally {
-      setIsSyncing(false);
+      setEpisodesLoadingBySeries((prev) => ({ ...prev, [sid]: false }));
     }
-  };
-
-  const syncAll = async () => {
-    await Promise.all([syncProjects(), fetchSeriesList()]);
   };
 
   // Close dropdown when clicking outside
@@ -542,14 +575,6 @@ export default function Home() {
                 <p className="text-sm text-gray-400">适合单个短视频</p>
               </button>
             </div>
-            <button
-              onClick={syncAll}
-              disabled={isSyncing}
-              className="mt-6 bg-white/10 hover:bg-white/20 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50 text-sm"
-            >
-              <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
-              从后端同步
-            </button>
           </motion.div>
         ) : (
           <>
@@ -558,14 +583,6 @@ export default function Home() {
                 我的工作区 ({totalCount})
               </h2>
               <div className="flex gap-3">
-                <button
-                  onClick={syncAll}
-                  disabled={isSyncing}
-                  className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm disabled:opacity-50"
-                >
-                  <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
-                  同步
-                </button>
                 <button
                   onClick={() => setIsImportDialogOpen(true)}
                   className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
@@ -623,7 +640,7 @@ export default function Home() {
                       series={item.data as Series}
                       onDelete={deleteSeries}
                       episodes={seriesEpisodes[(item.data as Series).id]}
-                      episodesLoading={episodesLoading}
+                      episodesLoading={episodesLoadingBySeries[(item.data as Series).id] ?? false}
                       onEpisodesChange={refreshSeriesEpisodes}
                     />
                   ) : (
@@ -675,7 +692,9 @@ export default function Home() {
       <ImportFileDialog
         isOpen={isImportDialogOpen}
         onClose={() => setIsImportDialogOpen(false)}
-        onSuccess={() => fetchSeriesList()}
+        onSuccess={() => {
+          void refreshWorkspaceData();
+        }}
       />
     </main>
   );
