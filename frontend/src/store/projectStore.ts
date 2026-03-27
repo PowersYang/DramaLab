@@ -394,14 +394,25 @@ export const useProjectStore = create<ProjectStore>()(
             },
 
             analyzeProject: async (script: string) => {
-                const { currentProject, updateProject, createProject } = get();
+                const { currentProject, createProject } = get();
                 set({ isAnalyzing: true });
 
                 try {
-                    let project: Project;
                     if (currentProject && currentProject.id) {
-                        project = await api.reparseProject(currentProject.id, script);
-                        // Update the store with the new/updated project
+                        const receipt = await api.reparseProject(currentProject.id, script);
+                        useTaskStore.getState().enqueueReceipts(currentProject.id, [receipt]);
+                        let job = await useTaskStore.getState().fetchJob(receipt.job_id);
+                        for (let attempt = 0; attempt < 180; attempt += 1) {
+                            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                                break;
+                            }
+                            await new Promise((resolve) => window.setTimeout(resolve, 2000));
+                            job = await useTaskStore.getState().fetchJob(receipt.job_id);
+                        }
+                        if (job.status !== "succeeded") {
+                            throw new Error(job.error_message || "重新解析项目失败");
+                        }
+                        const project = await api.getProject(currentProject.id);
                         set((state) => ({
                             projects: state.projects.map((p) =>
                                 p.id === project.id ? { ...project, updatedAt: new Date().toISOString() } : p

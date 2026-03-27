@@ -13,14 +13,15 @@ import uuid
 from typing import Any
 
 from ...providers import ScriptProcessor
-from ...repository import ProjectRepository, SeriesRepository
-from ...schemas.models import ArtDirection
+from ...repository import ProjectRepository, SeriesRepository, StylePresetRepository
+from ...schemas.models import ArtDirection, StylePreset
 from ...providers.text.default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
     DEFAULT_STORYBOARD_POLISH_PROMPT,
     DEFAULT_VIDEO_POLISH_PROMPT,
 )
 from ...utils.datetime import utc_now
+from .default_style_presets import DEFAULT_STYLE_PRESETS
 from .series_service import SeriesService
 
 
@@ -31,6 +32,7 @@ class SystemService:
     def __init__(self):
         self.project_repository = ProjectRepository()
         self.series_repository = SeriesRepository()
+        self.style_preset_repository = StylePresetRepository()
         self.text_provider = ScriptProcessor()
 
     def preview_import(self, text: str, suggested_episodes: int):
@@ -95,6 +97,18 @@ class SystemService:
         if not script:
             raise ValueError("Script not found")
         return self.text_provider.analyze_script_for_styles(script_text)
+
+    def ensure_default_style_presets(self) -> None:
+        """确保默认风格预设已经落到数据库中。
+
+        启动时补种一次，后续所有风格预设读取都只查数据库，
+        从而避免多实例部署下不同机器读取本地 JSON 导致配置漂移。
+        """
+        self.style_preset_repository.ensure_defaults(DEFAULT_STYLE_PRESETS)
+
+    def list_style_presets(self) -> list[StylePreset]:
+        """返回当前可用的风格预设列表。"""
+        return self.style_preset_repository.list_active()
 
     def save_art_direction(
         self,

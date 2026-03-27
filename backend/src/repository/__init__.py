@@ -5,6 +5,7 @@ from .prop_repository import PropRepository
 from .project_repository import ProjectRepository
 from .scene_repository import SceneRepository
 from .series_repository import SeriesRepository
+from .style_preset_repository import StylePresetRepository
 from .storyboard_frame_repository import StoryboardFrameRepository
 from .task_attempt_repository import TaskAttemptRepository
 from .task_event_repository import TaskEventRepository
@@ -20,6 +21,7 @@ __all__ = [
     "PropRepository",
     "SceneRepository",
     "SeriesRepository",
+    "StylePresetRepository",
     "StoryboardFrameRepository",
     "TaskAttemptRepository",
     "TaskEventRepository",

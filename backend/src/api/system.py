@@ -2,14 +2,14 @@
 系统路由：调试检查、文件导入、环境配置与通用工具接口。
 """
 
-import json
+import asyncio
 import os
+from functools import partial
 import shutil
 import sys
 import uuid
-from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 
 from ..application.tasks import TaskService
 from ..application.services import SystemService
@@ -34,6 +34,7 @@ from ..schemas.requests import (
     PolishVideoPromptRequest,
     SaveArtDirectionRequest,
 )
+from ..schemas.task_models import TaskReceipt
 
 
 router = APIRouter()
@@ -126,8 +127,11 @@ async def import_file_preview(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/series/import/confirm")
-async def import_file_confirm(request: ConfirmImportRequest):
+@router.post("/series/import/confirm", response_model=TaskReceipt)
+async def import_file_confirm(
+    request: ConfirmImportRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """确认分集结果，并正式创建系列与分集项目。"""
     try:
         logger.info("SYSTEM_API: import_file_confirm title=%s episode_count=%s has_import_id=%s", request.title, len(request.episodes), bool(request.import_id))
@@ -138,19 +142,25 @@ async def import_file_confirm(request: ConfirmImportRequest):
             text = request.text
         if not text:
             raise ValueError("No text available. Provide import_id or text.")
-
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            partial(
-                system_service.create_series_from_import,
-                request.title,
-                text,
-                request.episodes,
-                request.description,
-            ),
+        receipt = task_service.create_job(
+            task_type="series.import.confirm",
+            payload={
+                "title": request.title,
+                "description": request.description,
+                "text": text,
+                "episodes": request.episodes,
+                "import_id": request.import_id,
+            },
+            project_id=None,
+            series_id=None,
+            queue_name="llm",
+            resource_type="series_import",
+            resource_id=request.title,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"series_import_confirm:{request.title}:{len(request.episodes)}",
         )
-        return signed_response(result)
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("SYSTEM_API: import_file_confirm invalid_request title=%s detail=%s", request.title, exc)
         raise HTTPException(status_code=400, detail=str(exc))
@@ -333,18 +343,11 @@ async def save_art_direction(script_id: str, request: SaveArtDirectionRequest):
 
 @router.get("/art_direction/presets")
 async def get_style_presets():
-    """读取内置风格预设。"""
+    """读取数据库中的可用风格预设。"""
     try:
-        # 预设文件和 API 模块一起放在 `backend/src` 目录树下，不能依赖当前工作目录，
-        # 否则 supervisor / 打包环境切换 cwd 后会错误回退成空数组。
-        preset_file = Path(__file__).resolve().parents[1] / "assets" / "style_presets.json"
-        logger.debug("Loading presets from %s", preset_file)
-        if not preset_file.exists():
-            return {"presets": []}
-
-        with preset_file.open("r", encoding="utf-8") as file:
-            data = json.load(file)
-        return {"presets": data}
+        # 风格预设现在统一走数据库读取，避免本地文件在不同部署节点之间不一致。
+        presets = system_service.list_style_presets()
+        return {"presets": [preset.model_dump(mode="json") for preset in presets]}
     except Exception as exc:
         logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(exc))

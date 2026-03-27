@@ -8,6 +8,7 @@ interface TaskStore {
     jobIdsByProject: Record<string, string[]>;
     enqueueReceipts: (projectId: string, receipts: TaskReceipt[]) => void;
     upsertJobs: (jobs: TaskJob[]) => void;
+    fetchJob: (jobId: string) => Promise<TaskJob>;
     fetchProjectJobs: (projectId: string, statuses?: string[]) => Promise<TaskJob[]>;
     cancelJob: (jobId: string) => Promise<TaskJob>;
     retryJob: (jobId: string) => Promise<TaskJob>;
@@ -60,6 +61,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         return { jobsById: nextJobs, jobIdsByProject: nextIds };
     }),
 
+    fetchJob: async (jobId) => {
+        const job = await api.getTask(jobId);
+        get().upsertJobs([job]);
+        return job;
+    },
+
     fetchProjectJobs: async (projectId, statuses) => {
         const jobs = await api.listTasks(projectId, statuses);
         get().upsertJobs(jobs);
@@ -78,4 +85,3 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         return job;
     },
 }));
-

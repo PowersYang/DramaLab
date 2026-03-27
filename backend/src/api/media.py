@@ -4,6 +4,7 @@
 
 from fastapi import APIRouter, Header, HTTPException
 
+from ..application.tasks import TaskService
 from ..application.services import ProjectService, VideoTaskService
 from ..application.workflows import MediaWorkflow
 from ..schemas.models import Script
@@ -22,25 +23,57 @@ router = APIRouter()
 video_task_service = VideoTaskService()
 media_workflow = MediaWorkflow()
 project_service = ProjectService()
+task_service = TaskService()
 
 
-@router.post("/projects/{script_id}/generate_video", response_model=Script)
-async def generate_video(script_id: str):
-    """触发视频生成。"""
+@router.post("/projects/{script_id}/generate_video", response_model=TaskReceipt)
+async def generate_video(
+    script_id: str,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
+    """触发整项目视频生成。"""
     try:
         logger.info("MEDIA_API: generate_video script_id=%s", script_id)
-        return signed_response(media_workflow.generate_video(script_id))
+        receipt = task_service.create_job(
+            task_type="video.generate.project",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="video",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope="project_video",
+        )
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("MEDIA_API: generate_video unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/generate_audio", response_model=Script)
-async def generate_audio(script_id: str):
-    """触发音频生成。"""
+@router.post("/projects/{script_id}/generate_audio", response_model=TaskReceipt)
+async def generate_audio(
+    script_id: str,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
+    """触发整项目音频生成。
+
+    这里改为只落统一任务，避免 API 线程同步阻塞在整片音频生成上。
+    """
     try:
         logger.info("MEDIA_API: generate_audio script_id=%s", script_id)
-        return signed_response(media_workflow.generate_audio(script_id))
+        receipt = task_service.create_job(
+            task_type="audio.generate.project",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="audio",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope="project_audio",
+        )
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("MEDIA_API: generate_audio unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -135,50 +168,109 @@ async def get_voices():
     return media_workflow.get_available_voices()
 
 
-@router.post("/projects/{script_id}/frames/{frame_id}/audio", response_model=Script)
+@router.post("/projects/{script_id}/frames/{frame_id}/audio", response_model=TaskReceipt)
 async def generate_line_audio(
     script_id: str,
     frame_id: str,
     request: GenerateLineAudioRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """按指定参数为某一帧生成对白音频。"""
     try:
         logger.info("MEDIA_API: generate_line_audio script_id=%s frame_id=%s", script_id, frame_id)
-        updated_script = media_workflow.generate_dialogue_line(script_id, frame_id, request.speed, request.pitch, request.volume)
-        return signed_response(updated_script)
+        receipt = task_service.create_job(
+            task_type="audio.generate.line",
+            payload={
+                "project_id": script_id,
+                "frame_id": frame_id,
+                "speed": request.speed,
+                "pitch": request.pitch,
+                "volume": request.volume,
+            },
+            project_id=script_id,
+            queue_name="audio",
+            resource_type="storyboard_frame",
+            resource_id=frame_id,
+            timeout_seconds=600,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"line_audio:{frame_id}",
+        )
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("MEDIA_API: generate_line_audio unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/mix/generate_sfx", response_model=Script)
-async def generate_mix_sfx(script_id: str):
+@router.post("/projects/{script_id}/mix/generate_sfx", response_model=TaskReceipt)
+async def generate_mix_sfx(
+    script_id: str,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """为全片触发音效生成流程。"""
     try:
         logger.info("MEDIA_API: generate_mix_sfx script_id=%s", script_id)
-        return signed_response(media_workflow.generate_audio(script_id))
+        receipt = task_service.create_job(
+            task_type="mix.generate.sfx",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="audio",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope="mix_sfx",
+        )
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("MEDIA_API: generate_mix_sfx unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/mix/generate_bgm", response_model=Script)
-async def generate_mix_bgm(script_id: str):
+@router.post("/projects/{script_id}/mix/generate_bgm", response_model=TaskReceipt)
+async def generate_mix_bgm(
+    script_id: str,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """触发背景音乐生成。"""
     try:
         logger.info("MEDIA_API: generate_mix_bgm script_id=%s", script_id)
-        return signed_response(media_workflow.generate_audio(script_id))
+        receipt = task_service.create_job(
+            task_type="mix.generate.bgm",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="audio",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope="mix_bgm",
+        )
+        return signed_response(receipt)
     except Exception as exc:
         logger.exception("MEDIA_API: generate_mix_bgm unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/merge", response_model=Script)
-async def merge_videos(script_id: str):
+@router.post("/projects/{script_id}/merge", response_model=TaskReceipt)
+async def merge_videos(
+    script_id: str,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """把所有已选中的分镜视频合成为最终成片。"""
     try:
         logger.info("MEDIA_API: merge_videos script_id=%s", script_id)
-        return signed_response(media_workflow.merge_videos(script_id))
+        receipt = task_service.create_job(
+            task_type="media.merge",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="video",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope="media_merge",
+        )
+        return signed_response(receipt)
     except ValueError as exc:
         logger.error("[MERGE ERROR] Validation failed: %s", exc)
         logger.exception("MEDIA_API: merge_videos validation_error script_id=%s", script_id)
@@ -193,8 +285,12 @@ async def merge_videos(script_id: str):
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(exc)}")
 
 
-@router.post("/projects/{script_id}/export")
-async def export_project(script_id: str, request: ExportRequest):
+@router.post("/projects/{script_id}/export", response_model=TaskReceipt)
+async def export_project(
+    script_id: str,
+    request: ExportRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """
     导出项目视频。
 
@@ -202,16 +298,23 @@ async def export_project(script_id: str, request: ExportRequest):
     `resolution`、`format`、`subtitles` 参数已预留，
     但尚未真正接入导出管线。
     """
-    _ = request
     try:
         logger.info("MEDIA_API: export_project script_id=%s", script_id)
         script = project_service.get_project(script_id)
         if not script:
             raise HTTPException(status_code=404, detail="Project not found")
-        if script.merged_video_url:
-            logger.info("MEDIA_API: export_project reuse_merged_video script_id=%s", script_id)
-            return signed_response({"url": script.merged_video_url})
-        return signed_response(media_workflow.export_project(script_id, request.model_dump()))
+        receipt = task_service.create_job(
+            task_type="project.export",
+            payload={"project_id": script_id, "options": request.model_dump()},
+            project_id=script_id,
+            queue_name="export",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"project_export:{request.resolution}:{request.format}:{request.subtitles}",
+        )
+        return signed_response(receipt)
     except HTTPException:
         raise
     except ValueError as exc:

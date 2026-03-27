@@ -228,6 +228,11 @@ class MediaWorkflow:
         """执行导出 provider，并持久化最终输出地址。"""
         logger.info("MEDIA_WORKFLOW: export_project script_id=%s option_keys=%s", script_id, sorted(options.keys()))
         project = self._get_project(script_id)
+        # 兼容旧行为：当前导出参数仍未真正接入底层导出管线时，
+        # 如果项目已有合成成片，就直接复用它，避免重复做一遍耗时渲染。
+        if project.merged_video_url:
+            logger.info("MEDIA_WORKFLOW: export_project reuse_merged_video script_id=%s", script_id)
+            return {"url": project.merged_video_url}
         export_url = self.export_manager.render_project(project, options)
         export_local_path = safe_resolve_path("output", export_url)
         if os.path.exists(export_local_path):

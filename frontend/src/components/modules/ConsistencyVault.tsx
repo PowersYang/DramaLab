@@ -16,6 +16,7 @@ export default function ConsistencyVault() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const fetchJob = useTaskStore((state) => state.fetchJob);
     const upsertJobs = useTaskStore((state) => state.upsertJobs);
 
 
@@ -275,7 +276,20 @@ export default function ConsistencyVault() {
         if (!confirmed) return;
 
         try {
-            const updatedProject = await api.syncDescriptions(currentProject.id);
+            const receipt = await api.syncDescriptions(currentProject.id);
+            enqueueReceipts(currentProject.id, [receipt]);
+            let job = await fetchJob(receipt.job_id);
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                    break;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 2000));
+                job = await fetchJob(receipt.job_id);
+            }
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "描述同步失败");
+            }
+            const updatedProject = await api.getProject(currentProject.id);
             updateProject(currentProject.id, updatedProject);
             alert("描述同步成功！");
         } catch (error: any) {

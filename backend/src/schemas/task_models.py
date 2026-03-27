@@ -20,8 +20,19 @@ class TaskStatus(str, Enum):
 
 
 class TaskType(str, Enum):
+    PROJECT_REPARSE = "project.reparse"
+    PROJECT_SYNC_DESCRIPTIONS = "project.sync_descriptions"
+    SERIES_IMPORT_ASSETS = "series.assets.import"
+    SERIES_IMPORT_CONFIRM = "series.import.confirm"
+    VIDEO_GENERATE_PROJECT = "video.generate.project"
     VIDEO_GENERATE_FRAME = "video.generate.frame"
     VIDEO_GENERATE_ASSET = "video.generate.asset"
+    AUDIO_GENERATE_PROJECT = "audio.generate.project"
+    AUDIO_GENERATE_LINE = "audio.generate.line"
+    MIX_GENERATE_SFX = "mix.generate.sfx"
+    MIX_GENERATE_BGM = "mix.generate.bgm"
+    MEDIA_MERGE = "media.merge"
+    PROJECT_EXPORT = "project.export"
     STORYBOARD_ANALYZE = "storyboard.analyze"
     STORYBOARD_RENDER = "storyboard.render"
     STORYBOARD_GENERATE_ALL = "storyboard.generate_all"

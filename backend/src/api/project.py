@@ -2,8 +2,7 @@
 项目核心路由：项目本体、角色、场景、道具与项目级风格。
 """
 
-import asyncio
-from functools import partial
+import hashlib
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
@@ -26,6 +25,7 @@ from ..schemas.requests import (
     ReparseProjectRequest,
     UpdateStyleRequest, UpdatePromptConfigRequest, UpdateModelSettingsRequest,
 )
+from ..schemas.task_models import TaskReceipt
 
 
 router = APIRouter()
@@ -43,28 +43,44 @@ async def create_project(request: CreateProjectRequest, skip_analysis: bool = Fa
     """根据小说文本创建新项目。"""
     # 路由层只记录轻量上下文，避免和请求中间件重复打印完整正文。
     logger.info("PROJECT_API: create_project title=%s skip_analysis=%s", request.title, skip_analysis)
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None,
-        partial(project_service.create_project, request.title, request.text, skip_analysis),
-    )
+    result = project_service.create_project(request.title, request.text, skip_analysis)
     logger.info("PROJECT_API: create_project completed project_id=%s", result.id)
     return signed_response(result)
 
 
-@router.put("/projects/{script_id}/reparse", response_model=Script)
-async def reparse_project(script_id: str, request: ReparseProjectRequest, http_request: Request):
+@router.put("/projects/{script_id}/reparse", response_model=TaskReceipt)
+async def reparse_project(
+    script_id: str,
+    request: ReparseProjectRequest,
+    http_request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """重新解析已有项目文本，并替换其中的实体数据。"""
     request_id = getattr(http_request.state, "request_id", None)
     try:
         logger.info("PROJECT_API: reparse_project script_id=%s request_id=%s", script_id, request_id)
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            partial(project_service.reparse_project, script_id, request.text),
+        project = project_service.get_project(script_id)
+        if not project:
+            raise ValueError("Script not found")
+        text_digest = hashlib.sha256((request.text or "").encode("utf-8")).hexdigest()[:16]
+        receipt = task_service.create_job(
+            task_type="project.reparse",
+            payload={"project_id": script_id, "text": request.text},
+            project_id=script_id,
+            queue_name="llm",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=1800,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"project_reparse:{text_digest}",
         )
-        logger.info("PROJECT_API: reparse_project completed script_id=%s request_id=%s", script_id, request_id)
-        return signed_response(result)
+        logger.info(
+            "PROJECT_API: reparse_project queued script_id=%s request_id=%s job_id=%s",
+            script_id,
+            request_id,
+            receipt.job_id,
+        )
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning(
             "PROJECT_API: reparse_project not_found script_id=%s request_id=%s detail=%s",
@@ -121,14 +137,27 @@ async def delete_project(script_id: str):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/projects/{script_id}/sync_descriptions", response_model=Script)
-async def sync_descriptions(script_id: str):
+@router.post("/projects/{script_id}/sync_descriptions", response_model=TaskReceipt)
+async def sync_descriptions(script_id: str, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """把脚本模块里的实体描述同步回素材模块。"""
     try:
         logger.info("PROJECT_API: sync_descriptions script_id=%s", script_id)
-        updated_script = project_service.sync_descriptions(script_id)
-        logger.info("PROJECT_API: sync_descriptions completed script_id=%s", script_id)
-        return signed_response(updated_script)
+        project = project_service.get_project(script_id)
+        if not project:
+            raise ValueError("Script not found")
+        receipt = task_service.create_job(
+            task_type="project.sync_descriptions",
+            payload={"project_id": script_id},
+            project_id=script_id,
+            queue_name="llm",
+            resource_type="project",
+            resource_id=script_id,
+            timeout_seconds=900,
+            idempotency_key=idempotency_key,
+            dedupe_scope="project_sync_descriptions",
+        )
+        logger.info("PROJECT_API: sync_descriptions queued script_id=%s job_id=%s", script_id, receipt.job_id)
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("PROJECT_API: sync_descriptions not_found script_id=%s detail=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

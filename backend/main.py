@@ -56,8 +56,8 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         logger.info("APP: entering lifespan startup")
         bootstrap_api_environment(logging.getLogger(__name__))
-        # 统一由主入口托管 worker，当前按批次接管了 llm/image/video 三类长任务。
-        task_worker = TaskWorker(queues=["llm", "image", "video"], poll_interval=2.0)
+        # 统一由主入口托管 worker，当前已经接管 llm/image/video/audio/export 几类长任务。
+        task_worker = TaskWorker(queues=["llm", "image", "video", "audio", "export"], poll_interval=2.0)
         task_worker.start_in_thread()
         app.state.task_worker = task_worker
         try:

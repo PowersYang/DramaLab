@@ -247,6 +247,21 @@ class ModelSettings(BaseModel):
     storyboard_aspect_ratio: str = Field("16:9", description="分镜素材的宽高比（9:16、16:9、1:1）")
 
 
+class StylePreset(BaseModel):
+    """数据库中的风格预设定义。"""
+    id: str = Field(..., description="风格预设唯一标识")
+    name: str = Field(..., description="风格名称")
+    description: Optional[str] = Field(None, description="风格说明")
+    positive_prompt: str = Field(..., description="正向提示词")
+    negative_prompt: Optional[str] = Field(None, description="负向提示词")
+    thumbnail_url: Optional[str] = Field(None, description="预览缩略图地址")
+    sort_order: int = Field(100, description="显示顺序，越小越靠前")
+    is_builtin: bool = Field(False, description="是否为系统内置预设")
+    is_active: bool = Field(True, description="是否可用")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
 class ArtDirection(BaseModel):
     """全局视觉风格的美术指导配置。"""
     selected_style_id: str = Field(..., description="当前选中的风格 ID")

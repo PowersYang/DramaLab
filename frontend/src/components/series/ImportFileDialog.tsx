@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Upload, FileText, Loader2, ChevronLeft, ChevronRight, Check, BookOpen } from "lucide-react";
 import { api } from "@/lib/api";
+import { useTaskStore } from "@/store/taskStore";
 
 interface ImportFileDialogProps {
     isOpen: boolean;
@@ -21,11 +22,13 @@ interface EpisodePreview {
 interface PreviewResult {
     episodes: EpisodePreview[];
     text: string;
+    import_id?: string;
 }
 
 type Step = 1 | 2 | 3;
 
 export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportFileDialogProps) {
+    const fetchJob = useTaskStore((state) => state.fetchJob);
     // Step state
     const [step, setStep] = useState<Step>(1);
 
@@ -128,15 +131,28 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportF
         setIsCreating(true);
         setError(null);
         try {
-            const result = await api.importFileConfirm({
+            const receipt = await api.importFileConfirm({
                 title: seriesTitle.trim(),
                 description: description.trim() || undefined,
                 text: previewResult.text,
                 episodes: previewResult.episodes,
+                import_id: previewResult.import_id,
             });
+            let job = await fetchJob(receipt.job_id);
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                    break;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 2000));
+                job = await fetchJob(receipt.job_id);
+            }
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "创建系列失败");
+            }
+            const result = job.result_json || {};
             setCreatedResult({
                 series_id: result.series_id,
-                episode_count: result.episodes?.length ?? previewResult.episodes.length,
+                episode_count: result.episodes?.length ?? result.episode_count ?? previewResult.episodes.length,
             });
             setStep(3);
         } catch (err: any) {

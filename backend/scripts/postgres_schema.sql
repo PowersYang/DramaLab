@@ -81,6 +81,22 @@ create table if not exists billing_accounts (
 create index if not exists ix_billing_accounts_organization_id on billing_accounts (organization_id);
 create index if not exists ix_billing_accounts_workspace_id on billing_accounts (workspace_id);
 
+create table if not exists style_presets (
+    id varchar(64) primary key,
+    name varchar(255) not null,
+    description text,
+    positive_prompt text not null,
+    negative_prompt text,
+    thumbnail_url text,
+    sort_order integer not null default 100,
+    is_builtin boolean not null default false,
+    is_active boolean not null default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists ix_style_presets_active_sort on style_presets (is_active, sort_order, created_at);
+
 create table if not exists projects (
     id varchar(64) primary key,
     organization_id varchar(64),

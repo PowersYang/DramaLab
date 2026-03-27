@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Download, Users, MapPin, Package, Check, Loader2, ArrowRight, ArrowLeft, Image as ImageIcon } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useTaskStore } from '@/store/taskStore';
 import type { Series, Character, Scene, Prop } from '@/store/projectStore';
 
 interface ImportAssetsDialogProps {
@@ -49,6 +50,7 @@ function getAssetImageUrl(asset: Character | Scene | Prop, type: AssetTab): stri
 }
 
 export default function ImportAssetsDialog({ isOpen, onClose, seriesId, onImported }: ImportAssetsDialogProps) {
+    const fetchJob = useTaskStore((state) => state.fetchJob);
     const [step, setStep] = useState(1);
     const [allSeries, setAllSeries] = useState<Series[]>([]);
     const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -146,12 +148,23 @@ export default function ImportAssetsDialog({ isOpen, onClose, seriesId, onImport
         if (!selectedSourceId || selectedAssetIds.size === 0) return;
         setIsImporting(true);
         try {
-            await api.importSeriesAssets(seriesId, selectedSourceId, Array.from(selectedAssetIds));
+            const receipt = await api.importSeriesAssets(seriesId, selectedSourceId, Array.from(selectedAssetIds));
+            let job = await fetchJob(receipt.job_id);
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+                if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                    break;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 2000));
+                job = await fetchJob(receipt.job_id);
+            }
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "导入共享素材失败");
+            }
             onImported?.();
             onClose();
-        } catch (err) {
+        } catch (err: any) {
             console.error("Failed to import assets:", err);
-            alert("Failed to import assets");
+            alert(err?.message || "Failed to import assets");
         } finally {
             setIsImporting(false);
         }

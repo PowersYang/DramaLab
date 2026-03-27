@@ -2,7 +2,7 @@
 系列路由：系列基础信息、分集关系、共享素材与系列级配置。
 """
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from ..application.tasks import TaskService
 from ..application.services import SeriesService
@@ -353,7 +353,11 @@ async def update_series_asset_attributes(
 
 
 @router.post("/series/{series_id}/assets/import")
-async def import_series_assets(series_id: str, request: ImportAssetsRequest):
+async def import_series_assets(
+    series_id: str,
+    request: ImportAssetsRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     """把另一个系列中的素材深拷贝导入当前系列。"""
     try:
         logger.info(
@@ -362,19 +366,27 @@ async def import_series_assets(series_id: str, request: ImportAssetsRequest):
             request.source_series_id,
             len(request.asset_ids),
         )
-        series, imported_ids, skipped_ids = series_workflow.import_assets_from_series(
-            series_id,
-            request.source_series_id,
-            request.asset_ids,
+        series = series_service.get_series(series_id)
+        if not series:
+            raise ValueError("Series not found")
+        receipt = task_service.create_job(
+            task_type="series.assets.import",
+            payload={
+                "series_id": series_id,
+                "source_series_id": request.source_series_id,
+                "asset_ids": request.asset_ids,
+            },
+            project_id=None,
+            series_id=series_id,
+            queue_name="image",
+            resource_type="series",
+            resource_id=series_id,
+            timeout_seconds=1200,
+            idempotency_key=idempotency_key,
+            dedupe_scope=f"series_import_assets:{request.source_series_id}:{','.join(sorted(request.asset_ids))}",
         )
-        # 导入结果单独记录成功/跳过数量，后续查素材缺失时能快速判断是源数据不存在还是导入被过滤。
-        logger.info(
-            "SERIES_API: import_series_assets completed series_id=%s imported=%s skipped=%s",
-            series_id,
-            len(imported_ids),
-            len(skipped_ids),
-        )
-        return signed_response(series)
+        logger.info("SERIES_API: import_series_assets queued series_id=%s job_id=%s", series_id, receipt.job_id)
+        return signed_response(receipt)
     except ValueError as exc:
         logger.warning("SERIES_API: import_series_assets failed series_id=%s detail=%s", series_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

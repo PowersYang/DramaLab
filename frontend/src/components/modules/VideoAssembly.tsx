@@ -5,11 +5,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL } from "@/lib/api";
+import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl, extractErrorDetail } from "@/lib/utils";
 
 export default function VideoAssembly() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const fetchJob = useTaskStore((state) => state.fetchJob);
 
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
     const [isMerging, setIsMerging] = useState(false);
@@ -42,13 +45,30 @@ export default function VideoAssembly() {
         }
     };
 
+    const waitForJob = async (jobId: string) => {
+        for (let attempt = 0; attempt < 180; attempt += 1) {
+            const job = await fetchJob(jobId);
+            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                return job;
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        }
+        throw new Error("视频合成任务等待超时");
+    };
+
     const handleMerge = async () => {
         if (!currentProject) return;
         setIsMerging(true);
         setMergeError(null);  // Clear previous errors
 
         try {
-            const updatedProject = await api.mergeVideos(currentProject.id);
+            const receipt = await api.mergeVideos(currentProject.id);
+            enqueueReceipts(currentProject.id, [receipt]);
+            const job = await waitForJob(receipt.job_id);
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "视频合成失败");
+            }
+            const updatedProject = await api.getProject(currentProject.id);
             updateProject(currentProject.id, updatedProject);
             // Success - error will be null, merged video will show below
         } catch (error: any) {

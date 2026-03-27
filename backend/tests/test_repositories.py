@@ -297,6 +297,28 @@ class RepositoryPersistenceTest(unittest.TestCase):
         self.assertIsNone(repository.get("project_soft_delete"))
         self.assertIsNotNone(repository.get("project_soft_delete", include_deleted=True))
 
+    def test_style_preset_repository_bootstrap_and_save(self):
+        from src.application.services.default_style_presets import DEFAULT_STYLE_PRESETS
+        from src.repository import StylePresetRepository
+
+        repository = StylePresetRepository()
+        repository.ensure_defaults(DEFAULT_STYLE_PRESETS)
+
+        loaded = repository.list_active()
+        self.assertEqual([preset.id for preset in loaded], [preset.id for preset in DEFAULT_STYLE_PRESETS])
+        self.assertEqual(loaded[0].name, "Cinematic Realism")
+
+        updated = repository.save(
+            loaded[0].model_copy(
+                update={
+                    "description": "数据库内更新后的描述",
+                    "sort_order": 5,
+                }
+            )
+        )
+        self.assertEqual(updated.description, "数据库内更新后的描述")
+        self.assertEqual(repository.list_active()[0].id, updated.id)
+
 
 if __name__ == "__main__":
     unittest.main()

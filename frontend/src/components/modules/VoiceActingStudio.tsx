@@ -5,11 +5,14 @@ import { Mic, Play, Pause, Wand2, Users, Volume2, Check, Settings2, AlertCircle 
 import clsx from "clsx";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
+import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl } from "@/lib/utils";
 
 export default function VoiceActingStudio() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const fetchJob = useTaskStore((state) => state.fetchJob);
 
     const [voices, setVoices] = useState<any[]>([]);
     const [playingAudio, setPlayingAudio] = useState<string | null>(null);
@@ -41,6 +44,17 @@ export default function VoiceActingStudio() {
             setCharParams(params);
         }
     }, [currentProject?.characters]);
+
+    const waitForJob = async (jobId: string) => {
+        for (let attempt = 0; attempt < 180; attempt += 1) {
+            const job = await fetchJob(jobId);
+            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                return job;
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        }
+        throw new Error("音频任务等待超时");
+    };
 
     const handlePlay = (url: string) => {
         if (playingAudio === url) {
@@ -87,10 +101,17 @@ export default function VoiceActingStudio() {
         if (!currentProject) return;
         setIsGenerating(true);
         try {
-            const updatedProject = await api.generateAudio(currentProject.id);
+            const receipt = await api.generateAudio(currentProject.id);
+            enqueueReceipts(currentProject.id, [receipt]);
+            const job = await waitForJob(receipt.job_id);
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "音频生成失败");
+            }
+            const updatedProject = await api.getProject(currentProject.id);
             updateProject(currentProject.id, updatedProject);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to generate audio:", error);
+            alert(error?.message || "生成整片音频失败");
         } finally {
             setIsGenerating(false);
         }
@@ -101,10 +122,17 @@ export default function VoiceActingStudio() {
         setGeneratingLineId(frameId);
         try {
             const settings = lineSettings[frameId] || { speed: 1.0, pitch: 1.0, volume: 50 };
-            const updatedProject = await api.generateLineAudio(currentProject.id, frameId, settings.speed, settings.pitch, settings.volume);
+            const receipt = await api.generateLineAudio(currentProject.id, frameId, settings.speed, settings.pitch, settings.volume);
+            enqueueReceipts(currentProject.id, [receipt]);
+            const job = await waitForJob(receipt.job_id);
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "对白音频生成失败");
+            }
+            const updatedProject = await api.getProject(currentProject.id);
             updateProject(currentProject.id, updatedProject);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to generate line audio:", error);
+            alert(error?.message || "生成对白音频失败");
         } finally {
             setGeneratingLineId(null);
         }

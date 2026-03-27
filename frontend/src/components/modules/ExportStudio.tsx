@@ -3,10 +3,14 @@ import { Download, Film, CheckCircle, FileVideo, Monitor, Captions } from "lucid
 import clsx from "clsx";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
+import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl } from "@/lib/utils";
 
 export default function ExportStudio() {
     const currentProject = useProjectStore((state) => state.currentProject);
+    const updateProject = useProjectStore((state) => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
+    const fetchJob = useTaskStore((state) => state.fetchJob);
 
     const [isExporting, setIsExporting] = useState(false);
     const [exportUrl, setExportUrl] = useState<string | null>(null);
@@ -20,6 +24,17 @@ export default function ExportStudio() {
     // If project already has a merged video, show it immediately
     const effectiveUrl = exportUrl || currentProject?.merged_video_url || null;
 
+    const waitForJob = async (jobId: string) => {
+        for (let attempt = 0; attempt < 180; attempt += 1) {
+            const job = await fetchJob(jobId);
+            if (["succeeded", "failed", "cancelled", "timed_out"].includes(job.status)) {
+                return job;
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        }
+        throw new Error("导出任务等待超时");
+    };
+
     const handleExport = async () => {
         if (!currentProject) return;
         setIsExporting(true);
@@ -27,8 +42,18 @@ export default function ExportStudio() {
         setExportError(null);
 
         try {
-            const result = await api.exportProject(currentProject.id, { resolution, format, subtitles });
-            setExportUrl(result.url);
+            const receipt = await api.exportProject(currentProject.id, { resolution, format, subtitles });
+            enqueueReceipts(currentProject.id, [receipt]);
+            const job = await waitForJob(receipt.job_id);
+            if (job.status !== "succeeded") {
+                throw new Error(job.error_message || "导出失败");
+            }
+            const nextUrl = job.result_json?.url || null;
+            if (nextUrl) {
+                setExportUrl(nextUrl);
+            }
+            const updatedProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, updatedProject);
         } catch (error: any) {
             console.error("Export failed:", error);
             setExportError(error?.message || "Export failed. Please check that videos have been generated.");

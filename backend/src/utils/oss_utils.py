@@ -3,8 +3,8 @@ import oss2
 import time
 import requests
 from typing import Optional
+from src.common.log import get_logger
 from src.settings.env_settings import get_env
-from . import get_logger
 
 logger = get_logger(__name__)
 

@@ -50,6 +50,7 @@ class PostgresSchemaSqlTest(unittest.TestCase):
     def test_schema_sql_uses_varchar_primary_keys_and_jsonb(self):
         sql_path = Path(__file__).resolve().parent.parent / "scripts" / "postgres_schema.sql"
         sql = sql_path.read_text(encoding="utf-8")
+        self.assertIn("create table if not exists style_presets", sql)
         self.assertIn("create table if not exists projects", sql)
         self.assertIn("id varchar(64) primary key", sql)
         self.assertIn("model_settings jsonb not null default '{}'::jsonb", sql)
@@ -57,6 +58,7 @@ class PostgresSchemaSqlTest(unittest.TestCase):
         self.assertIn("is_deleted boolean not null default false", sql)
         self.assertIn("deleted_at timestamptz", sql)
         self.assertIn("version integer not null default 1", sql)
+        self.assertIn("create index if not exists ix_style_presets_active_sort on style_presets (is_active, sort_order, created_at)", sql)
         self.assertIn(
             "create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type) where is_deleted = false",
             sql,

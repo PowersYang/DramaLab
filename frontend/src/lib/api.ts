@@ -289,17 +289,17 @@ export const api = {
         return res.data;
     },
 
-    reparseProject: async (scriptId: string, text: string) => {
+    reparseProject: async (scriptId: string, text: string): Promise<TaskReceipt> => {
         try {
             const res = await axios.put(`${API_URL}/projects/${scriptId}/reparse`, { text });
-            return { ...res.data, originalText: res.data.original_text };
+            return res.data;
         } catch (error) {
             // 重新解析是长耗时链路，这里把错误格式化得更明确，便于区分 500 和 socket hang up。
             throw formatAxiosError(error, "重新解析项目失败");
         }
     },
 
-    syncDescriptions: async (scriptId: string) => {
+    syncDescriptions: async (scriptId: string): Promise<TaskReceipt> => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/sync_descriptions`);
         return res.data;
     },
@@ -585,7 +585,7 @@ export const api = {
         return res.data;
     },
 
-    mergeVideos: async (scriptId: string) => {
+    mergeVideos: async (scriptId: string): Promise<TaskReceipt> => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/merge`);
         return res.data;
     },
@@ -748,13 +748,13 @@ export const api = {
         });
     },
 
-    generateAudio: async (scriptId: string) => {
+    generateAudio: async (scriptId: string): Promise<TaskReceipt> => {
         return fetchJson(`${API_URL}/projects/${scriptId}/generate_audio`, {
             method: "POST",
         });
     },
 
-    generateLineAudio: async (scriptId: string, frameId: string, speed: number, pitch: number, volume: number = 50) => {
+    generateLineAudio: async (scriptId: string, frameId: string, speed: number, pitch: number, volume: number = 50): Promise<TaskReceipt> => {
         return fetchJson(`${API_URL}/projects/${scriptId}/frames/${frameId}/audio`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -770,7 +770,7 @@ export const api = {
         });
     },
 
-    exportProject: async (scriptId: string, options: any) => {
+    exportProject: async (scriptId: string, options: any): Promise<TaskReceipt> => {
         return fetchJson(`${API_URL}/projects/${scriptId}/export`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -778,7 +778,7 @@ export const api = {
         });
     },
 
-    generateVideo: async (scriptId: string) => {
+    generateVideo: async (scriptId: string): Promise<TaskReceipt> => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/generate_video`);
         return res.data;
     },
@@ -856,7 +856,7 @@ export const api = {
         const response = await axios.get(`${API_URL}/series/${seriesId}/assets`);
         return response.data;
     },
-    importSeriesAssets: async (seriesId: string, sourceSeriesId: string, assetIds: string[]) => {
+    importSeriesAssets: async (seriesId: string, sourceSeriesId: string, assetIds: string[]): Promise<TaskReceipt> => {
         const response = await axios.post(`${API_URL}/series/${seriesId}/assets/import`, { source_series_id: sourceSeriesId, asset_ids: assetIds });
         return response.data;
     },
@@ -903,7 +903,7 @@ export const api = {
         });
         return response.data;
     },
-    importFileConfirm: async (data: { title: string; description?: string; text: string; episodes: any[] }) => {
+    importFileConfirm: async (data: { title: string; description?: string; text: string; episodes: any[]; import_id?: string }): Promise<TaskReceipt> => {
         const response = await axios.post(`${API_URL}/series/import/confirm`, data);
         return response.data;
     },
