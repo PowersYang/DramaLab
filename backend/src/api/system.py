@@ -3,11 +3,13 @@
 """
 
 import asyncio
+import json
 import os
 import shutil
 import sys
 import uuid
 from functools import partial
+from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
@@ -329,15 +331,14 @@ async def save_art_direction(script_id: str, request: SaveArtDirectionRequest):
 async def get_style_presets():
     """读取内置风格预设。"""
     try:
-        preset_file = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "assets/style_presets.json",
-        )
+        # 预设文件和 API 模块一起放在 `backend/src` 目录树下，不能依赖当前工作目录，
+        # 否则 supervisor / 打包环境切换 cwd 后会错误回退成空数组。
+        preset_file = Path(__file__).resolve().parents[1] / "assets" / "style_presets.json"
         logger.debug("Loading presets from %s", preset_file)
-        if not os.path.exists(preset_file):
+        if not preset_file.exists():
             return {"presets": []}
 
-        with open(preset_file, "r", encoding="utf-8") as file:
+        with preset_file.open("r", encoding="utf-8") as file:
             data = json.load(file)
         return {"presets": data}
     except Exception as exc:

@@ -10,6 +10,7 @@ from ...schemas.models import Character, GenerationStatus, Prop, Scene, Script, 
 
 from ...utils import get_logger
 from ...utils.datetime import utc_now
+from ...settings.env_settings import get_env
 from .default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
     DEFAULT_STORYBOARD_POLISH_PROMPT,
@@ -50,8 +51,16 @@ class ScriptProcessor:
             raise ValueError("LLM API Key 未配置。请在 API 配置中设置对应的 API Key 后重试。")
 
         prompt = self._construct_prompt(text)
+        logger.info(
+            "SCRIPT_PROCESSOR: parse_novel title=%s text_length=%s",
+            title,
+            len(text or ""),
+        )
         try:
-            content = self.llm.chat(messages=[{"role": "user", "content": prompt}])
+            content = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
             logger.debug("LLM Response Content:\n%s", content)
             content = _strip_markdown_json(content)
             data = json.loads(content)
@@ -251,46 +260,49 @@ class ScriptProcessor:
     def _construct_prompt(self, text: str) -> str:
         """构造发送给 LLM 的解析提示词。"""
         return f"""
-        You are a professional storyboard artist and scriptwriter.
-        Analyze the following novel text and extract structured data for a comic/video production.
-        
-        IMPORTANT: 
-        - All descriptive content (names, descriptions) MUST be in CHINESE (Simplified Chinese).
-        - Extract ONLY characters, scenes, and props.
-        
-        Output strictly in valid JSON format with the following structure:
-        {{
-            "characters": [
-                {{
-                    "id": "char_001",
-                    "name": "Character Name (e.g. '叶墨', '叶墨 (古装)')",
-                    "description": "Visual description (hair, eyes, build, distinct features). DO NOT include specific facial expressions (e.g. sad, angry) or temporary actions (e.g. running, crying). Focus on permanent physical traits.",
-                    "age": "Age estimate (e.g. '25')",
-                    "gender": "Gender",
-                    "clothing": "Default outfit description. If a character changes outfits significantly (e.g. from casual to wedding dress), create a separate character entry for each outfit variant with a distinct name (e.g. 'Name (Outfit)').",
-                    "visual_weight": 5
-                }}
-            ],
-            "scenes": [
-                {{
-                    "id": "scene_001",
-                    "name": "Location Name (e.g. '咖啡店', '古代遗迹')",
-                    "description": "Visual description (lighting, mood, key elements)",
-                    "visual_weight": 3
-                }}
-            ],
-            "props": [
-                {{
-                    "id": "prop_001",
-                    "name": "Prop Name",
-                    "description": "Visual description"
-                }}
-            ]
-        }}
+你是一名影视前期拆解助手，只做实体提取。
 
-        Text:
-        {text}
-        """
+任务要求：
+1. 只提取 `characters`、`scenes`、`props` 三类实体。
+2. 所有 `name`、`description`、`age`、`gender`、`clothing` 必须使用简体中文。
+3. 不要输出分镜，不要解释，不要补充额外字段。
+4. 角色描述只保留稳定外观特征，不要写临时动作或情绪。
+5. 同一角色如果服装变化特别大，可拆成变体角色，例如“叶墨（古装）”。
+6. `visual_weight` 使用 1-5 的整数，主角/核心场景可更高。
+
+返回 JSON 结构：
+{{
+  "characters": [
+    {{
+      "id": "char_001",
+      "name": "角色名",
+      "description": "稳定外观描述",
+      "age": "年龄估计",
+      "gender": "性别",
+      "clothing": "默认服装描述",
+      "visual_weight": 5
+    }}
+  ],
+  "scenes": [
+    {{
+      "id": "scene_001",
+      "name": "场景名",
+      "description": "场景视觉描述",
+      "visual_weight": 3
+    }}
+  ],
+  "props": [
+    {{
+      "id": "prop_001",
+      "name": "道具名",
+      "description": "道具视觉描述"
+    }}
+  ]
+}}
+
+待分析文本：
+{text}
+"""
 
     def analyze_script_for_styles(self, script_text: str) -> List[Dict[str, Any]]:
         """为剧本推荐可选视觉风格。"""
