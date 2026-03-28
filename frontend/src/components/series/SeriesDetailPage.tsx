@@ -9,8 +9,6 @@ import type { Series, Character, Scene, Prop, Project } from "@/store/projectSto
 import AssetCard from "@/components/common/AssetCard";
 import SeriesSidebar, { type SidebarItem } from "./SeriesSidebar";
 
-const SeriesModelSettingsModal = dynamic(() => import("./SeriesModelSettingsModal"), { ssr: false });
-const SeriesPromptConfigModal = dynamic(() => import("./SeriesPromptConfigModal"), { ssr: false });
 const ImportAssetsDialog = dynamic(() => import("./ImportAssetsDialog"), { ssr: false });
 
 interface SeriesDetailPageProps {
@@ -35,8 +33,6 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
   const [showAddEpisode, setShowAddEpisode] = useState(false);
   const [newEpisodeTitle, setNewEpisodeTitle] = useState("");
   const [isCreatingEpisode, setIsCreatingEpisode] = useState(false);
-  const [showModelSettings, setShowModelSettings] = useState(false);
-  const [showPromptConfig, setShowPromptConfig] = useState(false);
   const [showImportAssets, setShowImportAssets] = useState(false);
 
   useEffect(() => {
@@ -177,8 +173,6 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
         onNewEpisodeTitleChange={setNewEpisodeTitle}
         onAddEpisode={handleAddEpisode}
         onAddEpisodeKeyDown={handleAddEpisodeKeyDown}
-        onOpenModelSettings={() => setShowModelSettings(true)}
-        onOpenPromptConfig={() => setShowPromptConfig(true)}
         onOpenImportAssets={() => setShowImportAssets(true)}
       />
 
@@ -204,18 +198,6 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
       </div>
 
       {/* ── Modals ── */}
-      <SeriesModelSettingsModal
-        isOpen={showModelSettings}
-        onClose={() => setShowModelSettings(false)}
-        seriesId={seriesId}
-        onSaved={refreshSeriesData}
-      />
-      <SeriesPromptConfigModal
-        isOpen={showPromptConfig}
-        onClose={() => setShowPromptConfig(false)}
-        seriesId={seriesId}
-        onSaved={refreshSeriesData}
-      />
       <ImportAssetsDialog
         isOpen={showImportAssets}
         onClose={() => setShowImportAssets(false)}

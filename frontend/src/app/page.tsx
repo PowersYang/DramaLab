@@ -6,7 +6,6 @@ import { Plus, FolderOpen, Library, Calendar, Play, Trash2, FileUp, X, ChevronDo
 import { useProjectStore, Series, Project } from "@/store/projectStore";
 import ProjectCard from "@/components/project/ProjectCard";
 import CreateProjectDialog from "@/components/project/CreateProjectDialog";
-import EnvConfigDialog from "@/components/project/EnvConfigDialog";
 import CreativeCanvas from "@/components/canvas/CreativeCanvas";
 import AppShell from "@/components/layout/AppShell";
 import type { GlobalTab } from "@/components/layout/GlobalSidebar";
@@ -16,7 +15,6 @@ import { api } from "@/lib/api";
 const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
 const SeriesDetailPage = dynamic(() => import("@/components/series/SeriesDetailPage"), { ssr: false });
 const ImportFileDialog = dynamic(() => import("@/components/series/ImportFileDialog"), { ssr: false });
-const SettingsPage = dynamic(() => import("@/components/settings/SettingsPage"), { ssr: false });
 const AssetLibraryPage = dynamic(() => import("@/components/library/AssetLibraryPage"), { ssr: false });
 
 const parseDateMs = (value?: string | number | null) => {
@@ -307,7 +305,7 @@ function EpisodeBreadcrumbWrapper({ seriesId, episodeId }: { seriesId: string; e
   }, [seriesId, episodeId]);
 
   const segments = [
-    { label: "LumenX", hash: "#/" },
+    { label: "DramaLab", hash: "#/" },
     { label: seriesTitle || "系列", hash: `#/series/${seriesId}` },
     { label: episodeNumber != null ? `第${episodeNumber}集` : "集数" },
   ];
@@ -323,7 +321,7 @@ export default function Home() {
   const [isSeriesDialogOpen, setIsSeriesDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [showCreateDropdown, setShowCreateDropdown] = useState(false);
-  const [currentView, setCurrentView] = useState<'home' | 'project' | 'series' | 'series-episode' | 'library' | 'settings'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'project' | 'series' | 'series-episode' | 'library'>('home');
   const [activeTab, setActiveTab] = useState<GlobalTab>("workspace");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [seriesId, setSeriesId] = useState<string | null>(null);
@@ -479,14 +477,6 @@ export default function Home() {
         setEpisodeId(null);
         return;
       }
-      if (hash === '#/settings') {
-        setCurrentView('settings');
-        setActiveTab('settings');
-        setProjectId(null);
-        setSeriesId(null);
-        setEpisodeId(null);
-        return;
-      }
       // Default: workspace
       setCurrentView('home');
       setActiveTab('workspace');
@@ -539,9 +529,6 @@ export default function Home() {
   const renderContent = () => {
     if (currentView === 'library') {
       return <AssetLibraryPage />;
-    }
-    if (currentView === 'settings') {
-      return <SettingsPage />;
     }
 
     // Workspace view
@@ -680,14 +667,6 @@ export default function Home() {
         isOpen={isSeriesDialogOpen}
         onClose={() => setIsSeriesDialogOpen(false)}
       />
-
-      {/* Environment Configuration Dialog (kept for EnvConfigChecker) */}
-      <EnvConfigDialog
-        isOpen={false}
-        onClose={() => {}}
-        isRequired={false}
-      />
-
       {/* Import File Dialog */}
       <ImportFileDialog
         isOpen={isImportDialogOpen}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, Settings, Key, MessageSquareCode } from "lucide-react";
+import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
 import type { BreadcrumbSegment } from "@/components/layout/BreadcrumbBar";
@@ -15,18 +15,12 @@ import StoryboardComposer from "@/components/modules/StoryboardComposer";
 import VoiceActingStudio from "@/components/modules/VoiceActingStudio";
 import FinalMixStudio from "@/components/modules/FinalMixStudio";
 import ExportStudio from "@/components/modules/ExportStudio";
-import ModelSettingsModal from "@/components/common/ModelSettingsModal";
-import EnvConfigDialog from "@/components/project/EnvConfigDialog";
-import PromptConfigModal from "@/components/project/PromptConfigModal";
 import dynamic from "next/dynamic";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
 export default function ProjectClient({ id, breadcrumbSegments }: { id: string; breadcrumbSegments?: BreadcrumbSegment[] }) {
     const [activeStep, setActiveStep] = useState("script");
-    const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
-    const [envDialogOpen, setEnvDialogOpen] = useState(false);
-    const [promptConfigOpen, setPromptConfigOpen] = useState(false);
 
     const selectProject = useProjectStore((state) => state.selectProject);
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -67,33 +61,7 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
         );
     }
 
-    const segments = breadcrumbSegments || [{ label: "LumenX", hash: "#/" }, { label: currentProject.title }];
-
-    const settingsActions = (
-        <>
-            <button
-                onClick={() => setEnvDialogOpen(true)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="API Key & OSS 配置"
-            >
-                <Key size={16} className="text-gray-400 group-hover:text-green-400 transition-colors" />
-            </button>
-            <button
-                onClick={() => setPromptConfigOpen(true)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="Prompt Configuration"
-            >
-                <MessageSquareCode size={16} className="text-gray-400 group-hover:text-purple-400 transition-colors" />
-            </button>
-            <button
-                onClick={() => setModelSettingsOpen(true)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="Model Settings"
-            >
-                <Settings size={16} className="text-gray-400 group-hover:text-white transition-colors" />
-            </button>
-        </>
-    );
+    const segments = breadcrumbSegments || [{ label: "DramaLab", hash: "#/" }, { label: currentProject.title }];
 
     return (
         <main className="flex h-screen w-screen bg-background overflow-hidden relative">
@@ -109,28 +77,8 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
                     onStepChange={setActiveStep}
                     steps={steps}
                     breadcrumbSegments={segments}
-                    headerActions={settingsActions}
                 />
             </div>
-
-            {/* Model Settings Modal */}
-            <ModelSettingsModal
-                isOpen={modelSettingsOpen}
-                onClose={() => setModelSettingsOpen(false)}
-            />
-
-            {/* Prompt Config Modal */}
-            <PromptConfigModal
-                isOpen={promptConfigOpen}
-                onClose={() => setPromptConfigOpen(false)}
-            />
-
-            {/* Environment Config Dialog */}
-            <EnvConfigDialog
-                isOpen={envDialogOpen}
-                onClose={() => setEnvDialogOpen(false)}
-                isRequired={false}
-            />
 
             {/* Main Content Area */}
             <div className="flex-1 flex overflow-hidden relative z-10">

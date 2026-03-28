@@ -6,48 +6,40 @@ interface LumenXBrandingProps {
 }
 
 export default function LumenXBranding({ size = "md", showSlogan = true }: LumenXBrandingProps) {
-  const logoSize = size === "sm" ? "w-10 h-10" : "w-16 h-16";
-  const titleSize = size === "sm" ? "text-2xl" : "text-3xl";
-  const xSize = size === "sm" ? "text-3xl" : "text-4xl";
-  const studioSize = size === "sm" ? "text-2xl" : "text-3xl";
+  // 统一品牌区尺寸，兼顾左侧窄栏和首页较大展示位。
+  const wordSize = size === "sm" ? "text-[1.7rem]" : "text-[2.4rem]";
+  const badgeSize = size === "sm" ? "text-[0.55rem]" : "text-[0.65rem]";
+  const sloganSize = size === "sm" ? "text-[9px]" : "text-[10px]";
 
   return (
-    <div>
-      <div className="flex gap-4 items-center">
-        <div className="flex-shrink-0">
-          <img
-            src={typeof window !== "undefined" && process.env.NODE_ENV === "production" ? "/static/LumenX.png" : "/LumenX.png"}
-            alt="LumenX"
-            className={`${logoSize} object-contain`}
-          />
-        </div>
-        <div className="flex flex-col flex-1 justify-center h-full gap-1">
-          <div className="flex items-center justify-start -mb-1">
-            <span className={`font-display ${titleSize} font-bold tracking-tight text-primary`}>
-              Lumen
-            </span>
+    <div className="space-y-3">
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.2),_transparent_45%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] px-4 py-3 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.08),transparent)] opacity-60" />
+        <div className="relative flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <span
-              className={`font-display ${xSize} font-black tracking-tighter ml-1`}
+              className={`block font-display ${wordSize} font-black leading-none tracking-[-0.08em]`}
               style={{
-                background: "linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #ec4899 100%)",
+                background: "linear-gradient(135deg, #f8fafc 0%, #fde68a 35%, #f97316 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
               }}
             >
-              X
+              DramaLab
+            </span>
+            <span className="mt-1 block text-[0.65rem] uppercase tracking-[0.32em] text-orange-200/70">
+              Story Engine
             </span>
           </div>
-          <div className="flex justify-end -mt-1 pr-2">
-            <span className={`font-display ${studioSize} font-bold tracking-tight text-white`}>
-              Studio
-            </span>
+          <div className={`rounded-full border border-orange-300/20 bg-orange-400/10 px-2.5 py-1 font-mono font-semibold uppercase tracking-[0.25em] text-orange-100 ${badgeSize}`}>
+            AI
           </div>
         </div>
       </div>
       {showSlogan && (
-        <p className="text-[9px] text-gray-500 tracking-wide text-center mt-3">
-          Render Noise into Narrative
+        <p className={`${sloganSize} text-center tracking-[0.28em] text-gray-500 uppercase`}>
+          From script spark to cinematic delivery
         </p>
       )}
     </div>

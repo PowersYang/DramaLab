@@ -8,8 +8,6 @@ import {
   MapPin,
   Package,
   Plus,
-  Settings,
-  MessageSquareCode,
   Download,
 } from "lucide-react";
 import clsx from "clsx";
@@ -43,8 +41,6 @@ interface SeriesSidebarProps {
   onAddEpisode: () => void;
   onAddEpisodeKeyDown: (e: React.KeyboardEvent) => void;
   // Actions
-  onOpenModelSettings: () => void;
-  onOpenPromptConfig: () => void;
   onOpenImportAssets: () => void;
 }
 
@@ -77,8 +73,6 @@ export default function SeriesSidebar({
   onNewEpisodeTitleChange,
   onAddEpisode,
   onAddEpisodeKeyDown,
-  onOpenModelSettings,
-  onOpenPromptConfig,
   onOpenImportAssets,
 }: SeriesSidebarProps) {
   const getAssetCount = (tab: "characters" | "scenes" | "props") => {
@@ -110,7 +104,7 @@ export default function SeriesSidebar({
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="text-xs text-gray-500 truncate">LumenX</span>
+            <span className="text-xs text-gray-500 truncate">DramaLab</span>
           </div>
 
           {/* Editable title */}
@@ -329,20 +323,6 @@ export default function SeriesSidebar({
         >
           <Download size={16} className="group-hover:text-green-400 transition-colors" />
           <span className="text-sm">导入资产</span>
-        </button>
-        <button
-          onClick={onOpenPromptConfig}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors group"
-        >
-          <MessageSquareCode size={16} className="group-hover:text-purple-400 transition-colors" />
-          <span className="text-sm">提示词配置</span>
-        </button>
-        <button
-          onClick={onOpenModelSettings}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors group"
-        >
-          <Settings size={16} className="group-hover:text-white transition-colors" />
-          <span className="text-sm">生成设置</span>
         </button>
       </div>
     </motion.aside>

@@ -1,10 +1,10 @@
 "use client";
 
-import { FolderOpen, Library, Settings } from "lucide-react";
+import { FolderOpen, Library } from "lucide-react";
 import clsx from "clsx";
 import LumenXBranding from "./LumenXBranding";
 
-export type GlobalTab = "workspace" | "library" | "settings";
+export type GlobalTab = "workspace" | "library";
 
 interface GlobalSidebarProps {
   activeTab: GlobalTab;
@@ -14,7 +14,6 @@ interface GlobalSidebarProps {
 const NAV_ITEMS: { id: GlobalTab; label: string; icon: typeof FolderOpen; hash: string }[] = [
   { id: "workspace", label: "工作区", icon: FolderOpen, hash: "#/" },
   { id: "library", label: "主体库", icon: Library, hash: "#/library" },
-  { id: "settings", label: "设置", icon: Settings, hash: "#/settings" },
 ];
 
 export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarProps) {
