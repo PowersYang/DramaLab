@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from src.api.auth import router as auth_router
 from src.api.asset import router as project_assets_router
 from src.api.project import router as project_core_router
 from src.api.media import router as project_media_router
@@ -71,7 +72,12 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+            "http://127.0.0.1:3001",
+            "http://localhost:3001",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -82,6 +88,7 @@ def create_app() -> FastAPI:
     async def request_logging_middleware(request: Request, call_next):
         return await log_request_response(request, call_next)
 
+    app.include_router(auth_router)
     app.include_router(system_router)
     app.include_router(task_router)
     app.include_router(tenant_admin_router)

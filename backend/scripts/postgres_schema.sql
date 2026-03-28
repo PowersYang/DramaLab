@@ -25,13 +25,18 @@ create index if not exists ix_workspaces_organization_id on workspaces (organiza
 create table if not exists users (
     id varchar(64) primary key,
     email varchar(255),
+    phone varchar(32),
     display_name varchar(255),
+    auth_provider varchar(64) not null default 'email_otp',
+    platform_role varchar(64),
     status varchar(32) not null default 'active',
+    last_login_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
 
 create unique index if not exists ux_users_email on users (email);
+create unique index if not exists ux_users_phone on users (phone);
 
 create table if not exists roles (
     id varchar(64) primary key,
@@ -80,6 +85,60 @@ create table if not exists billing_accounts (
 
 create index if not exists ix_billing_accounts_organization_id on billing_accounts (organization_id);
 create index if not exists ix_billing_accounts_workspace_id on billing_accounts (workspace_id);
+
+create table if not exists verification_codes (
+    id varchar(64) primary key,
+    target_type varchar(16) not null,
+    target_value varchar(255) not null,
+    purpose varchar(32) not null,
+    code_hash varchar(255) not null,
+    expires_at timestamptz not null,
+    attempt_count integer not null default 0,
+    max_attempts integer not null default 5,
+    consumed_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists ix_verification_codes_target_value on verification_codes (target_value);
+create index if not exists ix_verification_codes_target_purpose on verification_codes (target_type, target_value, purpose, created_at);
+
+create table if not exists user_sessions (
+    id varchar(64) primary key,
+    user_id varchar(64) not null,
+    current_workspace_id varchar(64),
+    session_token_hash varchar(255) not null,
+    expires_at timestamptz not null,
+    revoked_at timestamptz,
+    ip_address varchar(128),
+    user_agent text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint fk_user_sessions_user foreign key (user_id) references users (id),
+    constraint fk_user_sessions_workspace foreign key (current_workspace_id) references workspaces (id)
+);
+
+create unique index if not exists ux_user_sessions_token_hash on user_sessions (session_token_hash);
+create index if not exists ix_user_sessions_user_id on user_sessions (user_id, created_at);
+
+create table if not exists invitations (
+    id varchar(64) primary key,
+    organization_id varchar(64) not null,
+    workspace_id varchar(64) not null,
+    email varchar(255) not null,
+    role_code varchar(64) not null,
+    invited_by varchar(64),
+    expires_at timestamptz not null,
+    accepted_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint fk_invitations_organization foreign key (organization_id) references organizations (id),
+    constraint fk_invitations_workspace foreign key (workspace_id) references workspaces (id),
+    constraint fk_invitations_user foreign key (invited_by) references users (id)
+);
+
+create index if not exists ix_invitations_email on invitations (email);
+create index if not exists ix_invitations_email_status on invitations (email, accepted_at, expires_at);
 
 create table if not exists style_presets (
     id varchar(64) primary key,

@@ -1,6 +1,7 @@
 from .character_asset_unit_repository import CharacterAssetUnitRepository
 from .character_repository import CharacterRepository
 from .image_variant_repository import ImageVariantRepository
+from .invitation_repository import InvitationRepository
 from .membership_repository import MembershipRepository
 from .organization_repository import OrganizationRepository
 from .prop_repository import PropRepository
@@ -14,6 +15,8 @@ from .task_attempt_repository import TaskAttemptRepository
 from .task_event_repository import TaskEventRepository
 from .task_job_repository import TaskJobRepository
 from .user_repository import UserRepository
+from .user_session_repository import UserSessionRepository
+from .verification_code_repository import VerificationCodeRepository
 from .video_task_repository import VideoTaskRepository
 from .video_variant_repository import VideoVariantRepository
 from .workspace_repository import WorkspaceRepository
@@ -22,6 +25,7 @@ __all__ = [
     "CharacterAssetUnitRepository",
     "CharacterRepository",
     "ImageVariantRepository",
+    "InvitationRepository",
     "MembershipRepository",
     "OrganizationRepository",
     "ProjectRepository",
@@ -35,6 +39,8 @@ __all__ = [
     "TaskEventRepository",
     "TaskJobRepository",
     "UserRepository",
+    "UserSessionRepository",
+    "VerificationCodeRepository",
     "VideoTaskRepository",
     "VideoVariantRepository",
     "WorkspaceRepository",

@@ -23,7 +23,15 @@ class ProjectService:
         self.series_repository = SeriesRepository()
         self.text_provider = ScriptProcessor()
 
-    def create_project(self, title: str, text: str, skip_analysis: bool = False):
+    def create_project(
+        self,
+        title: str,
+        text: str,
+        skip_analysis: bool = False,
+        organization_id: str | None = None,
+        workspace_id: str | None = None,
+        created_by: str | None = None,
+    ):
         """根据原始文本创建并持久化项目。"""
         # 创建项目时记录文本长度和模式，后续可以区分是 AI 解析慢还是草稿创建阶段慢。
         logger.info(
@@ -36,6 +44,10 @@ class ProjectService:
             project = self.text_provider.create_draft_script(title, text)
         else:
             project = self.text_provider.parse_novel(title, text)
+        project.organization_id = organization_id
+        project.workspace_id = workspace_id
+        project.created_by = created_by
+        project.updated_by = created_by
         self.project_repository.create(project)
         logger.info("PROJECT_SERVICE: create_project completed project_id=%s", project.id)
         return project
@@ -78,11 +90,29 @@ class ProjectService:
         logger.info("PROJECT_SERVICE: reparse_project completed script_id=%s", script_id)
         return reparsed
 
-    def list_projects(self):
+    def list_projects(self, workspace_id: str | None = None):
         """返回所有已持久化项目。"""
-        projects = self.project_repository.list()
+        projects = self.project_repository.list(workspace_id=workspace_id)
         logger.info("PROJECT_SERVICE: list_projects count=%s", len(projects))
         return projects
+
+    def list_project_briefs(self, workspace_id: str | None = None):
+        """返回轻量项目摘要，避免任务中心加载完整项目聚合。"""
+        projects = self.project_repository.list_briefs(workspace_id=workspace_id)
+        logger.info("PROJECT_SERVICE: list_project_briefs count=%s", len(projects))
+        return projects
+
+    def list_project_summaries(self, workspace_id: str | None = None):
+        """返回项目中心卡片所需的轻量项目汇总。"""
+        projects = self.project_repository.list_summaries(workspace_id=workspace_id)
+        logger.info("PROJECT_SERVICE: list_project_summaries count=%s", len(projects))
+        return projects
+
+    def list_episode_briefs(self, series_id: str, workspace_id: str | None = None):
+        """返回某个系列下的分集轻量列表。"""
+        episodes = self.project_repository.list_episode_briefs(series_id, workspace_id=workspace_id)
+        logger.info("PROJECT_SERVICE: list_episode_briefs series_id=%s count=%s", series_id, len(episodes))
+        return episodes
 
     def get_project(self, script_id: str):
         """加载单个项目聚合。"""

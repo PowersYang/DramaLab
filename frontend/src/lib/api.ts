@@ -39,6 +39,14 @@ const LOG_PREFIX = "[lumenx-api]";
 const SENSITIVE_KEYWORDS = ["password", "secret", "token", "key", "authorization", "cookie"];
 
 const axios = axiosLib.create();
+axios.defaults.withCredentials = true;
+
+let accessToken: string | null = null;
+let pendingRefreshPromise: Promise<AuthBootstrapPayload> | null = null;
+
+export const setAccessToken = (token: string | null) => {
+    accessToken = token;
+};
 
 const formatAxiosError = (error: unknown, fallbackMessage: string): Error => {
     // 统一把代理层、后端状态码和 request_id 拼进错误文案，便于直接在浏览器里定位问题。
@@ -109,6 +117,9 @@ axios.interceptors.request.use((config) => {
 
     config.headers = config.headers ?? {};
     config.headers["X-Request-ID"] = requestId;
+    if (accessToken) {
+        config.headers["Authorization"] = `Bearer ${accessToken}`;
+    }
     (config as typeof config & { metadata?: typeof metadata }).metadata = metadata;
 
     console.info(LOG_PREFIX, "request:start", {
@@ -135,7 +146,7 @@ axios.interceptors.response.use(
         });
         return response;
     },
-    (error) => {
+    async (error) => {
         const config = error.config as (typeof error.config & { metadata?: { requestId: string; startedAt: number } }) | undefined;
         const durationMs = config?.metadata ? Date.now() - config.metadata.startedAt : undefined;
 
@@ -149,9 +160,31 @@ axios.interceptors.response.use(
             data: sanitizeForLog(config?.data),
             response: sanitizeForLog(error.response?.data),
         });
+        if (axiosLib.isAxiosError(error) && error.response?.status === 401 && config && !(config as any)._retry && !String(config.url || "").includes("/auth/")) {
+            (config as any)._retry = true;
+            try {
+                const refreshed = pendingRefreshPromise ?? refreshAuthSession();
+                pendingRefreshPromise = refreshed;
+                const payload = await refreshed;
+                pendingRefreshPromise = null;
+                setAccessToken(payload.session.access_token);
+                config.headers = config.headers ?? {};
+                config.headers["Authorization"] = `Bearer ${payload.session.access_token}`;
+                return axios(config);
+            } catch (refreshError) {
+                pendingRefreshPromise = null;
+                setAccessToken(null);
+                return Promise.reject(refreshError);
+            }
+        }
         return Promise.reject(error);
     }
 );
+
+const refreshAuthSession = async () => {
+    const response = await axios.post(`${API_URL}/auth/refresh`);
+    return response.data as AuthBootstrapPayload;
+};
 
 const fetchJson = async (input: string, init?: RequestInit) => {
     const requestId = createRequestId();
@@ -268,6 +301,68 @@ export interface TaskJob {
     created_at: string | number;
 }
 
+export interface CurrentUser {
+    id: string;
+    email?: string | null;
+    phone?: string | null;
+    display_name?: string | null;
+    auth_provider: string;
+    platform_role?: string | null;
+    status: string;
+    last_login_at?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface MembershipWithRole {
+    membership_id: string;
+    organization_id?: string | null;
+    organization_name?: string | null;
+    workspace_id?: string | null;
+    workspace_name?: string | null;
+    user_id: string;
+    email?: string | null;
+    display_name?: string | null;
+    role_id?: string | null;
+    role_code?: string | null;
+    role_name?: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface WorkspaceOption {
+    organization_id?: string | null;
+    organization_name?: string | null;
+    workspace_id: string;
+    workspace_name?: string | null;
+    role_code?: string | null;
+    role_name?: string | null;
+}
+
+export interface AuthSession {
+    access_token: string;
+    token_type: string;
+    expires_in: number;
+}
+
+export interface AuthMeResponse {
+    user: CurrentUser;
+    current_workspace_id?: string | null;
+    current_organization_id?: string | null;
+    current_role_code?: string | null;
+    current_role_name?: string | null;
+    is_platform_super_admin: boolean;
+    capabilities: string[];
+    workspaces: WorkspaceOption[];
+    memberships: MembershipWithRole[];
+}
+
+export interface AuthBootstrapPayload {
+    session: AuthSession;
+    me: AuthMeResponse;
+}
+
 export interface FinalMixClipDraft {
     frame_id: string;
     video_id: string;
@@ -280,7 +375,109 @@ export interface FinalMixTimelineDraft {
     clips: FinalMixClipDraft[];
 }
 
+export interface ProjectBrief {
+    id: string;
+    title: string;
+    series_id?: string | null;
+    episode_number?: number | null;
+    created_at?: string | number;
+    updated_at?: string | number;
+}
+
+export interface SeriesBrief {
+    id: string;
+    title: string;
+    created_at?: string | number;
+    updated_at?: string | number;
+}
+
+export interface ProjectSummary {
+    id: string;
+    title: string;
+    series_id?: string | null;
+    episode_number?: number | null;
+    character_count: number;
+    scene_count: number;
+    frame_count: number;
+    created_at?: string | number;
+    updated_at?: string | number;
+}
+
+export interface SeriesSummary {
+    id: string;
+    title: string;
+    description?: string | null;
+    episode_count: number;
+    character_count: number;
+    scene_count: number;
+    created_at?: string | number;
+    updated_at?: string | number;
+}
+
+export interface EpisodeBrief {
+    id: string;
+    title: string;
+    series_id?: string | null;
+    episode_number?: number | null;
+    frame_count: number;
+    created_at?: string | number;
+    updated_at?: string | number;
+}
+
 export const api = {
+    sendEmailCode: async (email: string, purpose: string = "signin") => {
+        const res = await axios.post(`${API_URL}/auth/email-code/send`, { email, purpose });
+        return res.data as { status: string; email: string; purpose: string; debug_code?: string };
+    },
+
+    verifyEmailCode: async (email: string, code: string, displayName?: string, purpose: string = "signin") => {
+        const res = await axios.post(`${API_URL}/auth/email-code/verify`, {
+            email,
+            code,
+            purpose,
+            display_name: displayName,
+        });
+        return res.data as AuthBootstrapPayload;
+    },
+
+    refreshSession: async () => {
+        return await refreshAuthSession();
+    },
+
+    getMe: async () => {
+        const res = await axios.get(`${API_URL}/auth/me`);
+        return res.data as AuthMeResponse;
+    },
+
+    logout: async () => {
+        await axios.post(`${API_URL}/auth/logout`);
+    },
+
+    switchWorkspace: async (workspaceId: string) => {
+        const res = await axios.post(`${API_URL}/auth/workspace/switch`, { workspace_id: workspaceId });
+        return res.data as AuthBootstrapPayload;
+    },
+
+    listWorkspaceMembers: async (): Promise<MembershipWithRole[]> => {
+        const res = await axios.get(`${API_URL}/workspace/members`);
+        return res.data;
+    },
+
+    inviteWorkspaceMember: async (email: string, roleCode: string) => {
+        const res = await axios.post(`${API_URL}/workspace/invitations`, { email, role_code: roleCode });
+        return res.data;
+    },
+
+    updateWorkspaceMemberRole: async (membershipId: string, roleCode: string) => {
+        const res = await axios.patch(`${API_URL}/workspace/members/${membershipId}/role`, { role_code: roleCode });
+        return res.data;
+    },
+
+    deleteWorkspaceMember: async (membershipId: string) => {
+        const res = await axios.delete(`${API_URL}/workspace/members/${membershipId}`);
+        return res.data;
+    },
+
     createProject: async (title: string, text: string, skipAnalysis: boolean = false) => {
         const res = await axios.post(`${API_URL}/projects`, { title, text }, {
             params: { skip_analysis: skipAnalysis }
@@ -291,6 +488,33 @@ export const api = {
     getProjects: async () => {
         const res = await axios.get(`${API_URL}/projects/`);
         return res.data.map((p: any) => ({ ...p, originalText: p.original_text }));
+    },
+
+    getProjectBriefs: async (): Promise<ProjectBrief[]> => {
+        const res = await axios.get(`${API_URL}/projects/briefs`);
+        return res.data;
+    },
+    getProjectSummaries: async (): Promise<ProjectSummary[]> => {
+        try {
+            const res = await axios.get(`${API_URL}/projects/summaries`);
+            return res.data;
+        } catch (error) {
+            console.warn(LOG_PREFIX, "fallback:getProjectSummaries", {
+                detail: error instanceof Error ? error.message : String(error),
+            });
+            const projects = await api.getProjects();
+            return projects.map((project: any) => ({
+                id: project.id,
+                title: project.title,
+                series_id: project.series_id,
+                episode_number: project.episode_number,
+                character_count: project.characters?.length || 0,
+                scene_count: project.scenes?.length || 0,
+                frame_count: project.frames?.length || 0,
+                created_at: project.created_at || project.createdAt,
+                updated_at: project.updated_at || project.updatedAt,
+            }));
+        }
     },
 
     getProject: async (scriptId: string) => {
@@ -849,6 +1073,52 @@ export const api = {
     listSeries: async () => {
         const response = await axios.get(`${API_URL}/series`);
         return response.data;
+    },
+    listSeriesBriefs: async (): Promise<SeriesBrief[]> => {
+        const response = await axios.get(`${API_URL}/series/briefs`);
+        return response.data;
+    },
+    listSeriesSummaries: async (): Promise<SeriesSummary[]> => {
+        try {
+            const response = await axios.get(`${API_URL}/series/summaries`);
+            return response.data;
+        } catch (error) {
+            console.warn(LOG_PREFIX, "fallback:listSeriesSummaries", {
+                detail: error instanceof Error ? error.message : String(error),
+            });
+            const seriesList = await api.listSeries();
+            return seriesList.map((series: any) => ({
+                id: series.id,
+                title: series.title,
+                description: series.description,
+                episode_count: series.episode_ids?.length || 0,
+                character_count: series.characters?.length || 0,
+                scene_count: series.scenes?.length || 0,
+                created_at: series.created_at,
+                updated_at: series.updated_at,
+            }));
+        }
+    },
+    getSeriesEpisodeBriefs: async (seriesId: string): Promise<EpisodeBrief[]> => {
+        try {
+            const response = await axios.get(`${API_URL}/series/${seriesId}/episode_briefs`);
+            return response.data;
+        } catch (error) {
+            console.warn(LOG_PREFIX, "fallback:getSeriesEpisodeBriefs", {
+                seriesId,
+                detail: error instanceof Error ? error.message : String(error),
+            });
+            const episodes = await api.getSeriesEpisodes(seriesId);
+            return episodes.map((episode: any) => ({
+                id: episode.id,
+                title: episode.title,
+                series_id: episode.series_id,
+                episode_number: episode.episode_number,
+                frame_count: episode.frames?.length || 0,
+                created_at: episode.created_at || episode.createdAt,
+                updated_at: episode.updated_at || episode.updatedAt,
+            }));
+        }
     },
     getSeries: async (seriesId: string) => {
         const response = await axios.get(`${API_URL}/series/${seriesId}`);

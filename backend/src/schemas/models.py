@@ -383,8 +383,12 @@ class User(BaseModel):
 
     id: str = Field(..., description="用户唯一标识")
     email: Optional[str] = Field(None, description="邮箱地址")
+    phone: Optional[str] = Field(None, description="手机号")
     display_name: Optional[str] = Field(None, description="显示名称")
+    auth_provider: str = Field("email_otp", description="认证提供方")
+    platform_role: Optional[str] = Field(None, description="平台级角色")
     status: str = Field("active", description="用户状态")
+    last_login_at: Optional[datetime] = Field(None, description="最后登录时间")
     created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
 
@@ -412,3 +416,87 @@ class Membership(BaseModel):
     status: str = Field("active", description="成员关系状态")
     created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class VerificationCode(BaseModel):
+    id: str
+    target_type: str
+    target_value: str
+    purpose: str
+    code_hash: str
+    expires_at: datetime
+    attempt_count: int = 0
+    max_attempts: int = 5
+    consumed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class UserSession(BaseModel):
+    id: str
+    user_id: str
+    current_workspace_id: Optional[str] = None
+    session_token_hash: str
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Invitation(BaseModel):
+    id: str
+    organization_id: str
+    workspace_id: str
+    email: str
+    role_code: str
+    invited_by: Optional[str] = None
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class MembershipWithRole(BaseModel):
+    membership_id: str
+    organization_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
+    user_id: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    role_id: Optional[str] = None
+    role_code: Optional[str] = None
+    role_name: Optional[str] = None
+    status: str = "active"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class WorkspaceOption(BaseModel):
+    organization_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    workspace_id: str
+    workspace_name: Optional[str] = None
+    role_code: Optional[str] = None
+    role_name: Optional[str] = None
+
+
+class AuthSessionPayload(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class AuthMeResponse(BaseModel):
+    user: User
+    current_workspace_id: Optional[str] = None
+    current_organization_id: Optional[str] = None
+    current_role_code: Optional[str] = None
+    current_role_name: Optional[str] = None
+    is_platform_super_admin: bool = False
+    capabilities: List[str] = Field(default_factory=list)
+    workspaces: List[WorkspaceOption] = Field(default_factory=list)
+    memberships: List[MembershipWithRole] = Field(default_factory=list)

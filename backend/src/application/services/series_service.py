@@ -22,7 +22,14 @@ class SeriesService:
         self.series_repository = SeriesRepository()
         self.project_repository = ProjectRepository()
 
-    def create_series(self, title: str, description: str = ""):
+    def create_series(
+        self,
+        title: str,
+        description: str = "",
+        organization_id: str | None = None,
+        workspace_id: str | None = None,
+        created_by: str | None = None,
+    ):
         """创建并持久化一个空的系列聚合。"""
         # 系列创建会成为多个分集的上游容器，这里记录基础元数据方便回溯来源。
         logger.info("SERIES_SERVICE: create_series title=%s has_description=%s", title, bool(description))
@@ -30,6 +37,10 @@ class SeriesService:
             id=str(uuid.uuid4()),
             title=title,
             description=description,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            created_by=created_by,
+            updated_by=created_by,
             created_at=utc_now(),
             updated_at=utc_now(),
         )
@@ -37,10 +48,22 @@ class SeriesService:
         logger.info("SERIES_SERVICE: create_series completed series_id=%s", series.id)
         return series
 
-    def list_series(self):
+    def list_series(self, workspace_id: str | None = None):
         """返回所有系列记录。"""
-        series_list = self.series_repository.list()
+        series_list = self.series_repository.list(workspace_id=workspace_id)
         logger.info("SERIES_SERVICE: list_series count=%s", len(series_list))
+        return series_list
+
+    def list_series_briefs(self, workspace_id: str | None = None):
+        """返回轻量系列摘要，给任务中心等列表页复用。"""
+        series_list = self.series_repository.list_briefs(workspace_id=workspace_id)
+        logger.info("SERIES_SERVICE: list_series_briefs count=%s", len(series_list))
+        return series_list
+
+    def list_series_summaries(self, workspace_id: str | None = None):
+        """返回项目中心系列卡片所需的轻量汇总。"""
+        series_list = self.series_repository.list_summaries(workspace_id=workspace_id)
+        logger.info("SERIES_SERVICE: list_series_summaries count=%s", len(series_list))
         return series_list
 
     def get_series(self, series_id: str):
@@ -133,7 +156,7 @@ class SeriesService:
         if not series:
             logger.warning("SERIES_SERVICE: get_episodes series_missing series_id=%s", series_id)
             raise ValueError("Series not found")
-        episodes = [project for project in self.project_repository.list() if project.series_id == series_id]
+        episodes = [project for project in self.project_repository.list(workspace_id=series.workspace_id) if project.series_id == series_id]
         logger.info("SERIES_SERVICE: get_episodes series_id=%s count=%s", series_id, len(episodes))
         return episodes
 

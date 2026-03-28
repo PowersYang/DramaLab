@@ -14,6 +14,7 @@ class TenantAdminApiTest(unittest.TestCase):
         self.env_path.write_text(f"DATABASE_URL=sqlite:///{db_path}\n", encoding="utf-8")
 
         from src.db.base import Base
+        from src.auth.dependencies import require_platform_role
         from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory, init_database
 
@@ -28,6 +29,7 @@ class TenantAdminApiTest(unittest.TestCase):
 
         app = FastAPI()
         app.include_router(tenant_admin_router)
+        app.dependency_overrides[require_platform_role] = lambda: None
         self.client = TestClient(app)
 
     def tearDown(self):

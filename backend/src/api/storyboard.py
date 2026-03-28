@@ -6,11 +6,12 @@ import os
 import shutil
 import uuid
 
-from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
 from ..application.services import StoryboardFrameService
 from ..application.services import AssetService
 from ..application.tasks import TaskService
+from ..auth.dependencies import get_request_context
 from ..application.workflows import StoryboardWorkflow
 from ..schemas.models import Script
 from ..common import logger, signed_response
@@ -29,7 +30,7 @@ from ..schemas.requests import (
 from ..schemas.task_models import TaskReceipt
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_request_context)])
 storyboard_frame_service = StoryboardFrameService()
 storyboard_workflow = StoryboardWorkflow()
 asset_service = AssetService()

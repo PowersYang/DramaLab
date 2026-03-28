@@ -1,14 +1,87 @@
 from typing import Dict, Iterable, List
 
+from sqlalchemy import func
+
 from .base import BaseRepository
 from .mappers import _audit_time_kwargs, _soft_delete_series_graph, _insert_series_children, _tenant_kwargs, hydrate_series_map, replace_series_graph
-from ..db.models import SeriesRecord
+from ..db.models import CharacterRecord, ProjectRecord, SceneRecord, SeriesRecord
 from ..schemas.models import Series
 
 
 class SeriesRepository(BaseRepository[Series]):
-    def list(self) -> List[Series]:
-        return list(self.list_map().values())
+    def list_summaries(self, workspace_id: str | None = None) -> List[dict]:
+        """返回项目中心系列卡片所需的轻量汇总数据。"""
+        with self._with_session() as session:
+            query = self._active_filter(session.query(SeriesRecord))
+            if workspace_id is not None:
+                query = query.filter(SeriesRecord.workspace_id == workspace_id)
+            rows = query.order_by(SeriesRecord.updated_at.desc(), SeriesRecord.id.asc()).all()
+            if not rows:
+                return []
+
+            series_ids = [row.id for row in rows]
+            episode_counts = dict(
+                session.query(ProjectRecord.series_id, func.count(ProjectRecord.id))
+                .filter(
+                    ProjectRecord.is_deleted.is_(False),
+                    ProjectRecord.series_id.in_(series_ids),
+                )
+                .group_by(ProjectRecord.series_id)
+                .all()
+            )
+            character_counts = dict(
+                session.query(CharacterRecord.owner_id, func.count(CharacterRecord.id))
+                .filter(
+                    CharacterRecord.is_deleted.is_(False),
+                    CharacterRecord.owner_type == "series",
+                    CharacterRecord.owner_id.in_(series_ids),
+                )
+                .group_by(CharacterRecord.owner_id)
+                .all()
+            )
+            scene_counts = dict(
+                session.query(SceneRecord.owner_id, func.count(SceneRecord.id))
+                .filter(
+                    SceneRecord.is_deleted.is_(False),
+                    SceneRecord.owner_type == "series",
+                    SceneRecord.owner_id.in_(series_ids),
+                )
+                .group_by(SceneRecord.owner_id)
+                .all()
+            )
+            return [
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "description": row.description,
+                    "episode_count": int(episode_counts.get(row.id, 0)),
+                    "character_count": int(character_counts.get(row.id, 0)),
+                    "scene_count": int(scene_counts.get(row.id, 0)),
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                }
+                for row in rows
+            ]
+
+    def list_briefs(self, workspace_id: str | None = None) -> List[dict]:
+        """返回任务中心等场景需要的轻量系列列表。"""
+        with self._with_session() as session:
+            query = self._active_filter(session.query(SeriesRecord))
+            if workspace_id is not None:
+                query = query.filter(SeriesRecord.workspace_id == workspace_id)
+            rows = query.order_by(SeriesRecord.updated_at.desc(), SeriesRecord.id.asc()).all()
+            return [
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "updated_at": row.updated_at,
+                    "created_at": row.created_at,
+                }
+                for row in rows
+            ]
+
+    def list(self, workspace_id: str | None = None) -> List[Series]:
+        return list(self.list_map(workspace_id=workspace_id).values())
 
     def get(self, series_id: str, include_deleted: bool = False) -> Series | None:
         with self._with_session() as session:
@@ -79,9 +152,12 @@ class SeriesRepository(BaseRepository[Series]):
             self._restore_record(record)
             return hydrate_series_map(session, {series_id}, include_deleted=True)[series_id]
 
-    def list_map(self, include_deleted: bool = False) -> Dict[str, Series]:
+    def list_map(self, include_deleted: bool = False, workspace_id: str | None = None) -> Dict[str, Series]:
         with self._with_session() as session:
-            return hydrate_series_map(session, include_deleted=include_deleted)
+            hydrated = hydrate_series_map(session, include_deleted=include_deleted)
+            if workspace_id is None:
+                return hydrated
+            return {series_id: series for series_id, series in hydrated.items() if series.workspace_id == workspace_id}
 
     def sync(self, items: Iterable[Series]) -> None:
         with self._with_session() as session:

@@ -1,24 +1,163 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 
 import MarketingShell from "@/components/site/MarketingShell";
+import { useAuthStore } from "@/store/authStore";
 
 export default function SignInPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const sendEmailCode = useAuthStore((state) => state.sendEmailCode);
+  const verifyEmailCode = useAuthStore((state) => state.verifyEmailCode);
+
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [code, setCode] = useState("");
+  const [debugCode, setDebugCode] = useState<string | null>(null);
+  const [step, setStep] = useState<"email" | "verify">("email");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const nextPath = searchParams.get("next") || "/studio";
+
   return (
     <MarketingShell>
       <section className="mx-auto flex min-h-[70vh] max-w-7xl items-center px-6 py-16 lg:px-10">
-        <div className="studio-panel mx-auto w-full max-w-xl p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">登录入口</p>
-          <h1 className="mt-4 text-4xl font-bold text-slate-950">登录页面占位</h1>
-          <p className="mt-4 text-sm leading-7 text-slate-600">
-            当前版本以工作台结构重设计为主，认证体系后续再接入。你可以先直接进入工作台体验新的商业化页面框架。
-          </p>
-          <div className="mt-8 flex gap-3">
-            <Link href="/studio" className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white">
-              直接进入工作台
-            </Link>
-            <Link href="/" className="rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">
-              返回官网
-            </Link>
+        <div className="grid w-full gap-10 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="studio-panel p-10">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Sign In</p>
+            <h1 className="mt-4 text-4xl font-bold text-slate-950">邮箱验证码登录到 LumenX Studio</h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">
+              首版支持邮箱验证码登录与注册。验证成功后，新用户会自动创建个人空间；如果你已经收到企业或 MCN 的邀请，也会在登录后自动加入对应工作区。
+            </p>
+            <div className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+              手机号验证码登录已在数据结构中预留，后续会接入短信能力。
+            </div>
+          </div>
+
+          <div className="studio-panel p-10">
+            <div className="space-y-4">
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-slate-800">邮箱</span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@studio.com"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary/50"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-slate-800">显示名称</span>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder="首次注册时会作为个人空间名称的一部分"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary/50"
+                />
+              </label>
+
+              {step === "verify" ? (
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-800">验证码</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    placeholder="输入 6 位验证码"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm tracking-[0.28em] text-slate-900 outline-none transition-colors focus:border-primary/50"
+                  />
+                </label>
+              ) : null}
+
+              {debugCode ? (
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                  当前环境开启了调试验证码回显：<span className="font-semibold">{debugCode}</span>
+                </div>
+              ) : null}
+
+              {error ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-3 pt-2">
+                {step === "email" ? (
+                  <button
+                    disabled={!email.trim() || submitting}
+                    onClick={async () => {
+                      setSubmitting(true);
+                      setError(null);
+                      try {
+                        const result = await sendEmailCode(email, "signin");
+                        setDebugCode(result.debug_code || null);
+                        setStep("verify");
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "验证码发送失败");
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }}
+                    className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {submitting ? "发送中..." : "发送邮箱验证码"}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      disabled={!email.trim() || !code.trim() || submitting}
+                      onClick={async () => {
+                        setSubmitting(true);
+                        setError(null);
+                        try {
+                          await verifyEmailCode(email, code, displayName || undefined, "signin");
+                          router.replace(nextPath);
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "登录失败");
+                        } finally {
+                          setSubmitting(false);
+                        }
+                      }}
+                      className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {submitting ? "登录中..." : "验证并进入工作台"}
+                    </button>
+                    <button
+                      disabled={submitting}
+                      onClick={async () => {
+                        setSubmitting(true);
+                        setError(null);
+                        try {
+                          const result = await sendEmailCode(email, "signin");
+                          setDebugCode(result.debug_code || null);
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "验证码重发失败");
+                        } finally {
+                          setSubmitting(false);
+                        }
+                      }}
+                      className="rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700"
+                    >
+                      重新发送
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-8 text-sm text-slate-500">
+              登录即表示你同意后续接收与账号、安全和工作区邀请相关的通知邮件。
+            </div>
+            <div className="mt-4">
+              <Link href="/" className="text-sm font-semibold text-primary">
+                返回官网
+              </Link>
+            </div>
           </div>
         </div>
       </section>

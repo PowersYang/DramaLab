@@ -111,7 +111,7 @@ export default function StoryboardComposer() {
     const handleDeleteFrame = async (frameId: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
-        if (!confirm("Are you sure you want to delete this frame?")) return;
+        if (!confirm("确认删除这个分镜吗？")) return;
 
         try {
             await crudApi.deleteFrame(currentProject.id, frameId);
@@ -119,7 +119,7 @@ export default function StoryboardComposer() {
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to delete frame:", error);
-            alert("Failed to delete frame");
+            alert("删除分镜失败");
         }
     };
 
@@ -133,7 +133,7 @@ export default function StoryboardComposer() {
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to copy frame:", error);
-            alert("Failed to copy frame");
+            alert("复制分镜失败");
         }
     };
 
@@ -151,7 +151,7 @@ export default function StoryboardComposer() {
             setInsertIndex(null);
         } catch (error) {
             console.error("Failed to create frame:", error);
-            alert("Failed to create frame");
+            alert("创建分镜失败");
         }
     };
 
@@ -177,7 +177,7 @@ export default function StoryboardComposer() {
             // No need to fetch again if optimistic update was correct, but good for safety
         } catch (error) {
             console.error("Failed to reorder frames:", error);
-            alert("Failed to reorder frames");
+            alert("分镜排序失败");
             // Revert on error would be ideal here by fetching project again
             const project = await api.getProject(currentProject.id);
             updateProject(currentProject.id, project);
@@ -194,7 +194,7 @@ export default function StoryboardComposer() {
         // Find the previous frame's selected video
         const prevFrame = sortedFrames[frameIndex - 1];
         if (!prevFrame.selected_video_id) {
-            alert("Previous frame has no selected video.");
+            alert("上一帧还没有选中视频。");
             return;
         }
 
@@ -202,7 +202,7 @@ export default function StoryboardComposer() {
             (t: any) => t.id === prevFrame.selected_video_id && t.status === "completed"
         );
         if (!prevVideo) {
-            alert("Previous frame's video is not completed yet.");
+            alert("上一帧的视频尚未生成完成。");
             return;
         }
 
@@ -212,7 +212,7 @@ export default function StoryboardComposer() {
             updateProject(currentProject!.id, updatedProject);
         } catch (error: any) {
             console.error("Failed to extract last frame:", error);
-            alert(error?.response?.data?.detail || "Failed to extract last frame");
+            alert(error?.response?.data?.detail || "提取上一帧结尾画面失败");
         } finally {
             setExtractingFrameId(null);
         }
@@ -233,7 +233,7 @@ export default function StoryboardComposer() {
             updateProject(currentProject.id, updatedProject);
         } catch (error: any) {
             console.error("Failed to upload frame image:", error);
-            alert(error?.message || "Failed to upload frame image");
+            alert(error?.message || "上传分镜图片失败");
         } finally {
             setUploadTargetFrameId(null);
             if (fileInputRef.current) fileInputRef.current.value = "";
@@ -347,12 +347,12 @@ export default function StoryboardComposer() {
             const updatedProject = await api.getProject(currentProject.id);
             useProjectStore.getState().updateProject(currentProject.id, updatedProject);
             if (["failed", "timed_out"].includes(job.status)) {
-                alert(job.error_message || "Render failed. See console for details.");
+                alert(job.error_message || "渲染失败，请查看控制台详情。");
             }
 
         } catch (error) {
             console.error("Render failed:", error);
-            alert("Render failed. See console for details.");
+            alert("渲染失败，请查看控制台详情。");
         } finally {
             removeRenderingFrame(frame.id);
         }
@@ -363,7 +363,7 @@ export default function StoryboardComposer() {
             {/* Top Toolbar */}
             <div className="flex-shrink-0 p-4 border-b border-white/10 flex items-center justify-between bg-black/20">
                 <h3 className="font-bold text-sm flex items-center gap-2">
-                    <Layout size={16} className="text-primary" /> Storyboard Frames
+                    <Layout size={16} className="text-primary" /> 分镜列表
                 </h3>
                 <div className="flex items-center gap-3">
                     <button
@@ -386,7 +386,7 @@ export default function StoryboardComposer() {
                     </button>
                     <div className="w-px h-4 bg-white/10" />
                     <span className="text-xs text-gray-500 font-mono">
-                        {currentProject?.frames?.length || 0} Frames
+                        {currentProject?.frames?.length || 0} 个分镜
                     </span>
                 </div>
             </div>
@@ -401,7 +401,7 @@ export default function StoryboardComposer() {
                                 className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors border border-dashed border-white/10 hover:border-white/30"
                             >
                                 <Plus size={16} />
-                                <span className="text-sm font-medium">Insert Frame at Start</span>
+                                <span className="text-sm font-medium">在开头插入分镜</span>
                             </button>
                         </div>
 
@@ -434,7 +434,7 @@ export default function StoryboardComposer() {
                                         ) : (
                                             <div className="w-full h-full flex flex-col items-center justify-center text-gray-600 gap-2">
                                                 <ImageIcon size={24} className="opacity-20" />
-                                                <span className="text-[10px]">No Image</span>
+                                                <span className="text-[10px]">暂无图片</span>
                                             </div>
                                         )
 
@@ -467,7 +467,7 @@ export default function StoryboardComposer() {
                                                     {renderingFrames.has(frame.id) ? (
                                                         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 rounded-lg">
                                                             <Loader2 size={14} className="animate-spin text-white" />
-                                                            <span className="text-xs text-white">Generating...</span>
+                                                            <span className="text-xs text-white">生成中...</span>
                                                         </div>
                                                     ) : (
                                                         <>
@@ -476,7 +476,7 @@ export default function StoryboardComposer() {
                                                                     key={size}
                                                                     onClick={(e) => { e.stopPropagation(); handleRenderFrame(frame, size); }}
                                                                     className="px-2 py-1.5 bg-primary/80 hover:bg-primary text-white rounded text-xs font-bold transition-colors"
-                                                                    title={`Generate ${size} variant${size > 1 ? 's' : ''}`}
+                                                                    title={`生成 ${size} 个变体`}
                                                                 >
                                                                     <div className="flex items-center gap-1">
                                                                         <Wand2 size={12} />
@@ -496,7 +496,7 @@ export default function StoryboardComposer() {
                                         <div className="flex items-start justify-between">
                                             <div className="space-y-1">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Action</span>
+                                                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">动作</span>
                                                     {frame.camera_movement && (
                                                         <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded border border-blue-500/30">
                                                             {frame.camera_movement}
@@ -511,7 +511,7 @@ export default function StoryboardComposer() {
 
                                         {frame.dialogue && (
                                             <div className="mt-auto pt-3 border-t border-white/5">
-                                                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Dialogue</span>
+                                                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">对白</span>
                                                 <p className="text-sm text-gray-400 italic">"{frame.dialogue}"</p>
                                             </div>
                                         )}
@@ -523,7 +523,7 @@ export default function StoryboardComposer() {
                                                     onClick={(e) => handleMoveFrame(index, 'up', e)}
                                                     disabled={index === 0}
                                                     className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                    data-tip="Move Up"
+                                                    data-tip="上移"
                                                 >
                                                     <ArrowUp size={14} />
                                                 </button>
@@ -531,7 +531,7 @@ export default function StoryboardComposer() {
                                                     onClick={(e) => handleMoveFrame(index, 'down', e)}
                                                     disabled={index === sortedFrames.length - 1}
                                                     className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                    data-tip="Move Down"
+                                                    data-tip="下移"
                                                 >
                                                     <ArrowDown size={14} />
                                                 </button>
@@ -540,14 +540,14 @@ export default function StoryboardComposer() {
                                             <button
                                                 onClick={(e) => handleCopyFrame(frame.id, e)}
                                                 className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors"
-                                                data-tip="Duplicate"
+                                                data-tip="复制"
                                             >
                                                 <Copy size={14} />
                                             </button>
                                             <button
                                                 onClick={(e) => handleUploadFrameImage(frame.id, e)}
                                                 className="btn-tip p-2 hover:bg-blue-500/20 text-gray-400 hover:text-blue-400 rounded-lg transition-colors"
-                                                data-tip="Upload Image"
+                                                data-tip="上传图片"
                                             >
                                                 <Upload size={14} />
                                             </button>
@@ -561,7 +561,7 @@ export default function StoryboardComposer() {
                                                         onClick={(e) => handleExtractLastFrame(frame.id, e)}
                                                         disabled={extractingFrameId === frame.id}
                                                         className="btn-tip p-2 hover:bg-purple-500/20 text-gray-400 hover:text-purple-400 rounded-lg transition-colors disabled:opacity-50"
-                                                        data-tip="Use Prev End Frame"
+                                                        data-tip="使用上一帧结尾画面"
                                                     >
                                                         {extractingFrameId === frame.id ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
                                                     </button>
@@ -570,7 +570,7 @@ export default function StoryboardComposer() {
                                             <button
                                                 onClick={(e) => handleDeleteFrame(frame.id, e)}
                                                 className="btn-tip p-2 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded-lg transition-colors"
-                                                data-tip="Delete"
+                                                data-tip="删除"
                                             >
                                                 <Trash2 size={14} />
                                             </button>
@@ -583,7 +583,7 @@ export default function StoryboardComposer() {
                                     <button
                                         onClick={() => { setInsertIndex(index + 1); setIsCreateDialogOpen(true); }}
                                         className="p-1 bg-[#222] border border-white/20 rounded-full text-gray-400 hover:text-white hover:border-primary hover:bg-primary/20 transition-all transform hover:scale-110"
-                                        title="Insert Frame Here"
+                                        title="在这里插入分镜"
                                     >
                                         <Plus size={16} />
                                     </button>
@@ -675,11 +675,11 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
 
     const handleSubmit = async () => {
         if (!action.trim()) {
-            alert("Action description is required");
+            alert("请填写动作描述");
             return;
         }
         if (!sceneId && scenes.length > 0) {
-            alert("Please select a scene");
+            alert("请选择场景");
             return;
         }
 
@@ -707,7 +707,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                 <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
                     <div className="flex items-center gap-3">
                         <Plus className="text-primary" size={20} />
-                        <h2 className="text-lg font-bold text-white">Add New Frame</h2>
+                        <h2 className="text-lg font-bold text-white">新增分镜</h2>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
                         <X size={20} className="text-gray-400" />
@@ -716,34 +716,34 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
 
                 <div className="p-6 space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Scene</label>
+                        <label className="block text-sm font-medium text-gray-400 mb-2">场景</label>
                         <select
                             value={sceneId}
                             onChange={(e) => setSceneId(e.target.value)}
                             className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white focus:border-primary/50 focus:outline-none appearance-none"
                         >
-                            <option value="" disabled>Select a scene</option>
+                            <option value="" disabled>请选择场景</option>
                             {scenes.map((s: any) => (
                                 <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Action Description *</label>
+                        <label className="block text-sm font-medium text-gray-400 mb-2">动作描述 *</label>
                         <textarea
                             value={action}
                             onChange={(e) => setAction(e.target.value)}
-                            placeholder="What is happening in this frame?"
+                            placeholder="描述这一帧中发生的内容"
                             rows={3}
                             className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Dialogue (Optional)</label>
+                        <label className="block text-sm font-medium text-gray-400 mb-2">对白（可选）</label>
                         <textarea
                             value={dialogue}
                             onChange={(e) => setDialogue(e.target.value)}
-                            placeholder="Character dialogue..."
+                            placeholder="输入角色对白..."
                             rows={2}
                             className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
                         />
@@ -755,7 +755,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                         onClick={onClose}
                         className="px-6 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors"
                     >
-                        Cancel
+                        取消
                     </button>
                     <button
                         onClick={handleSubmit}
@@ -763,7 +763,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                         className="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                         {isSubmitting && <RefreshCw size={16} className="animate-spin" />}
-                        Create Frame
+                        创建分镜
                     </button>
                 </div>
             </motion.div>

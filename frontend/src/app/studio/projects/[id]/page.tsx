@@ -8,13 +8,13 @@ interface StudioProjectPageProps {
 export default function StudioProjectPage({ params, searchParams }: StudioProjectPageProps) {
   const breadcrumbSegments = searchParams?.seriesId
     ? [
-        { label: "Projects", href: "/studio/projects" },
-        { label: "Series", href: `/studio/series/${searchParams.seriesId}` },
-        { label: "Episode" },
+        { label: "项目中心", href: "/studio/projects" },
+        { label: "系列", href: `/studio/series/${searchParams.seriesId}` },
+        { label: "剧集" },
       ]
     : [
-        { label: "Projects", href: "/studio/projects" },
-        { label: "Project" },
+        { label: "项目中心", href: "/studio/projects" },
+        { label: "项目" },
       ];
 
   return <ProjectClient id={params.id} breadcrumbSegments={breadcrumbSegments} homeHref="/studio/projects" />;

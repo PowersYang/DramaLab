@@ -123,6 +123,12 @@ class EnvConfig(BaseModel):
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
     ARK_API_KEY: Optional[str] = None
+    AUTH_JWT_SECRET: Optional[str] = None
+    AUTH_ACCESS_TOKEN_TTL_MINUTES: Optional[str] = None
+    AUTH_REFRESH_TOKEN_TTL_DAYS: Optional[str] = None
+    AUTH_EMAIL_CODE_TTL_MINUTES: Optional[str] = None
+    AUTH_EXPOSE_TEST_CODE: Optional[str] = None
+    AUTH_PLATFORM_SUPER_ADMIN_EMAILS: Optional[str] = None
     endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -327,6 +333,31 @@ class UpdateMembershipRequest(BaseModel):
     user_id: Optional[str] = None
     role_id: Optional[str] = None
     status: Optional[str] = None
+
+
+class SendEmailCodeRequest(BaseModel):
+    email: str
+    purpose: str = "signin"
+
+
+class VerifyEmailCodeRequest(BaseModel):
+    email: str
+    code: str
+    purpose: str = "signin"
+    display_name: Optional[str] = None
+
+
+class SwitchWorkspaceRequest(BaseModel):
+    workspace_id: str
+
+
+class InviteWorkspaceMemberRequest(BaseModel):
+    email: str
+    role_code: str
+
+
+class UpdateWorkspaceMemberRoleRequest(BaseModel):
+    role_code: str
 
 
 class CopyFrameRequest(BaseModel):

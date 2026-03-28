@@ -1,8 +1,9 @@
 """多租户基础对象 CRUD 路由。"""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..application.services import TenantAdminService
+from ..auth.dependencies import require_platform_role
 from ..common import signed_response
 from ..common.log import get_logger
 from ..schemas.requests import (
@@ -19,7 +20,7 @@ from ..schemas.requests import (
 )
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_platform_role)])
 logger = get_logger(__name__)
 tenant_admin_service = TenantAdminService()
 

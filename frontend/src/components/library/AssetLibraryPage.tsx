@@ -17,6 +17,8 @@ interface AssetSource {
   props: Prop[];
 }
 
+const ASSET_LIBRARY_CACHE_KEY = "dramalab-asset-library-cache-v1";
+
 const buildAssetSources = (seriesList: Series[], projects: Project[]): AssetSource[] => {
   const result: AssetSource[] = [];
 
@@ -49,13 +51,49 @@ const buildAssetSources = (seriesList: Series[], projects: Project[]): AssetSour
   return result;
 };
 
+const readAssetLibraryCache = (): AssetSource[] => {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(ASSET_LIBRARY_CACHE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as { sources?: AssetSource[] } | null;
+    return Array.isArray(parsed?.sources) ? parsed.sources : [];
+  } catch (error) {
+    console.error("Failed to read asset library cache:", error);
+    return [];
+  }
+};
+
+const writeAssetLibraryCache = (sources: AssetSource[]) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      ASSET_LIBRARY_CACHE_KEY,
+      JSON.stringify({
+        updated_at: Date.now(),
+        sources,
+      })
+    );
+  } catch (error) {
+    console.error("Failed to write asset library cache:", error);
+  }
+};
+
 export default function AssetLibraryPage() {
   const cachedSeriesList = useProjectStore((state) => state.seriesList);
   const cachedProjects = useProjectStore((state) => state.projects);
   const setSeriesList = useProjectStore((state) => state.setSeriesList);
   const setProjects = useProjectStore((state) => state.setProjects);
-  const [sources, setSources] = useState<AssetSource[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [sources, setSources] = useState<AssetSource[]>(() => readAssetLibraryCache());
+  const [loading, setLoading] = useState(() => readAssetLibraryCache().length === 0);
   const [activeTab, setActiveTab] = useState<AssetTab>("characters");
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedSources, setCollapsedSources] = useState<Set<string>>(new Set());
@@ -63,9 +101,18 @@ export default function AssetLibraryPage() {
   useEffect(() => {
     // 优先用 store 里的项目/系列缓存秒开页面，再异步刷新后端数据。
     if (cachedSeriesList.length > 0 || cachedProjects.length > 0) {
-      setSources(buildAssetSources(cachedSeriesList, cachedProjects));
+      const nextSources = buildAssetSources(cachedSeriesList, cachedProjects);
+      setSources(nextSources);
+      writeAssetLibraryCache(nextSources);
+      setLoading(false);
     } else {
-      setLoading(true);
+      const sessionCachedSources = readAssetLibraryCache();
+      if (sessionCachedSources.length > 0) {
+        setSources(sessionCachedSources);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
     }
 
     void loadAssets();
@@ -85,7 +132,9 @@ export default function AssetLibraryPage() {
       ]);
       setSeriesList(seriesList);
       setProjects(projects);
-      setSources(buildAssetSources(seriesList as Series[], projects as Project[]));
+      const nextSources = buildAssetSources(seriesList as Series[], projects as Project[]);
+      setSources(nextSources);
+      writeAssetLibraryCache(nextSources);
     } catch (error) {
       console.error("Failed to load asset library:", error);
     } finally {
@@ -127,7 +176,7 @@ export default function AssetLibraryPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <section className="studio-panel p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             {tabs.map((tab) => (
               <button

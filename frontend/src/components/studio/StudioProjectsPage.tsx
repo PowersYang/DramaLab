@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Calendar, ChevronDown, FileText, FileUp, Play, Plus, Trash2 } from "lucide-react";
+import { Calendar, ChevronDown, FileText, FileUp, FolderKanban, Play, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import CreateProjectDialog from "@/components/project/CreateProjectDialog";
 import ImportFileDialog from "@/components/series/ImportFileDialog";
 import CreateSeriesDialog from "@/components/studio/CreateSeriesDialog";
-import { api } from "@/lib/api";
-import { type Project, type Series, useProjectStore } from "@/store/projectStore";
+import { api, type EpisodeBrief, type ProjectSummary, type SeriesSummary } from "@/lib/api";
+import { useProjectStore } from "@/store/projectStore";
 
 const parseTime = (value?: string | number | null) => {
   if (value == null) return 0;
@@ -17,6 +17,8 @@ const parseTime = (value?: string | number | null) => {
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 };
+
+const PROJECTS_DASHBOARD_LOG_PREFIX = "[projects-dashboard]";
 
 type FilterMode = "all" | "series" | "project";
 
@@ -27,8 +29,8 @@ function SeriesResourceCard({
   onDelete,
   onEpisodesChange,
 }: {
-  series: Series;
-  episodes: Project[] | undefined;
+  series: SeriesSummary;
+  episodes: EpisodeBrief[] | undefined;
   episodesLoading: boolean;
   onDelete: (id: string) => void;
   onEpisodesChange: (seriesId: string) => void;
@@ -70,9 +72,9 @@ function SeriesResourceCard({
           </div>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">{series.description || "适合多集项目的共享资产与创作容器。"}</p>
           <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
-            <span>集数 <strong className="text-slate-900">{series.episode_ids?.length || 0}</strong></span>
-            <span>角色 <strong className="text-slate-900">{series.characters?.length || 0}</strong></span>
-            <span>场景 <strong className="text-slate-900">{series.scenes?.length || 0}</strong></span>
+            <span>集数 <strong className="text-slate-900">{series.episode_count || 0}</strong></span>
+            <span>角色 <strong className="text-slate-900">{series.character_count || 0}</strong></span>
+            <span>场景 <strong className="text-slate-900">{series.scene_count || 0}</strong></span>
             <span>更新于 <strong className="text-slate-900">{new Date(parseTime(series.updated_at)).toLocaleDateString("zh-CN")}</strong></span>
           </div>
         </div>
@@ -107,7 +109,7 @@ function SeriesResourceCard({
               >
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">EP {episode.episode_number || "?"}</p>
                 <p className="mt-2 text-sm font-semibold text-slate-950">{episode.title}</p>
-                <p className="mt-1 text-xs text-slate-500">{episode.frames?.length || 0} 分镜 · 进入集数编辑</p>
+                <p className="mt-1 text-xs text-slate-500">{episode.frame_count || 0} 分镜 · 进入集数编辑</p>
               </Link>
             ))}
             {showInlineInput ? (
@@ -155,8 +157,8 @@ function SeriesResourceCard({
   );
 }
 
-function ProjectResourceCard({ project, onDelete }: { project: Project; onDelete: (id: string) => void }) {
-  const createdDate = project.createdAt ? new Date(project.createdAt) : new Date(parseTime(project.created_at));
+function ProjectResourceCard({ project, onDelete }: { project: ProjectSummary; onDelete: (id: string) => void }) {
+  const createdDate = new Date(parseTime(project.created_at));
 
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="studio-panel p-6">
@@ -168,9 +170,9 @@ function ProjectResourceCard({ project, onDelete }: { project: Project; onDelete
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1"><Calendar size={12} /> {Number.isNaN(createdDate.getTime()) ? "-" : createdDate.toLocaleDateString("zh-CN")}</span>
-            <span>角色 {project.characters?.length || 0}</span>
-            <span>场景 {project.scenes?.length || 0}</span>
-            <span>分镜 {project.frames?.length || 0}</span>
+            <span>角色 {project.character_count || 0}</span>
+            <span>场景 {project.scene_count || 0}</span>
+            <span>分镜 {project.frame_count || 0}</span>
           </div>
         </div>
 
@@ -196,48 +198,113 @@ function ProjectResourceCard({ project, onDelete }: { project: Project; onDelete
 }
 
 export default function StudioProjectsPage() {
-  const projects = useProjectStore((state) => state.projects);
-  const seriesList = useProjectStore((state) => state.seriesList);
   const deleteProject = useProjectStore((state) => state.deleteProject);
   const deleteSeries = useProjectStore((state) => state.deleteSeries);
-  const setProjects = useProjectStore((state) => state.setProjects);
-  const setSeriesList = useProjectStore((state) => state.setSeriesList);
 
   const [filter, setFilter] = useState<FilterMode>("all");
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreateSeriesOpen, setIsCreateSeriesOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [showCreateDropdown, setShowCreateDropdown] = useState(false);
-  const [seriesEpisodes, setSeriesEpisodes] = useState<Record<string, Project[]>>({});
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [seriesList, setSeriesList] = useState<SeriesSummary[]>([]);
+  const [seriesEpisodes, setSeriesEpisodes] = useState<Record<string, EpisodeBrief[]>>({});
   const [episodesLoadingBySeries, setEpisodesLoadingBySeries] = useState<Record<string, boolean>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const didInitialLoadRef = useRef(false);
 
-  useEffect(() => {
-    const load = async () => {
-      const [projectsData, seriesData] = await Promise.all([api.getProjects(), api.listSeries()]);
+  const logRequestDuration = async <T,>(label: string, request: Promise<T>) => {
+    const startedAt = performance.now();
+    try {
+      const result = await request;
+      console.info(PROJECTS_DASHBOARD_LOG_PREFIX, "request:end", {
+        label,
+        durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      });
+      return result;
+    } catch (error) {
+      console.error(PROJECTS_DASHBOARD_LOG_PREFIX, "request:error", {
+        label,
+        durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
+  const loadWorkspaceData = async () => {
+    const startedAt = performance.now();
+    try {
+      setLoadError(null);
+      const [projectsData, seriesData] = await Promise.all([
+        logRequestDuration("project-summaries", api.getProjectSummaries()),
+        logRequestDuration("series-summaries", api.listSeriesSummaries()),
+      ]);
       setProjects(projectsData);
       setSeriesList(seriesData);
+      console.info(PROJECTS_DASHBOARD_LOG_PREFIX, "batch:end", {
+        durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        projectCount: projectsData.length,
+        seriesCount: seriesData.length,
+      });
+    } catch (error) {
+      console.error("Failed to load studio projects workspace:", error);
+      setLoadError(error instanceof Error ? error.message : "项目中心加载失败");
+      console.error(PROJECTS_DASHBOARD_LOG_PREFIX, "batch:error", {
+        durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
-      await Promise.all(
-        seriesData.map(async (series: Series) => {
-          try {
-            setEpisodesLoadingBySeries((state) => ({ ...state, [series.id]: true }));
-            const episodes = await api.getSeriesEpisodes(series.id);
-            setSeriesEpisodes((state) => ({ ...state, [series.id]: episodes }));
-          } finally {
+  useEffect(() => {
+    if (didInitialLoadRef.current) {
+      return;
+    }
+    didInitialLoadRef.current = true;
+    void loadWorkspaceData();
+  }, []);
+
+  useEffect(() => {
+    // 项目中心首屏先出卡片，再渐进加载各系列分集，避免首屏被 N 个 episodes 请求阻塞。
+    if (seriesList.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      for (const series of seriesList) {
+        if (cancelled || seriesEpisodes[series.id]) {
+          continue;
+        }
+        try {
+          setEpisodesLoadingBySeries((state) => ({ ...state, [series.id]: true }));
+          const episodes = await logRequestDuration(`episode-briefs:${series.id}`, api.getSeriesEpisodeBriefs(series.id));
+          if (cancelled) return;
+          setSeriesEpisodes((state) => ({ ...state, [series.id]: episodes }));
+        } catch (error) {
+          if (cancelled) return;
+          console.error("Failed to load series episode briefs:", series.id, error);
+        } finally {
+          if (!cancelled) {
             setEpisodesLoadingBySeries((state) => ({ ...state, [series.id]: false }));
           }
-        })
-      );
+        }
+      }
     };
 
-    void load();
-  }, [setProjects, setSeriesList]);
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [seriesList]);
 
   const refreshSeriesEpisodes = async (seriesId: string) => {
     try {
       setEpisodesLoadingBySeries((state) => ({ ...state, [seriesId]: true }));
-      const episodes = await api.getSeriesEpisodes(seriesId);
+      const episodes = await api.getSeriesEpisodeBriefs(seriesId);
       setSeriesEpisodes((state) => ({ ...state, [seriesId]: episodes }));
+      await loadWorkspaceData();
     } catch (error) {
       console.error("Failed to refresh series episodes:", error);
     } finally {
@@ -246,12 +313,31 @@ export default function StudioProjectsPage() {
   };
 
   const standaloneProjects = useMemo(() => projects.filter((project) => !project.series_id), [projects]);
+  const handleDeleteProject = async (id: string) => {
+    await deleteProject(id);
+    await loadWorkspaceData();
+  };
+  const handleDeleteSeries = async (id: string) => {
+    await deleteSeries(id);
+    setSeriesEpisodes((state) => {
+      const next = { ...state };
+      delete next[id];
+      return next;
+    });
+    await loadWorkspaceData();
+  };
 
   const visibleSeries = filter === "project" ? [] : seriesList;
   const visibleProjects = filter === "series" ? [] : standaloneProjects;
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <section className="studio-panel rounded-[1.5rem] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+          项目中心加载失败：{loadError}
+        </section>
+      )}
+
       <section className="studio-panel px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -305,13 +391,13 @@ export default function StudioProjectsPage() {
             series={series}
             episodes={seriesEpisodes[series.id]}
             episodesLoading={episodesLoadingBySeries[series.id] ?? false}
-            onDelete={deleteSeries}
+            onDelete={handleDeleteSeries}
             onEpisodesChange={refreshSeriesEpisodes}
           />
         ))}
 
         {visibleProjects.map((project) => (
-          <ProjectResourceCard key={project.id} project={project} onDelete={deleteProject} />
+          <ProjectResourceCard key={project.id} project={project} onDelete={handleDeleteProject} />
         ))}
 
         {visibleSeries.length === 0 && visibleProjects.length === 0 && (
@@ -319,15 +405,13 @@ export default function StudioProjectsPage() {
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
               <Sparkles size={24} />
             </div>
-            <h3 className="mt-4 text-xl font-bold text-slate-950">工作区已经准备好商业化承载结构</h3>
-            <p className="mt-3 text-sm leading-7 text-slate-500">先创建一个系列或项目，你就会看到新的资源管理方式、任务流和创作入口。</p>
           </div>
         )}
       </section>
 
       <CreateProjectDialog isOpen={isCreateProjectOpen} onClose={() => setIsCreateProjectOpen(false)} />
       <CreateSeriesDialog isOpen={isCreateSeriesOpen} onClose={() => setIsCreateSeriesOpen(false)} />
-      <ImportFileDialog isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onSuccess={() => undefined} />
+      <ImportFileDialog isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onSuccess={() => { void loadWorkspaceData(); }} />
     </div>
   );
 }

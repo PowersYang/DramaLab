@@ -3,11 +3,14 @@
 """
 
 import hashlib
+import time
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from ..application.services import CharacterService, ProjectService, PropService, SceneService
 from ..application.tasks import TaskService
+from ..auth.constants import CAP_ASSET_EDIT, CAP_PROJECT_CREATE, CAP_PROJECT_DELETE, CAP_PROJECT_EDIT
+from ..auth.dependencies import RequestContext, get_request_context, require_capability
 from ..application.workflows import AssetWorkflow
 from ..common.log import get_logger
 from ..providers.text.default_prompts import (
@@ -28,7 +31,7 @@ from ..schemas.requests import (
 from ..schemas.task_models import TaskReceipt
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_request_context)])
 logger = get_logger(__name__)
 project_service = ProjectService()
 character_service = CharacterService()
@@ -39,11 +42,22 @@ task_service = TaskService()
 
 
 @router.post("/projects", response_model=Script)
-async def create_project(request: CreateProjectRequest, skip_analysis: bool = False):
+async def create_project(
+    request: CreateProjectRequest,
+    skip_analysis: bool = False,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_CREATE)),
+):
     """根据小说文本创建新项目。"""
     # 路由层只记录轻量上下文，避免和请求中间件重复打印完整正文。
     logger.info("PROJECT_API: create_project title=%s skip_analysis=%s", request.title, skip_analysis)
-    result = project_service.create_project(request.title, request.text, skip_analysis)
+    result = project_service.create_project(
+        request.title,
+        request.text,
+        skip_analysis,
+        organization_id=context.current_organization_id,
+        workspace_id=context.current_workspace_id,
+        created_by=context.user.id,
+    )
     logger.info("PROJECT_API: create_project completed project_id=%s", result.id)
     return signed_response(result)
 
@@ -54,6 +68,7 @@ async def reparse_project(
     request: ReparseProjectRequest,
     http_request: Request,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
 ):
     """重新解析已有项目文本，并替换其中的实体数据。"""
     request_id = getattr(http_request.state, "request_id", None)
@@ -62,6 +77,8 @@ async def reparse_project(
         project = project_service.get_project(script_id)
         if not project:
             raise ValueError("Script not found")
+        if project.workspace_id != context.current_workspace_id:
+            raise ValueError("Project not found")
         text_digest = hashlib.sha256((request.text or "").encode("utf-8")).hexdigest()[:16]
         receipt = task_service.create_job(
             task_type="project.reparse",
@@ -103,29 +120,65 @@ async def reparse_project(
 
 @router.get("/projects", response_model=list[dict])
 @router.get("/projects/", response_model=list[dict])
-async def list_projects():
+async def list_projects(context: RequestContext = Depends(get_request_context)):
     """列出后端当前保存的全部项目。"""
-    projects = project_service.list_projects()
+    projects = project_service.list_projects(workspace_id=context.current_workspace_id)
+    logger.info("PROJECT_API: list_projects count=%s workspace_id=%s", len(projects), context.current_workspace_id)
+    return signed_response(projects)
     logger.info("PROJECT_API: list_projects count=%s", len(projects))
     return signed_response(projects)
 
 
+@router.get("/projects/briefs", response_model=list[dict])
+async def list_project_briefs(context: RequestContext = Depends(get_request_context)):
+    """返回轻量项目列表，供任务中心等弱依赖页面使用。"""
+    started_at = time.perf_counter()
+    projects = project_service.list_project_briefs(workspace_id=context.current_workspace_id)
+    logger.info(
+        "PROJECT_API: list_project_briefs count=%s duration_ms=%.2f",
+        len(projects),
+        (time.perf_counter() - started_at) * 1000,
+    )
+    return signed_response(projects)
+
+
+@router.get("/projects/summaries", response_model=list[dict])
+async def list_project_summaries(context: RequestContext = Depends(get_request_context)):
+    """返回项目中心卡片所需的轻量汇总数据。"""
+    started_at = time.perf_counter()
+    projects = project_service.list_project_summaries(workspace_id=context.current_workspace_id)
+    logger.info(
+        "PROJECT_API: list_project_summaries count=%s duration_ms=%.2f",
+        len(projects),
+        (time.perf_counter() - started_at) * 1000,
+    )
+    return signed_response(projects)
+
+
 @router.get("/projects/{script_id}", response_model=Script)
-async def get_project(script_id: str):
+async def get_project(script_id: str, context: RequestContext = Depends(get_request_context)):
     """按项目 ID 读取项目详情。"""
     script = project_service.get_project(script_id)
     if not script:
         logger.warning("PROJECT_API: get_project not_found script_id=%s", script_id)
+        raise HTTPException(status_code=404, detail="Project not found")
+    if script.workspace_id != context.current_workspace_id:
         raise HTTPException(status_code=404, detail="Project not found")
     logger.info("PROJECT_API: get_project hit script_id=%s", script_id)
     return signed_response(script)
 
 
 @router.delete("/projects/{script_id}")
-async def delete_project(script_id: str):
+async def delete_project(
+    script_id: str,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_DELETE)),
+):
     """按 ID 删除项目。注意：这是永久删除。"""
     try:
         logger.info("PROJECT_API: delete_project script_id=%s", script_id)
+        project = project_service.get_project(script_id)
+        if not project or project.workspace_id != context.current_workspace_id:
+            raise ValueError("Project not found")
         result = project_service.delete_project(script_id)
         logger.info("PROJECT_API: delete_project completed script_id=%s", script_id)
         return result
@@ -138,12 +191,18 @@ async def delete_project(script_id: str):
 
 
 @router.post("/projects/{script_id}/sync_descriptions", response_model=TaskReceipt)
-async def sync_descriptions(script_id: str, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+async def sync_descriptions(
+    script_id: str,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
     """把脚本模块里的实体描述同步回素材模块。"""
     try:
         logger.info("PROJECT_API: sync_descriptions script_id=%s", script_id)
         project = project_service.get_project(script_id)
         if not project:
+            raise ValueError("Script not found")
+        if project.workspace_id != context.current_workspace_id:
             raise ValueError("Script not found")
         receipt = task_service.create_job(
             task_type="project.sync_descriptions",
@@ -167,9 +226,16 @@ async def sync_descriptions(script_id: str, idempotency_key: str | None = Header
 
 
 @router.post("/projects/{script_id}/characters", response_model=Script)
-async def add_character(script_id: str, request: AddCharacterRequest):
+async def add_character(
+    script_id: str,
+    request: AddCharacterRequest,
+    context: RequestContext = Depends(require_capability(CAP_ASSET_EDIT)),
+):
     """新增角色。"""
     try:
+        project = project_service.get_project(script_id)
+        if not project or project.workspace_id != context.current_workspace_id:
+            raise ValueError("Script not found")
         updated_script = character_service.create_character(script_id, request.name, request.description)
         return signed_response(updated_script)
     except ValueError as exc:
@@ -179,9 +245,16 @@ async def add_character(script_id: str, request: AddCharacterRequest):
 
 
 @router.delete("/projects/{script_id}/characters/{char_id}", response_model=Script)
-async def delete_character(script_id: str, char_id: str):
+async def delete_character(
+    script_id: str,
+    char_id: str,
+    context: RequestContext = Depends(require_capability(CAP_ASSET_EDIT)),
+):
     """删除角色。"""
     try:
+        project = project_service.get_project(script_id)
+        if not project or project.workspace_id != context.current_workspace_id:
+            raise ValueError("Script not found")
         updated_script = character_service.delete_character(script_id, char_id)
         return signed_response(updated_script)
     except ValueError as exc:
@@ -191,9 +264,16 @@ async def delete_character(script_id: str, char_id: str):
 
 
 @router.post("/projects/{script_id}/scenes", response_model=Script)
-async def add_scene(script_id: str, request: AddSceneRequest):
+async def add_scene(
+    script_id: str,
+    request: AddSceneRequest,
+    context: RequestContext = Depends(require_capability(CAP_ASSET_EDIT)),
+):
     """新增场景。"""
     try:
+        project = project_service.get_project(script_id)
+        if not project or project.workspace_id != context.current_workspace_id:
+            raise ValueError("Script not found")
         updated_script = scene_service.create_scene(script_id, request.name, request.description)
         return signed_response(updated_script)
     except ValueError as exc:
@@ -203,9 +283,16 @@ async def add_scene(script_id: str, request: AddSceneRequest):
 
 
 @router.delete("/projects/{script_id}/scenes/{scene_id}", response_model=Script)
-async def delete_scene(script_id: str, scene_id: str):
+async def delete_scene(
+    script_id: str,
+    scene_id: str,
+    context: RequestContext = Depends(require_capability(CAP_ASSET_EDIT)),
+):
     """删除场景。"""
     try:
+        project = project_service.get_project(script_id)
+        if not project or project.workspace_id != context.current_workspace_id:
+            raise ValueError("Script not found")
         updated_script = scene_service.delete_scene(script_id, scene_id)
         return signed_response(updated_script)
     except ValueError as exc:
@@ -215,10 +302,17 @@ async def delete_scene(script_id: str, scene_id: str):
 
 
 @router.patch("/projects/{script_id}/style", response_model=Script)
-async def update_project_style(script_id: str, request: UpdateStyleRequest):
+async def update_project_style(
+    script_id: str,
+    request: UpdateStyleRequest,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
     """更新项目的全局风格设置。"""
     try:
         logger.info("PROJECT_API: update_project_style script_id=%s style_preset=%s", script_id, request.style_preset)
+        project = project_service.get_project(script_id)
+        if not project or project.workspace_id != context.current_workspace_id:
+            raise ValueError("Script not found")
         updated_script = project_service.update_style(script_id, request.style_preset, request.style_prompt)
         logger.info("PROJECT_API: update_project_style completed script_id=%s", script_id)
         return signed_response(updated_script)

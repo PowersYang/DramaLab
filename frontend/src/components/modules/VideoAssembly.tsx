@@ -82,12 +82,12 @@ export default function VideoAssembly() {
             console.error("Failed to merge videos:", error);
 
             // Extract detailed error message from backend
-            const errorDetail = extractErrorDetail(error, "Unknown error occurred during video merge");
+            const errorDetail = extractErrorDetail(error, "视频合成时发生未知错误");
 
             setMergeError(errorDetail);
 
             // Also show alert for immediate feedback
-            alert(`Failed to merge videos:\n\n${errorDetail}`);
+            alert(`视频合成失败：\n\n${errorDetail}`);
         } finally {
             setIsMerging(false);
         }
@@ -101,7 +101,7 @@ export default function VideoAssembly() {
             // 当前下载链路统一依赖后端返回的稳定 OSS 地址，不再走本地 /files 代理。
             const url = getAssetUrl(currentProject.merged_video_url);
             if (!url) {
-                throw new Error("Merged video URL is empty");
+                throw new Error("合成视频地址为空");
             }
 
             const response = await fetch(url);
@@ -115,7 +115,7 @@ export default function VideoAssembly() {
             setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
         } catch (error) {
             console.error("Failed to download video:", error);
-            alert("Failed to download video. Please try again.");
+            alert("下载视频失败，请稍后重试。");
         } finally {
             setIsDownloading(false);
         }
@@ -137,11 +137,11 @@ export default function VideoAssembly() {
                     <div className="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-black/20">
                         <h2 className="font-bold text-lg flex items-center gap-2">
                             <Film className="text-primary" size={20} />
-                            Assembly Timeline
+                            组装时间线
                         </h2>
                         <div className="text-sm text-gray-400">
                             <span className="text-white font-bold">{currentProject?.frames?.filter((f: any) => f.selected_video_id).length}</span>
-                            /{currentProject?.frames?.length} frames ready
+                            /{currentProject?.frames?.length} 帧已就绪
                         </div>
                     </div>
 
@@ -188,11 +188,11 @@ export default function VideoAssembly() {
                                                 <div className="absolute inset-0 flex items-center justify-center">
                                                     {hasVideos ? (
                                                         <div className="bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded text-xs font-bold border border-yellow-500/50">
-                                                            Select Video
+                                                            选择视频
                                                         </div>
                                                     ) : (
                                                         <div className="bg-red-500/20 text-red-500 px-2 py-1 rounded text-xs font-bold border border-red-500/50">
-                                                            No Videos
+                                                            暂无视频
                                                         </div>
                                                     )}
                                                 </div>
@@ -209,7 +209,7 @@ export default function VideoAssembly() {
                                             <div className="flex items-start gap-2">
                                                 <FileText size={14} className="text-gray-500 mt-0.5 flex-shrink-0" />
                                                 <p className="text-sm text-gray-300 line-clamp-2 leading-relaxed">
-                                                    {frame.image_prompt || frame.action_description || "No prompt available"}
+                                                    {frame.image_prompt || frame.action_description || "暂无提示词"}
                                                 </p>
                                             </div>
                                             {frame.dialogue && (
@@ -249,7 +249,7 @@ export default function VideoAssembly() {
                             className="bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
                             {isMerging ? <Loader2 className="animate-spin" /> : <Film />}
-                            Merge & Proceed
+                            合成并继续
                         </button>
                     </div>
 
@@ -264,7 +264,7 @@ export default function VideoAssembly() {
                                 <div className="flex items-start gap-3">
                                     <AlertTriangle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
                                     <div className="flex-1">
-                                        <h4 className="text-sm font-bold text-red-400 mb-1">Merge Failed</h4>
+                                        <h4 className="text-sm font-bold text-red-400 mb-1">合成失败</h4>
                                         <p className="text-xs text-red-300/90 whitespace-pre-wrap leading-relaxed font-mono">
                                             {mergeError}
                                         </p>
@@ -275,7 +275,7 @@ export default function VideoAssembly() {
                                                 rel="noopener noreferrer"
                                                 className="text-xs text-blue-400 hover:text-blue-300 underline mt-2 inline-block"
                                             >
-                                                Download FFmpeg →
+                                                下载 FFmpeg →
                                             </a>
                                         )}
                                         <button
@@ -296,7 +296,7 @@ export default function VideoAssembly() {
                     <div className="h-14 border-b border-white/10 flex items-center justify-between px-4 bg-black/20">
                         <h3 className="font-bold text-sm">Variants</h3>
                         {selectedFrameId && (
-                            <span className="text-xs text-gray-500">Frame #{(currentProject?.frames?.findIndex((f: any) => f.id === selectedFrameId) ?? -1) + 1}</span>
+                            <span className="text-xs text-gray-500">镜头 #{(currentProject?.frames?.findIndex((f: any) => f.id === selectedFrameId) ?? -1) + 1}</span>
                         )}
                     </div>
 
@@ -335,7 +335,7 @@ export default function VideoAssembly() {
 
                                                     {isSelected ? (
                                                         <div className="w-full py-2 bg-green-500/10 text-green-500 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border border-green-500/20">
-                                                            <Check size={14} /> Selected
+                                                            <Check size={14} /> 已选中
                                                         </div>
                                                     ) : (
                                                         <button
@@ -367,7 +367,7 @@ export default function VideoAssembly() {
                 </div>
             </div>
 
-            {/* Bottom Section: Merged Video Preview */}
+            {/* Bottom Section: 合成视频预览 */}
             <AnimatePresence>
                 {currentProject?.merged_video_url && (
                     <motion.div
@@ -391,7 +391,7 @@ export default function VideoAssembly() {
                             <div className="flex-1 flex flex-col justify-center space-y-4">
                                 <div>
                                     <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                        <Check className="text-green-500" /> Merged Video Ready
+                                        <Check className="text-green-500" /> 合成视频已就绪
                                     </h3>
                                     <p className="text-gray-400 mt-1">
                                         All selected clips have been stitched together. You can now proceed to add voiceovers and sound effects.
@@ -405,7 +405,7 @@ export default function VideoAssembly() {
                                         className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg font-bold flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         <Download size={18} />
-                                        {isDownloading ? "Downloading..." : "Download MP4"}
+                                        {isDownloading ? "下载中..." : "下载 MP4"}
                                     </button>
                                     {/* Optional: Proceed Button if needed, or user uses sidebar */}
                                 </div>

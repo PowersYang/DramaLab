@@ -131,11 +131,11 @@ export default function VoiceActingStudio() {
         <div className="flex h-full text-white">
             <audio ref={audioRef} onEnded={() => setPlayingAudio(null)} className="hidden" />
 
-            {/* Left Sidebar: Casting Room */}
+            {/* Left Sidebar: 配音角色区 */}
             <div className="w-80 border-r border-white/10 flex flex-col bg-black/20">
                 <div className="p-4 border-b border-white/10">
                     <h3 className="font-display font-bold text-sm flex items-center gap-2">
-                        <Users size={16} className="text-primary" /> Casting Room
+                        <Users size={16} className="text-primary" /> 配音角色区
                     </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -161,7 +161,7 @@ export default function VoiceActingStudio() {
 
                             {/* Voice Selector */}
                             <div className="space-y-1">
-                                <label className="text-[10px] uppercase text-gray-500 font-bold">Assigned Voice</label>
+                                <label className="text-[10px] uppercase text-gray-500 font-bold">已绑定音色</label>
                                 <select
                                     className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary"
                                     value={char.voice_id || ""}
@@ -170,7 +170,7 @@ export default function VoiceActingStudio() {
                                         if (voice) handleBindVoice(char.id, voice.id, voice.name);
                                     }}
                                 >
-                                    <option value="">Select a voice...</option>
+                                    <option value="">请选择音色...</option>
                                     {voices.map(v => (
                                         <option key={v.id} value={v.id}>{v.name}</option>
                                     ))}
@@ -181,7 +181,7 @@ export default function VoiceActingStudio() {
                             <div className="mt-3 space-y-2">
                                 <div>
                                     <label className="flex justify-between text-[10px] text-gray-500 mb-0.5">
-                                        Speed <span>{(charParams[char.id]?.speed ?? 1.0).toFixed(1)}x</span>
+                                        语速 <span>{(charParams[char.id]?.speed ?? 1.0).toFixed(1)}x</span>
                                     </label>
                                     <input type="range" min="0.5" max="2.0" step="0.1"
                                         value={charParams[char.id]?.speed ?? 1.0}
@@ -192,7 +192,7 @@ export default function VoiceActingStudio() {
                                 </div>
                                 <div>
                                     <label className="flex justify-between text-[10px] text-gray-500 mb-0.5">
-                                        Pitch <span>{(charParams[char.id]?.pitch ?? 1.0).toFixed(1)}</span>
+                                        音调 <span>{(charParams[char.id]?.pitch ?? 1.0).toFixed(1)}</span>
                                     </label>
                                     <input type="range" min="0.5" max="2.0" step="0.1"
                                         value={charParams[char.id]?.pitch ?? 1.0}
@@ -203,7 +203,7 @@ export default function VoiceActingStudio() {
                                 </div>
                                 <div>
                                     <label className="flex justify-between text-[10px] text-gray-500 mb-0.5">
-                                        Volume <span>{charParams[char.id]?.volume ?? 50}</span>
+                                        音量 <span>{charParams[char.id]?.volume ?? 50}</span>
                                     </label>
                                     <input type="range" min="0" max="100" step="1"
                                         value={charParams[char.id]?.volume ?? 50}
@@ -222,14 +222,14 @@ export default function VoiceActingStudio() {
             <div className="flex-1 flex flex-col relative">
                 {/* Toolbar */}
                 <div className="h-14 border-b border-white/10 bg-black/20 flex items-center px-6 justify-between">
-                    <h2 className="font-display font-bold text-lg">Script Reader</h2>
+                    <h2 className="font-display font-bold text-lg">对白脚本</h2>
                     <button
                         onClick={handleGenerateAll}
                         disabled={isGenerating}
                         className="bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap flex-shrink-0 transition-all disabled:opacity-50"
                     >
                         {isGenerating ? <Wand2 className="animate-spin" size={16} /> : <Mic size={16} />}
-                        {isGenerating ? "Generating..." : "Generate All Audio"}
+                        {isGenerating ? "生成中..." : "生成全部音频"}
                     </button>
                 </div>
 
@@ -258,7 +258,7 @@ export default function VoiceActingStudio() {
                                         )}
                                     </div>
                                     <span className="text-[10px] text-gray-500 text-center leading-tight w-16 truncate">
-                                        {speaker?.name || "Unknown"}
+                                        {speaker?.name || "未知角色"}
                                     </span>
                                 </div>
 
@@ -275,7 +275,7 @@ export default function VoiceActingStudio() {
                                                 <div className="space-y-4">
                                                     <div>
                                                         <label className="flex justify-between text-xs text-gray-400 mb-1">
-                                                            Speed <span>{settings.speed}x</span>
+                                                            语速 <span>{settings.speed}x</span>
                                                         </label>
                                                         <input
                                                             type="range" min="0.5" max="2.0" step="0.1"
@@ -289,7 +289,7 @@ export default function VoiceActingStudio() {
                                                     </div>
                                                     <div>
                                                         <label className="flex justify-between text-xs text-gray-400 mb-1">
-                                                            Pitch <span>{settings.pitch}</span>
+                                                            音调 <span>{settings.pitch}</span>
                                                         </label>
                                                         <input
                                                             type="range" min="0.5" max="2.0" step="0.1"
@@ -303,7 +303,7 @@ export default function VoiceActingStudio() {
                                                     </div>
                                                     <div>
                                                         <label className="flex justify-between text-xs text-gray-400 mb-1">
-                                                            Volume <span>{settings.volume}</span>
+                                                            音量 <span>{settings.volume}</span>
                                                         </label>
                                                         <input
                                                             type="range" min="0" max="100" step="1"
@@ -322,7 +322,7 @@ export default function VoiceActingStudio() {
                                                         }}
                                                         className="w-full bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white text-xs py-2 rounded-lg font-bold transition-all"
                                                     >
-                                                        Regenerate with Settings
+                                                        按当前设置重新生成
                                                     </button>
                                                 </div>
                                             </div>
@@ -372,14 +372,14 @@ export default function VoiceActingStudio() {
 
                                         {/* Metadata Footer */}
                                         <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-gray-500">
-                                            <span className="font-mono">Frame {index + 1}</span>
+                                            <span className="font-mono">镜头 {index + 1}</span>
                                             {frame.status === "failed" ? (
-                                                <span className="flex items-center gap-1 text-red-400" title={frame.audio_error || "Generation failed"}>
-                                                    <AlertCircle size={12} /> {frame.audio_error || "Audio generation failed"}
+                                                <span className="flex items-center gap-1 text-red-400" title={frame.audio_error || "生成失败"}>
+                                                    <AlertCircle size={12} /> {frame.audio_error || "音频生成失败"}
                                                 </span>
                                             ) : frame.audio_url ? (
                                                 <span className="flex items-center gap-1 text-green-500">
-                                                    <Check size={12} /> Audio Ready
+                                                    <Check size={12} /> 音频已就绪
                                                 </span>
                                             ) : null}
                                         </div>
@@ -392,7 +392,7 @@ export default function VoiceActingStudio() {
                     {(!currentProject?.frames?.some((f: any) => f.dialogue)) && (
                         <div className="text-center text-gray-500 py-20">
                             <Volume2 size={48} className="mx-auto mb-4 opacity-20" />
-                            <p>No dialogue found in this script.</p>
+                            <p>当前剧本中暂无对白内容。</p>
                         </div>
                     )}
                 </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video } from "lucide-react";
+import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, Sun, Moon } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
 import type { BreadcrumbSegment } from "@/components/layout/BreadcrumbBar";
@@ -20,9 +20,14 @@ import { useRouter } from "next/navigation";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
+type StudioTheme = "light" | "dark";
+
+const STUDIO_THEME_STORAGE_KEY = "lumenx-studio-theme";
+
 export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/studio/projects" }: { id: string; breadcrumbSegments?: BreadcrumbSegment[]; homeHref?: string }) {
     const router = useRouter();
     const [activeStep, setActiveStep] = useState("script");
+    const [theme, setTheme] = useState<StudioTheme>("light");
 
     const selectProject = useProjectStore((state) => state.selectProject);
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -32,20 +37,33 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
     };
 
     const steps = [
-        { id: "script", label: "1. Script", icon: BookOpen },
-        { id: "art_direction", label: "2. Art Direction", icon: Palette },
-        { id: "assets", label: "3. Assets", icon: Users },
-        { id: "storyboard", label: "4. Storyboard", icon: Layout },
-        { id: "motion", label: "5. Motion", icon: Video },
-        { id: "assembly", label: "6. Assembly", icon: Film },
-        { id: "audio", label: "7. Voice", icon: Mic, comingSoon: true },
-        { id: "mix", label: "8. Final Mix", icon: Music, comingSoon: true },
-        { id: "export", label: "9. Export", icon: Share2, comingSoon: true },
+        { id: "script", label: "剧本处理", icon: BookOpen },
+        { id: "art_direction", label: "美术设定", icon: Palette },
+        { id: "assets", label: "资产制作", icon: Users },
+        { id: "storyboard", label: "分镜设计", icon: Layout },
+        { id: "motion", label: "视频生成", icon: Video },
+        { id: "assembly", label: "视频组装", icon: Film },
+        { id: "audio", label: "配音制作", icon: Mic },
+        { id: "mix", label: "最终混剪", icon: Music },
+        { id: "export", label: "导出成片", icon: Share2 },
     ];
 
     useEffect(() => {
         selectProject(id);
     }, [id, selectProject]);
+
+    useEffect(() => {
+        // 读取本地主题偏好，让项目制作页和工作台的视觉习惯保持连续。
+        const savedTheme = window.localStorage.getItem(STUDIO_THEME_STORAGE_KEY);
+        if (savedTheme === "light" || savedTheme === "dark") {
+            setTheme(savedTheme);
+        }
+    }, []);
+
+    useEffect(() => {
+        // 持久化主题偏好，避免每次重新打开项目都回到默认状态。
+        window.localStorage.setItem(STUDIO_THEME_STORAGE_KEY, theme);
+    }, [theme]);
 
     if (!currentProject) {
         return (
@@ -63,13 +81,16 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
         );
     }
 
-    const segments = breadcrumbSegments || [{ label: "Projects", href: homeHref }, { label: currentProject.title }];
+    const segments = breadcrumbSegments || [{ label: "项目中心", href: homeHref }, { label: currentProject.title }];
 
     return (
-        <main className="flex h-screen w-screen bg-background overflow-hidden relative">
+        <main
+            data-studio-theme={theme}
+            className="studio-theme-root flex h-screen w-screen overflow-hidden relative bg-background"
+        >
             {/* Background Canvas */}
             <div className="absolute inset-0 z-0 pointer-events-auto">
-                <CreativeCanvas />
+                <CreativeCanvas theme={theme} />
             </div>
 
             {/* Left Sidebar — unified PipelineSidebar with integrated breadcrumb */}
@@ -79,6 +100,36 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
                     onStepChange={setActiveStep}
                     steps={steps}
                     breadcrumbSegments={segments}
+                    headerActions={
+                        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
+                            <button
+                                type="button"
+                                onClick={() => setTheme("light")}
+                                aria-pressed={theme === "light"}
+                                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    theme === "light"
+                                        ? "bg-white text-slate-950 shadow-sm"
+                                        : "text-gray-400 hover:text-white"
+                                }`}
+                            >
+                                <Sun size={14} />
+                                浅色
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTheme("dark")}
+                                aria-pressed={theme === "dark"}
+                                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    theme === "dark"
+                                        ? "bg-primary text-white shadow-sm"
+                                        : "text-gray-400 hover:text-white"
+                                }`}
+                            >
+                                <Moon size={14} />
+                                深色
+                            </button>
+                        </div>
+                    }
                 />
             </div>
 

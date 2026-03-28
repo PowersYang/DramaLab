@@ -6,10 +6,11 @@ import os
 import shutil
 import uuid
 
-from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
 from ..application.services import AssetService, VideoTaskService
 from ..application.tasks import TaskService
+from ..auth.dependencies import get_request_context
 from ..application.workflows import AssetWorkflow
 from ..schemas.models import Script
 from ..common import logger, signed_response
@@ -29,7 +30,7 @@ from ..schemas.task_models import TaskReceipt
 from ..utils.oss_utils import OSSImageUploader
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_request_context)])
 asset_service = AssetService()
 asset_workflow = AssetWorkflow()
 video_task_service = VideoTaskService()

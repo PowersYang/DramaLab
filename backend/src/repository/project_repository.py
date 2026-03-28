@@ -1,14 +1,135 @@
 from typing import Dict, Iterable, List
 
+from sqlalchemy import func
+
 from .base import BaseRepository
 from .mappers import _audit_time_kwargs, _soft_delete_project_graph, _insert_project_children, _tenant_kwargs, hydrate_project_map, replace_project_graph
-from ..db.models import ProjectRecord
+from ..db.models import CharacterRecord, ProjectRecord, SceneRecord, StoryboardFrameRecord
 from ..schemas.models import Script
 
 
 class ProjectRepository(BaseRepository[Script]):
-    def list(self) -> List[Script]:
-        return list(self.list_map().values())
+    def list_summaries(self, workspace_id: str | None = None) -> List[dict]:
+        """返回项目中心卡片所需的轻量汇总数据。"""
+        with self._with_session() as session:
+            records = (
+                self._active_filter(session.query(ProjectRecord))
+                .filter(ProjectRecord.workspace_id == workspace_id) if workspace_id else self._active_filter(session.query(ProjectRecord))
+            )
+            records = (
+                records
+                .order_by(ProjectRecord.updated_at.desc(), ProjectRecord.id.asc())
+                .all()
+            )
+            if not records:
+                return []
+
+            project_ids = [row.id for row in records]
+            character_counts = dict(
+                session.query(CharacterRecord.owner_id, func.count(CharacterRecord.id))
+                .filter(
+                    CharacterRecord.is_deleted.is_(False),
+                    CharacterRecord.owner_type == "project",
+                    CharacterRecord.owner_id.in_(project_ids),
+                )
+                .group_by(CharacterRecord.owner_id)
+                .all()
+            )
+            scene_counts = dict(
+                session.query(SceneRecord.owner_id, func.count(SceneRecord.id))
+                .filter(
+                    SceneRecord.is_deleted.is_(False),
+                    SceneRecord.owner_type == "project",
+                    SceneRecord.owner_id.in_(project_ids),
+                )
+                .group_by(SceneRecord.owner_id)
+                .all()
+            )
+            frame_counts = dict(
+                session.query(StoryboardFrameRecord.project_id, func.count(StoryboardFrameRecord.id))
+                .filter(
+                    StoryboardFrameRecord.is_deleted.is_(False),
+                    StoryboardFrameRecord.project_id.in_(project_ids),
+                )
+                .group_by(StoryboardFrameRecord.project_id)
+                .all()
+            )
+
+            return [
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "series_id": row.series_id,
+                    "episode_number": row.episode_number,
+                    "character_count": int(character_counts.get(row.id, 0)),
+                    "scene_count": int(scene_counts.get(row.id, 0)),
+                    "frame_count": int(frame_counts.get(row.id, 0)),
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                }
+                for row in records
+            ]
+
+    def list_briefs(self, workspace_id: str | None = None) -> List[dict]:
+        """返回任务中心等场景需要的轻量项目列表。"""
+        with self._with_session() as session:
+            query = self._active_filter(session.query(ProjectRecord))
+            if workspace_id is not None:
+                query = query.filter(ProjectRecord.workspace_id == workspace_id)
+            rows = query.order_by(ProjectRecord.updated_at.desc(), ProjectRecord.id.asc()).all()
+            return [
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "series_id": row.series_id,
+                    "episode_number": row.episode_number,
+                    "updated_at": row.updated_at,
+                    "created_at": row.created_at,
+                }
+                for row in rows
+            ]
+
+    def list_episode_briefs(self, series_id: str, workspace_id: str | None = None) -> List[dict]:
+        """返回某个系列下的分集轻量卡片数据。"""
+        with self._with_session() as session:
+            rows = (
+                self._active_filter(session.query(ProjectRecord))
+                .filter(ProjectRecord.series_id == series_id)
+                .filter(ProjectRecord.workspace_id == workspace_id) if workspace_id else self._active_filter(session.query(ProjectRecord)).filter(ProjectRecord.series_id == series_id)
+            )
+            rows = (
+                rows
+                .order_by(ProjectRecord.episode_number.asc().nullslast(), ProjectRecord.created_at.asc(), ProjectRecord.id.asc())
+                .all()
+            )
+            if not rows:
+                return []
+
+            project_ids = [row.id for row in rows]
+            frame_counts = dict(
+                session.query(StoryboardFrameRecord.project_id, func.count(StoryboardFrameRecord.id))
+                .filter(
+                    StoryboardFrameRecord.is_deleted.is_(False),
+                    StoryboardFrameRecord.project_id.in_(project_ids),
+                )
+                .group_by(StoryboardFrameRecord.project_id)
+                .all()
+            )
+            return [
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "series_id": row.series_id,
+                    "episode_number": row.episode_number,
+                    "frame_count": int(frame_counts.get(row.id, 0)),
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                }
+                for row in rows
+            ]
+
+    def list(self, workspace_id: str | None = None) -> List[Script]:
+        return list(self.list_map(workspace_id=workspace_id).values())
 
     def list_all(self, include_deleted: bool = False) -> List[Script]:
         return list(self.list_map(include_deleted=include_deleted).values())
@@ -92,9 +213,12 @@ class ProjectRepository(BaseRepository[Script]):
             self._restore_record(record)
             return hydrate_project_map(session, {project_id}, include_deleted=True)[project_id]
 
-    def list_map(self, include_deleted: bool = False) -> Dict[str, Script]:
+    def list_map(self, include_deleted: bool = False, workspace_id: str | None = None) -> Dict[str, Script]:
         with self._with_session() as session:
-            return hydrate_project_map(session, include_deleted=include_deleted)
+            hydrated = hydrate_project_map(session, include_deleted=include_deleted)
+            if workspace_id is None:
+                return hydrated
+            return {project_id: project for project_id, project in hydrated.items() if project.workspace_id == workspace_id}
 
     def sync(self, items: Iterable[Script]) -> None:
         with self._with_session() as session:

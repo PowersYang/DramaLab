@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Settings, Sliders, Image as ImageIcon, Type, FileText, Users, Layout, Video, Mic, Music, Film, Info, StickyNote, Paintbrush, Wand2, Sparkles } from "lucide-react";
+import { Settings, Sliders, Image as ImageIcon, Type, FileText, Users, Layout, Video, Mic, Music, Film, StickyNote, Palette, Wand2, Sparkles } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useState, useEffect } from "react";
@@ -35,7 +35,7 @@ export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
             case "export":
                 return <ExportInspector />;
             default:
-                return <div className="p-4 text-gray-500">Select a step to view properties.</div>;
+                return <div className="p-4 text-gray-500">请选择左侧步骤查看对应属性。</div>;
         }
     };
 
@@ -43,13 +43,10 @@ export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
         <motion.aside
             initial={{ x: 100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            className="w-64 h-full border-l border-glass-border bg-black/40 backdrop-blur-xl flex flex-col z-50"
+            className="studio-inspector w-72 h-full flex flex-col z-50"
         >
             <div className="p-4 border-b border-glass-border flex items-center justify-between">
-                <h2 className="font-display font-bold text-white flex items-center gap-2">
-                    <Info size={16} className="text-primary" /> Context
-                </h2>
-                <span className="text-xs font-mono text-gray-500 uppercase">{activeStep}</span>
+                <h2 className="font-display font-bold text-white">属性面板</h2>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -71,23 +68,23 @@ function ScriptInspector({ project }: { project: any }) {
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <FileText size={14} /> Project Stats
+                    <FileText size={14} /> 项目统计
                 </h3>
                 <div className="grid grid-cols-2 gap-2">
-                    <StatBox label="Words" value={wordCount} />
-                    <StatBox label="Chars" value={charCount} />
-                    <StatBox label="Scenes" value={sceneCount} />
-                    <StatBox label="Est. Dur" value="~2m" />
+                    <StatBox label="字数" value={wordCount} />
+                    <StatBox label="角色" value={charCount} />
+                    <StatBox label="场景" value={sceneCount} />
+                    <StatBox label="预计时长" value="约2分钟" />
                 </div>
             </div>
 
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <StickyNote size={14} /> Quick Notes
+                    <StickyNote size={14} /> 速记备注
                 </h3>
                 <textarea
                     className="w-full h-32 bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
-                    placeholder="Jot down ideas here..."
+                    placeholder="在这里记录灵感或注意事项..."
                 />
             </div>
 
@@ -137,10 +134,10 @@ function AssetsInspector({ project }: { project: any }) {
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Users size={14} /> Asset Overview
+                    <Users size={14} /> 资产概览
                 </h3>
                 <div className="text-xs text-gray-400">
-                    Manage aspect ratios and view global style settings.
+                    统一管理资产比例和全局风格设定。
                 </div>
             </div>
 
@@ -223,46 +220,40 @@ function ArtDirectionStyleDisplay({ project }: { project: any }) {
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
-                <Paintbrush className="text-primary" size={14} />
-                <h3 className="font-bold text-white text-xs">Art Direction Style</h3>
+                <Palette className="text-primary" size={16} />
+                <h3 className="font-bold text-white text-sm">美术设定</h3>
             </div>
 
             {artDirectionStyle ? (
                 <div className="space-y-3">
                     <div>
-                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Style Name</label>
-                        <div className="text-xs font-bold text-white bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-2.5 rounded-lg border border-white/10">
+                        <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">风格名称</label>
+                        <div className="text-sm font-bold text-white bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-2.5 rounded-lg border border-white/10">
                             {artDirectionStyle.name}
                         </div>
                     </div>
 
                     <div>
-                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Positive Prompt</label>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-20 overflow-y-auto">
-                            {artDirectionStyle.positive_prompt || 'No positive prompt defined'}
+                        <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">正向提示词</label>
+                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed max-h-20 overflow-y-auto">
+                            {artDirectionStyle.positive_prompt || '暂无正向提示词'}
                         </div>
                     </div>
 
                     {artDirectionStyle.negative_prompt && (
                         <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Negative Prompt</label>
-                            <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-16 overflow-y-auto">
+                            <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">负向提示词</label>
+                            <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed max-h-16 overflow-y-auto">
                                 {artDirectionStyle.negative_prompt}
                             </div>
                         </div>
                     )}
-
-                    <div className="pt-2">
-                        <p className="text-[9px] text-gray-500 leading-relaxed">
-                            💡 Tip: Edit style in Step 2 (Art Direction)
-                        </p>
-                    </div>
                 </div>
             ) : (
                 <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
-                    <p className="text-xs text-gray-500 mb-2">No style configured</p>
+                    <p className="text-xs text-gray-500 mb-2">尚未配置美术设定</p>
                     <p className="text-[9px] text-gray-600">
-                        Go to Step 2 (Art Direction) to set up your project's visual style
+                        请前往左侧“美术设定”完成风格配置
                     </p>
                 </div>
             )}
@@ -454,7 +445,7 @@ function StoryboardInspector() {
 
             {/* Dialogue */}
             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Dialogue</label>
+                <label className="text-xs font-bold text-gray-500 uppercase">对白</label>
                 <textarea
                     className="w-full h-16 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.dialogue || ""}

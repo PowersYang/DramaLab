@@ -89,7 +89,7 @@ export default function FinalMixStudio() {
                     id: `clip-${frame.id}-${selectedVideo.id}`,
                     frameId: frame.id,
                     frameOrder: typeof frame.frame_order === "number" ? frame.frame_order : index,
-                    label: `Shot ${typeof frame.frame_order === "number" ? frame.frame_order + 1 : index + 1}`,
+                    label: `镜头 ${typeof frame.frame_order === "number" ? frame.frame_order + 1 : index + 1}`,
                     videoId: selectedVideo.id,
                     videoUrl: getAssetUrl(selectedVideo.video_url),
                     thumbnailUrl: getAssetUrl(frame.rendered_image_url || frame.image_url),
@@ -99,7 +99,7 @@ export default function FinalMixStudio() {
                     dialogue: frame.dialogue || "",
                     hasDialogue: Boolean(frame.audio_url),
                     hasSfx: Boolean(frame.sfx_url),
-                    sfxLabel: frame.action_description ? `SFX: ${frame.action_description.slice(0, 14)}...` : "SFX",
+                    sfxLabel: frame.action_description ? `音效：${frame.action_description.slice(0, 14)}...` : "音效",
                 } satisfies EditableClip;
             })
             .filter((clip): clip is EditableClip => Boolean(clip));
@@ -519,7 +519,7 @@ export default function FinalMixStudio() {
                                 <div className="space-y-1">
                                     <div className="font-medium text-white/70">暂无可编辑片段</div>
                                     <div className="text-sm text-white/40">
-                                        先在 Assembly 中为每一帧选择视频，再来 Final Mix 做重排和裁切。
+                                        先在“视频组装”中为每一帧选择视频，再来这里做重排和裁切。
                                     </div>
                                 </div>
                             </div>
@@ -527,7 +527,7 @@ export default function FinalMixStudio() {
 
                         <div className="absolute inset-x-0 bottom-0 p-4 flex items-end justify-between bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none">
                             <div className="bg-black/50 px-3 py-1 rounded text-xs backdrop-blur-sm">
-                                {activeClip?.label || "No Clip"}
+                                {activeClip?.label || "暂无片段"}
                             </div>
                             <div className="bg-black/50 px-3 py-1 rounded text-xs backdrop-blur-sm font-mono">
                                 {formatTime(currentTime)} / {formatTime(totalDuration)}
@@ -539,8 +539,8 @@ export default function FinalMixStudio() {
                 <div className="w-96 bg-black/20 border-l border-white/10 flex flex-col">
                     <div className="p-4 border-b border-white/10">
                         <h3 className="font-display font-bold text-sm flex items-center gap-2">
-                            <Scissors size={16} className="text-primary" /> Clip Editor
-                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium ml-2">Preview Draft</span>
+                            <Scissors size={16} className="text-primary" /> 片段编辑
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium ml-2">预览草稿</span>
                         </h3>
                         <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
                             当前可进行片段重排和入出点裁切，供预览检查使用；导出链路暂未接入这些编辑参数。
@@ -549,7 +549,7 @@ export default function FinalMixStudio() {
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
                         {clips.length === 0 ? (
-                            <div className="text-sm text-gray-500 text-center py-10">No selected clips</div>
+                            <div className="text-sm text-gray-500 text-center py-10">暂无已选片段</div>
                         ) : (
                             clips.map((clip, index) => {
                                 const clipDuration = Math.max(clip.trimEnd - clip.trimStart, 0.1);
@@ -583,7 +583,7 @@ export default function FinalMixStudio() {
                                                     <span className="text-[10px] text-gray-400 font-mono">{formatTime(clipDuration)}</span>
                                                 </div>
                                                 <div className="text-[11px] text-gray-500 mt-1">
-                                                    Order {index + 1} · In {formatTime(clip.trimStart)} · Out {formatTime(clip.trimEnd)}
+                                                    顺序 {index + 1} · 入点 {formatTime(clip.trimStart)} · 出点 {formatTime(clip.trimEnd)}
                                                 </div>
                                             </div>
                                         </div>
@@ -595,15 +595,15 @@ export default function FinalMixStudio() {
 
                     <div className="border-t border-white/10 p-4 space-y-4">
                         <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-semibold text-white">Trim</h4>
-                            <div className="text-[11px] text-gray-500">{selectedClip ? selectedClip.label : "Select a clip"}</div>
+                            <h4 className="text-sm font-semibold text-white">裁切</h4>
+                            <div className="text-[11px] text-gray-500">{selectedClip ? selectedClip.label : "请选择片段"}</div>
                         </div>
 
                         {selectedClip ? (
                             <>
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs text-gray-400">
-                                        <span>In Point</span>
+                                        <span>入点</span>
                                         <span>{formatTime(selectedClip.trimStart)}</span>
                                     </div>
                                     <input
@@ -619,7 +619,7 @@ export default function FinalMixStudio() {
 
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs text-gray-400">
-                                        <span>Out Point</span>
+                                        <span>出点</span>
                                         <span>{formatTime(selectedClip.trimEnd)}</span>
                                     </div>
                                     <input
@@ -635,31 +635,30 @@ export default function FinalMixStudio() {
 
                                 <div className="grid grid-cols-2 gap-3 text-xs">
                                     <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                                        <div className="text-gray-500">Source</div>
+                                        <div className="text-gray-500">原始时长</div>
                                         <div className="text-white font-mono mt-1">{formatTime(selectedClip.sourceDuration)}</div>
                                     </div>
                                     <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                                        <div className="text-gray-500">Playable</div>
+                                        <div className="text-gray-500">可播放时长</div>
                                         <div className="text-white font-mono mt-1">{formatTime(Math.max(selectedClip.trimEnd - selectedClip.trimStart, 0.1))}</div>
                                     </div>
                                 </div>
                             </>
                         ) : (
-                            <div className="text-xs text-gray-500">Select a clip on the right to trim it.</div>
+                            <div className="text-xs text-gray-500">请先在右侧列表中选择一个片段进行裁切。</div>
                         )}
                     </div>
 
                     <div className="border-t border-white/10 p-4 space-y-3">
                         <h4 className="text-sm font-semibold flex items-center gap-2">
-                            <Sliders size={14} className="text-primary" /> Audio Mixer
-                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium">Beta</span>
+                            <Sliders size={14} className="text-primary" /> 音频混合
                         </h4>
 
                         {[
-                            { id: "video", label: "Video Audio", icon: <Video size={14} /> },
-                            { id: "voice", label: "Dialogue", icon: <Mic size={14} /> },
-                            { id: "sfx", label: "SFX", icon: <Volume2 size={14} /> },
-                            { id: "bgm", label: "Music", icon: <Music size={14} /> },
+                            { id: "video", label: "视频原声", icon: <Video size={14} /> },
+                            { id: "voice", label: "对白", icon: <Mic size={14} /> },
+                            { id: "sfx", label: "音效", icon: <Volume2 size={14} /> },
+                            { id: "bgm", label: "背景音乐", icon: <Music size={14} /> },
                         ].map((track) => (
                             <div key={track.id} className="space-y-2">
                                 <div className="flex justify-between text-xs text-gray-400">
@@ -694,11 +693,11 @@ export default function FinalMixStudio() {
                         <span className="font-mono text-xs text-gray-400 ml-2">
                             {formatTime(currentTime)} / {formatTime(totalDuration)}
                         </span>
-                        <span className="text-xs text-gray-500 ml-3">{totalClipCount} clips</span>
+                        <span className="text-xs text-gray-500 ml-3">{totalClipCount} 个片段</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} className="text-gray-500 hover:text-white">-</button>
-                        <span className="text-xs text-gray-500">Zoom</span>
+                        <span className="text-xs text-gray-500">缩放</span>
                         <button onClick={() => setZoom(Math.min(2, zoom + 0.1))} className="text-gray-500 hover:text-white">+</button>
                     </div>
                 </div>
@@ -728,7 +727,7 @@ export default function FinalMixStudio() {
                     <div className="min-w-full h-full flex flex-col" style={{ width: `${100 * zoom}%` }}>
                         <div className="h-16 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
                             <div className="absolute left-0 top-0 bottom-0 w-28 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                Video
+                                视频
                             </div>
                             <div className="ml-28 flex-1 flex gap-1 h-12">
                                 {clips.map((clip) => (
@@ -748,7 +747,7 @@ export default function FinalMixStudio() {
 
                         <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
                             <div className="absolute left-0 top-0 bottom-0 w-28 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                Dialogue
+                                对白
                             </div>
                             <div className="ml-28 flex-1 flex gap-1 h-8">
                                 {clips.map((clip) => (
@@ -769,7 +768,7 @@ export default function FinalMixStudio() {
 
                         <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
                             <div className="absolute left-0 top-0 bottom-0 w-28 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                SFX
+                                音效
                             </div>
                             <div className="ml-28 flex-1 flex gap-1 h-8">
                                 {clips.map((clip) => (
@@ -792,7 +791,7 @@ export default function FinalMixStudio() {
                                 {clips.length > 0 ? (
                                     <div className="absolute left-0 right-0 top-1 bottom-1 bg-purple-900/40 border border-purple-500/40 rounded mx-1 flex items-center px-4">
                                         <Music size={12} className="text-purple-400 mr-2" />
-                                        <span className="text-[10px] text-purple-300">Cinematic Tension BGM</span>
+                                        <span className="text-[10px] text-purple-300">电影感氛围背景音乐</span>
                                     </div>
                                 ) : null}
                             </div>

@@ -7,14 +7,14 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
+import type { ComponentType, ReactNode } from "react";
 import LumenXBranding from "./LumenXBranding";
 import type { BreadcrumbSegment } from "./BreadcrumbBar";
 
 interface Step {
     id: string;
     label: string;
-    icon: any;
-    comingSoon?: boolean;
+    icon: ComponentType<{ size?: number; className?: string }>;
 }
 
 interface PipelineSidebarProps {
@@ -22,7 +22,7 @@ interface PipelineSidebarProps {
     onStepChange: (stepId: string) => void;
     steps: Step[];
     breadcrumbSegments?: BreadcrumbSegment[];
-    headerActions?: React.ReactNode;
+    headerActions?: ReactNode;
 }
 
 export default function PipelineSidebar({ activeStep, onStepChange, steps, breadcrumbSegments, headerActions }: PipelineSidebarProps) {
@@ -46,7 +46,7 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
         <motion.aside
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            className="w-64 flex-1 min-h-0 border-r border-glass-border bg-black/40 backdrop-blur-xl flex flex-col z-50"
+            className="studio-sidebar w-56 flex-1 min-h-0 flex flex-col z-50"
         >
             {/* Header: breadcrumb navigation or branding */}
             <div className="p-5 border-b border-glass-border">
@@ -56,7 +56,7 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                         <div className="flex items-center gap-1.5">
                             <button
                                 onClick={handleBack}
-                                className="flex-shrink-0 text-gray-400 hover:text-white transition-colors"
+                                className="studio-sidebar-back flex-shrink-0 transition-colors"
                                 title="返回"
                             >
                                 <ChevronLeft size={16} />
@@ -66,18 +66,18 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                                     const isLast = i === breadcrumbSegments.length - 1;
                                     return (
                                         <span key={i} className="flex items-center gap-1 min-w-0">
-                                            {i > 0 && <span className="text-gray-600 flex-shrink-0">&rsaquo;</span>}
+                                            {i > 0 && <span className="studio-sidebar-crumb-separator flex-shrink-0">&rsaquo;</span>}
                                             {(seg.href || seg.hash) && !isLast ? (
                                                 <a
                                                     href={seg.href || seg.hash}
-                                                    className="text-gray-500 hover:text-white transition-colors truncate"
+                                                    className="studio-sidebar-crumb-link transition-colors truncate"
                                                 >
                                                     {seg.label}
                                                 </a>
                                             ) : (
                                                 <span className={clsx(
                                                     "truncate",
-                                                    isLast ? "text-white font-medium" : "text-gray-500"
+                                                    isLast ? "studio-sidebar-crumb-current font-semibold" : "studio-sidebar-crumb-link"
                                                 )}>
                                                     {seg.label}
                                                 </span>
@@ -109,10 +109,10 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                             key={step.id}
                             onClick={() => onStepChange(step.id)}
                             className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group relative overflow-hidden",
+                                "studio-sidebar-step w-full flex items-center gap-2 px-2.5 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
                                 isActive
-                                    ? "bg-primary/10 text-primary border border-primary/20"
-                                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                                    ? "studio-sidebar-step-active text-primary border border-primary/20"
+                                    : "studio-sidebar-step-idle"
                             )}
                         >
                             {isActive && (
@@ -124,41 +124,30 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                                 />
                             )}
 
+                            <div className={clsx(
+                                "studio-sidebar-step-number flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold",
+                                isActive && "studio-sidebar-step-number-active"
+                            )}>
+                                {index + 1}
+                            </div>
+
                             <Icon size={20} className={clsx(
                                 "transition-colors",
-                                step.comingSoon ? "opacity-50" : "",
-                                isActive ? "text-primary" : "group-hover:text-white"
+                                isActive ? "text-primary" : "studio-sidebar-step-icon"
                             )} />
 
-                            <div className="flex flex-col items-start text-sm flex-1">
-                                <div className="flex items-center gap-2">
-                                    <span className={clsx("font-medium", step.comingSoon && "opacity-70")}>{step.label}</span>
-                                    {step.comingSoon && (
-                                        <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium">
-                                            Beta
-                                        </span>
-                                    )}
-                                </div>
-                                <span className="text-[10px] opacity-50 font-mono">STEP 0{index + 1}</span>
+                            <div className="flex flex-col items-start text-[14px] flex-1 leading-tight min-w-0">
+                                <span className="font-semibold">{step.label}</span>
                             </div>
 
                             {isActive && (
-                                <ChevronRight size={16} className="ml-auto opacity-50" />
+                                <ChevronRight size={16} className="ml-auto opacity-60" />
                             )}
                         </button>
                     );
                 })}
             </nav>
 
-            <div className="p-4 border-t border-glass-border">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-white/5 border border-white/5">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent" />
-                    <div className="flex flex-col">
-                        <span className="text-sm font-medium text-white">Project Alpha</span>
-                        <span className="text-xs text-gray-500">v0.1.0</span>
-                    </div>
-                </div>
-            </div>
         </motion.aside>
     );
 }

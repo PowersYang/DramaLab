@@ -81,7 +81,7 @@ export default function ScriptProcessor() {
     const handleDeleteNode = async (node: ScriptNode, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
-        if (!confirm(`Are you sure you want to delete ${node.name}?`)) return;
+        if (!confirm(`确认删除“${node.name}”吗？`)) return;
 
         try {
             if (node.type === "character" && node.id) {
@@ -96,7 +96,7 @@ export default function ScriptProcessor() {
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to delete node:", error);
-            alert("Failed to delete node");
+            alert("删除实体失败");
         }
     };
 
@@ -116,7 +116,7 @@ export default function ScriptProcessor() {
             setIsCreateDialogOpen(false);
         } catch (error) {
             console.error("Failed to create node:", error);
-            alert("Failed to create node");
+            alert("创建实体失败");
         }
     };
 
@@ -187,7 +187,7 @@ export default function ScriptProcessor() {
                             <button
                                 onClick={() => setIsCreateDialogOpen(true)}
                                 className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-colors"
-                                title="Add Entity"
+                                title="新增实体"
                             >
                                 <Plus size={16} />
                             </button>
@@ -253,9 +253,9 @@ export default function ScriptProcessor() {
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.9, opacity: 0 }}
                             onClick={e => e.stopPropagation()}
-                            className="w-[500px] bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden"
+                            className="w-[500px] rounded-xl overflow-hidden border border-white/10 bg-black/30 shadow-2xl"
                         >
-                            <div className="p-6 border-b border-white/10 flex justify-between items-start">
+                            <div className="p-6 border-b border-white/10 bg-black/20 flex justify-between items-start">
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className={`text-xs px-2 py-0.5 rounded uppercase font-bold ${selectedNode.type === "character" ? "bg-blue-500/20 text-blue-400" :
@@ -277,7 +277,7 @@ export default function ScriptProcessor() {
                                     <textarea
                                         value={selectedNode.desc}
                                         onChange={e => handleNodeUpdate({ ...selectedNode, desc: e.target.value })}
-                                        className="glass-input w-full h-24 resize-none text-sm"
+                                        className="w-full h-24 resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
                                     />
                                 </div>
 
@@ -285,33 +285,33 @@ export default function ScriptProcessor() {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs text-gray-500 mb-1">年龄 (Age)</label>
-                                            <input
-                                                type="text"
-                                                value={selectedNode.age || ""}
-                                                onChange={e => handleNodeUpdate({ ...selectedNode, age: e.target.value })}
-                                                className="glass-input w-full text-sm"
-                                                placeholder="e.g. 18"
-                                            />
+                                                <input
+                                                    type="text"
+                                                    value={selectedNode.age || ""}
+                                                    onChange={e => handleNodeUpdate({ ...selectedNode, age: e.target.value })}
+                                                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
+                                                    placeholder="e.g. 18"
+                                                />
                                         </div>
                                         <div>
                                             <label className="block text-xs text-gray-500 mb-1">性别 (Gender)</label>
-                                            <input
-                                                type="text"
-                                                value={selectedNode.gender || ""}
-                                                onChange={e => handleNodeUpdate({ ...selectedNode, gender: e.target.value })}
-                                                className="glass-input w-full text-sm"
-                                                placeholder="e.g. Female"
-                                            />
+                                                <input
+                                                    type="text"
+                                                    value={selectedNode.gender || ""}
+                                                    onChange={e => handleNodeUpdate({ ...selectedNode, gender: e.target.value })}
+                                                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
+                                                    placeholder="e.g. Female"
+                                                />
                                         </div>
                                         <div className="col-span-2">
                                             <label className="block text-xs text-gray-500 mb-1">服装 (Clothing)</label>
-                                            <input
-                                                type="text"
-                                                value={selectedNode.clothing || ""}
-                                                onChange={e => handleNodeUpdate({ ...selectedNode, clothing: e.target.value })}
-                                                className="glass-input w-full text-sm"
-                                                placeholder="e.g. Black Hoodie"
-                                            />
+                                                <input
+                                                    type="text"
+                                                    value={selectedNode.clothing || ""}
+                                                    onChange={e => handleNodeUpdate({ ...selectedNode, clothing: e.target.value })}
+                                                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
+                                                    placeholder="e.g. Black Hoodie"
+                                                />
                                         </div>
                                     </div>
                                 )}
@@ -410,8 +410,8 @@ function CreateEntityDialog({ onClose, onCreate }: { onClose: () => void; onCrea
 
     return (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-[400px] bg-[#1a1a1a] border border-white/10 rounded-xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
-                <h3 className="font-bold text-white">Add New Entity</h3>
+            <div className="w-[400px] rounded-xl border border-white/10 bg-black/30 p-6 space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <h3 className="font-bold text-white">新增实体</h3>
 
                 <div className="flex gap-2 p-1 bg-black/20 rounded-lg">
                     {(["character", "scene", "prop"] as const).map(t => (
@@ -420,34 +420,34 @@ function CreateEntityDialog({ onClose, onCreate }: { onClose: () => void; onCrea
                             onClick={() => setType(t)}
                             className={`flex-1 py-1.5 text-xs font-bold rounded capitalize ${type === t ? "bg-primary text-white" : "text-gray-500 hover:text-white"}`}
                         >
-                            {t}
+                            {t === "character" ? "角色" : t === "scene" ? "场景" : "道具"}
                         </button>
                     ))}
                 </div>
 
                 <div>
-                    <label className="text-xs text-gray-500">Name</label>
+                    <label className="text-xs text-gray-500">名称</label>
                     <input
-                        className="glass-input w-full"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
                         value={name}
                         onChange={e => setName(e.target.value)}
-                        placeholder="Entity Name"
+                        placeholder="输入实体名称"
                     />
                 </div>
 
                 <div>
-                    <label className="text-xs text-gray-500">Description</label>
+                    <label className="text-xs text-gray-500">描述</label>
                     <textarea
-                        className="glass-input w-full h-24 resize-none"
+                        className="w-full h-24 resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
                         value={desc}
                         onChange={e => setDesc(e.target.value)}
-                        placeholder="Visual description..."
+                        placeholder="输入视觉描述..."
                     />
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={onClose} className="px-4 py-2 text-xs text-gray-400 hover:text-white">Cancel</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-primary text-white rounded text-xs font-bold">Create</button>
+                    <button onClick={onClose} className="px-4 py-2 text-xs text-gray-400 hover:text-white">取消</button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-primary text-white rounded text-xs font-bold">创建</button>
                 </div>
             </div>
         </div>

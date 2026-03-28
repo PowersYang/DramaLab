@@ -2,10 +2,14 @@
 系列路由：系列基础信息、分集关系、共享素材与系列级配置。
 """
 
-from fastapi import APIRouter, Header, HTTPException
+import time
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from ..application.tasks import TaskService
-from ..application.services import SeriesService
+from ..application.services import ProjectService, SeriesService
+from ..auth.constants import CAP_ASSET_EDIT, CAP_PROJECT_CREATE, CAP_PROJECT_EDIT
+from ..auth.dependencies import RequestContext, get_request_context, require_capability
 from ..application.workflows import AssetWorkflow, SeriesWorkflow
 from ..common.log import get_logger
 from ..providers.text.default_prompts import (
@@ -28,39 +32,77 @@ from ..schemas.requests import (
 )
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_request_context)])
 logger = get_logger(__name__)
 series_service = SeriesService()
+project_service = ProjectService()
 series_workflow = SeriesWorkflow()
 asset_workflow = AssetWorkflow()
 task_service = TaskService()
 
 
 @router.post("/series")
-async def create_series(request: CreateSeriesRequest):
+async def create_series(
+    request: CreateSeriesRequest,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_CREATE)),
+):
     """创建一个新的系列。"""
     # 系列创建属于项目组织入口，记录标题和是否含描述，便于排查导入或手工创建来源。
     logger.info("SERIES_API: create_series title=%s has_description=%s", request.title, bool(request.description))
-    series = series_service.create_series(request.title, request.description)
+    series = series_service.create_series(
+        request.title,
+        request.description,
+        organization_id=context.current_organization_id,
+        workspace_id=context.current_workspace_id,
+        created_by=context.user.id,
+    )
     logger.info("SERIES_API: create_series completed series_id=%s", series.id)
     return signed_response(series)
 
 
 @router.get("/series")
-async def list_series():
+async def list_series(context: RequestContext = Depends(get_request_context)):
     """列出所有系列。"""
-    series_list = series_service.list_series()
+    series_list = series_service.list_series(workspace_id=context.current_workspace_id)
     logger.info("SERIES_API: list_series count=%s", len(series_list))
     return signed_response(series_list)
 
 
+@router.get("/series/briefs")
+async def list_series_briefs(context: RequestContext = Depends(get_request_context)):
+    """返回轻量系列列表，供任务中心等列表页使用。"""
+    started_at = time.perf_counter()
+    series_list = series_service.list_series_briefs(workspace_id=context.current_workspace_id)
+    logger.info(
+        "SERIES_API: list_series_briefs count=%s duration_ms=%.2f",
+        len(series_list),
+        (time.perf_counter() - started_at) * 1000,
+    )
+    return signed_response(series_list)
+
+
+@router.get("/series/summaries")
+async def list_series_summaries(context: RequestContext = Depends(get_request_context)):
+    """返回项目中心系列卡片所需的轻量汇总数据。"""
+    started_at = time.perf_counter()
+    series_list = series_service.list_series_summaries(workspace_id=context.current_workspace_id)
+    logger.info(
+        "SERIES_API: list_series_summaries count=%s duration_ms=%.2f",
+        len(series_list),
+        (time.perf_counter() - started_at) * 1000,
+    )
+    return signed_response(series_list)
+
+
 @router.get("/series/{series_id}")
-async def get_series(series_id: str):
+async def get_series(series_id: str, context: RequestContext = Depends(get_request_context)):
     """获取系列详情，包括共享素材和分集列表。"""
     logger.info("SERIES_API: get_series series_id=%s", series_id)
     series = series_service.get_series(series_id)
     if not series:
         logger.warning("SERIES_API: get_series not_found series_id=%s", series_id)
+        raise HTTPException(status_code=404, detail="Series not found")
+    if series.workspace_id != context.current_workspace_id:
         raise HTTPException(status_code=404, detail="Series not found")
 
     episodes = series_service.get_episodes(series_id)
@@ -80,13 +122,20 @@ async def get_series(series_id: str):
 
 
 @router.put("/series/{series_id}")
-async def update_series(series_id: str, request: UpdateSeriesRequest):
+async def update_series(
+    series_id: str,
+    request: UpdateSeriesRequest,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
     """更新系列标题或简介。"""
     try:
         updates = {
             key: value for key, value in request.model_dump().items() if value is not None
         }
         logger.info("SERIES_API: update_series series_id=%s fields=%s", series_id, sorted(updates.keys()))
+        existing = series_service.get_series(series_id)
+        if not existing or existing.workspace_id != context.current_workspace_id:
+            raise ValueError("Series not found")
         series = series_service.update_series(series_id, updates)
         logger.info("SERIES_API: update_series completed series_id=%s", series_id)
         return signed_response(series)
@@ -96,10 +145,16 @@ async def update_series(series_id: str, request: UpdateSeriesRequest):
 
 
 @router.delete("/series/{series_id}")
-async def delete_series(series_id: str):
+async def delete_series(
+    series_id: str,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
     """删除系列，并解除与各分集的关联。"""
     try:
         logger.info("SERIES_API: delete_series series_id=%s", series_id)
+        existing = series_service.get_series(series_id)
+        if not existing or existing.workspace_id != context.current_workspace_id:
+            raise ValueError("Series not found")
         series_service.delete_series(series_id)
         logger.info("SERIES_API: delete_series completed series_id=%s", series_id)
         return {"status": "deleted"}
@@ -109,7 +164,11 @@ async def delete_series(series_id: str):
 
 
 @router.post("/series/{series_id}/episodes")
-async def add_episode_to_series(series_id: str, request: AddEpisodeRequest):
+async def add_episode_to_series(
+    series_id: str,
+    request: AddEpisodeRequest,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
     """把一个已有项目挂到系列里，作为某一集。"""
     try:
         logger.info(
@@ -118,6 +177,12 @@ async def add_episode_to_series(series_id: str, request: AddEpisodeRequest):
             request.script_id,
             request.episode_number,
         )
+        existing = series_service.get_series(series_id)
+        project = project_service.get_project(request.script_id)
+        if not existing or existing.workspace_id != context.current_workspace_id:
+            raise ValueError("Series not found")
+        if not project or project.workspace_id != context.current_workspace_id:
+            raise ValueError("Script not found")
         series = series_service.add_episode(series_id, request.script_id, request.episode_number)
         logger.info("SERIES_API: add_episode_to_series completed series_id=%s", series_id)
         return signed_response(series)
@@ -127,10 +192,17 @@ async def add_episode_to_series(series_id: str, request: AddEpisodeRequest):
 
 
 @router.delete("/series/{series_id}/episodes/{script_id}")
-async def remove_episode_from_series(series_id: str, script_id: str):
+async def remove_episode_from_series(
+    series_id: str,
+    script_id: str,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
     """把某一集从系列里移除，但不删除项目本身。"""
     try:
         logger.info("SERIES_API: remove_episode_from_series series_id=%s script_id=%s", series_id, script_id)
+        existing = series_service.get_series(series_id)
+        if not existing or existing.workspace_id != context.current_workspace_id:
+            raise ValueError("Series not found")
         series = series_service.remove_episode(series_id, script_id)
         logger.info("SERIES_API: remove_episode_from_series completed series_id=%s", series_id)
         return signed_response(series)
@@ -140,9 +212,12 @@ async def remove_episode_from_series(series_id: str, script_id: str):
 
 
 @router.get("/series/{series_id}/episodes")
-async def get_series_episodes(series_id: str):
+async def get_series_episodes(series_id: str, context: RequestContext = Depends(get_request_context)):
     """获取某个系列下的全部分集。"""
     try:
+        existing = series_service.get_series(series_id)
+        if not existing or existing.workspace_id != context.current_workspace_id:
+            raise ValueError("Series not found")
         episodes = series_service.get_episodes(series_id)
         logger.info("SERIES_API: get_series_episodes series_id=%s count=%s", series_id, len(episodes))
         return signed_response(episodes)
@@ -151,12 +226,33 @@ async def get_series_episodes(series_id: str):
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.get("/series/{series_id}/episode_briefs")
+async def get_series_episode_briefs(series_id: str, context: RequestContext = Depends(get_request_context)):
+    """获取某个系列下的轻量分集列表，避免列表页加载完整项目聚合。"""
+    try:
+        started_at = time.perf_counter()
+        series = series_service.get_series(series_id)
+        if not series or series.workspace_id != context.current_workspace_id:
+            raise ValueError("Series not found")
+        episodes = project_service.list_episode_briefs(series_id, workspace_id=context.current_workspace_id)
+        logger.info(
+            "SERIES_API: get_series_episode_briefs series_id=%s count=%s duration_ms=%.2f",
+            series_id,
+            len(episodes),
+            (time.perf_counter() - started_at) * 1000,
+        )
+        return signed_response(episodes)
+    except ValueError as exc:
+        logger.warning("SERIES_API: get_series_episode_briefs failed series_id=%s detail=%s", series_id, exc)
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.get("/series/{series_id}/prompt_config")
-async def get_series_prompt_config(series_id: str):
+async def get_series_prompt_config(series_id: str, context: RequestContext = Depends(get_request_context)):
     """读取系列级提示词配置，并带上系统默认值。"""
     logger.info("SERIES_API: get_series_prompt_config series_id=%s", series_id)
     series = series_service.get_series(series_id)
-    if not series:
+    if not series or series.workspace_id != context.current_workspace_id:
         logger.warning("SERIES_API: get_series_prompt_config not_found series_id=%s", series_id)
         raise HTTPException(status_code=404, detail="Series not found")
     return {

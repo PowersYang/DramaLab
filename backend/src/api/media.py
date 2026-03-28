@@ -5,10 +5,11 @@
 import hashlib
 import json
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from ..application.tasks import TaskService
 from ..application.services import ProjectService, VideoTaskService
+from ..auth.dependencies import get_request_context
 from ..application.workflows import MediaWorkflow
 from ..schemas.models import Script
 from ..common import logger, signed_response
@@ -23,7 +24,7 @@ from ..schemas.requests import (
 from ..schemas.task_models import TaskReceipt
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_request_context)])
 video_task_service = VideoTaskService()
 media_workflow = MediaWorkflow()
 project_service = ProjectService()

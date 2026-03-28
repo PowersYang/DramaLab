@@ -13,8 +13,12 @@ def _to_user(record: UserRecord) -> User:
     return User(
         id=record.id,
         email=record.email,
+        phone=record.phone,
         display_name=record.display_name,
+        auth_provider=record.auth_provider,
+        platform_role=record.platform_role,
         status=record.status,
+        last_login_at=record.last_login_at,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -44,13 +48,22 @@ class UserRepository(BaseRepository[User]):
                 UserRecord(
                     id=user.id,
                     email=user.email,
+                    phone=user.phone,
                     display_name=user.display_name,
+                    auth_provider=user.auth_provider,
+                    platform_role=user.platform_role,
                     status=user.status,
+                    last_login_at=user.last_login_at,
                     created_at=user.created_at,
                     updated_at=user.updated_at,
                 )
             )
         return user
+
+    def get_by_phone(self, phone: str) -> User | None:
+        with self._with_session() as session:
+            record = session.query(UserRecord).filter(UserRecord.phone == phone).one_or_none()
+            return _to_user(record) if record else None
 
     def update(self, user_id: str, patch: dict) -> User:
         with self._with_session() as session:
