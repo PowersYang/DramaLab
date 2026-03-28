@@ -15,6 +15,12 @@ ACTIVE_JOB_STATUSES = ("queued", "claimed", "running", "retry_waiting", "cancel_
 
 
 class TaskJobRepository(BaseRepository[TaskJob]):
+    """任务主表仓储。
+
+    这里同时服务项目页的定向查询和任务中心的聚合查询，
+    避免前端再自己拼装“先拿项目再逐个拉任务”的脆弱链路。
+    """
+
     def create(self, job: TaskJob) -> TaskJob:
         with self._with_session() as session:
             session.merge(_task_job_record(job))
@@ -52,6 +58,33 @@ class TaskJobRepository(BaseRepository[TaskJob]):
             if statuses:
                 query = query.filter(TaskJobRecord.status.in_(list(statuses)))
             rows = query.order_by(TaskJobRecord.created_at.desc()).all()
+            return [_task_job_from_record(row) for row in rows]
+
+    def list_jobs(
+        self,
+        *,
+        project_id: str | None = None,
+        series_id: str | None = None,
+        statuses: Iterable[str] | None = None,
+        limit: int | None = 200,
+    ) -> list[TaskJob]:
+        """按可选维度聚合查询任务。
+
+        任务中心页需要直接展示最近任务；这里统一支持按项目、系列和状态过滤，
+        并允许携带 limit，避免一次性扫出过多历史记录。
+        """
+        with self._with_session() as session:
+            query = session.query(TaskJobRecord)
+            if project_id:
+                query = query.filter(TaskJobRecord.project_id == project_id)
+            if series_id:
+                query = query.filter(TaskJobRecord.series_id == series_id)
+            if statuses:
+                query = query.filter(TaskJobRecord.status.in_(list(statuses)))
+            query = query.order_by(TaskJobRecord.created_at.desc())
+            if limit is not None:
+                query = query.limit(limit)
+            rows = query.all()
             return [_task_job_from_record(row) for row in rows]
 
     def list_by_resource(self, resource_type: str, resource_id: str, statuses: Iterable[str] | None = None) -> list[TaskJob]:

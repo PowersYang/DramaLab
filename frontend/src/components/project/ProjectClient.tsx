@@ -16,17 +16,19 @@ import VoiceActingStudio from "@/components/modules/VoiceActingStudio";
 import FinalMixStudio from "@/components/modules/FinalMixStudio";
 import ExportStudio from "@/components/modules/ExportStudio";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
-export default function ProjectClient({ id, breadcrumbSegments }: { id: string; breadcrumbSegments?: BreadcrumbSegment[] }) {
+export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/studio/projects" }: { id: string; breadcrumbSegments?: BreadcrumbSegment[]; homeHref?: string }) {
+    const router = useRouter();
     const [activeStep, setActiveStep] = useState("script");
 
     const selectProject = useProjectStore((state) => state.selectProject);
     const currentProject = useProjectStore((state) => state.currentProject);
 
     const handleBackToHome = () => {
-        window.location.hash = '';
+        router.push(homeHref);
     };
 
     const steps = [
@@ -61,7 +63,7 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
         );
     }
 
-    const segments = breadcrumbSegments || [{ label: "DramaLab", hash: "#/" }, { label: currentProject.title }];
+    const segments = breadcrumbSegments || [{ label: "Projects", href: homeHref }, { label: currentProject.title }];
 
     return (
         <main className="flex h-screen w-screen bg-background overflow-hidden relative">

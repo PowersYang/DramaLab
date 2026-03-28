@@ -195,6 +195,22 @@ class TaskService:
     def list_project_jobs(self, project_id: str, statuses: list[str] | None = None) -> list[TaskJob]:
         return self.task_job_repository.list_by_project(project_id, statuses=statuses)
 
+    def list_jobs(
+        self,
+        *,
+        project_id: str | None = None,
+        series_id: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 200,
+    ) -> list[TaskJob]:
+        """为任务中心提供聚合查询入口。"""
+        return self.task_job_repository.list_jobs(
+            project_id=project_id,
+            series_id=series_id,
+            statuses=statuses,
+            limit=limit,
+        )
+
     def get_job(self, job_id: str) -> TaskJob | None:
         return self.task_job_repository.get(job_id)
 

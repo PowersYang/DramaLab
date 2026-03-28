@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useProjectStore } from "@/store/projectStore";
 
 
 interface CreateProjectDialogProps {
     isOpen: boolean;
     onClose: () => void;
+    redirectBasePath?: string;
 }
 
-export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProps) {
+export default function CreateProjectDialog({ isOpen, onClose, redirectBasePath = "/studio/projects" }: CreateProjectDialogProps) {
+    const router = useRouter();
     const [title, setTitle] = useState("");
     const [text, setText] = useState("");
     const [isCreating, setIsCreating] = useState(false);
@@ -27,11 +30,9 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
         setIsCreating(true);
         try {
             await createProject(title, text, true);
-            // Get the newly created project
             const currentProject = useProjectStore.getState().currentProject;
             if (currentProject) {
-                // Use hash-based routing to match the app's routing structure
-                window.location.hash = `#/project/${currentProject.id}`;
+                router.push(`${redirectBasePath}/${currentProject.id}`);
             }
             onClose();
         } catch (error: any) {
@@ -56,14 +57,14 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
                         initial={{ scale: 0.9, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.9, opacity: 0 }}
-                        className="glass-panel p-8 rounded-2xl w-full max-w-2xl"
+                        className="studio-panel w-full max-w-2xl rounded-[2rem] p-8"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-display font-bold text-white">创建新项目</h2>
+                            <h2 className="text-2xl font-display font-bold text-slate-950">创建新项目</h2>
                             <button
                                 onClick={onClose}
-                                className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-950"
                             >
                                 <X size={20} />
                             </button>
@@ -71,7 +72,7 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                <label className="mb-2 block text-sm font-medium text-slate-700">
                                     项目标题
                                 </label>
                                 <input
@@ -79,12 +80,12 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
                                     placeholder="输入项目标题..."
-                                    className="glass-input w-full"
+                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition-colors focus:border-primary focus:bg-white"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                <label className="mb-2 block text-sm font-medium text-slate-700">
                                     脚本内容
                                 </label>
                                 <textarea
@@ -92,21 +93,21 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
                                     onChange={(e) => setText(e.target.value)}
                                     placeholder="粘贴小说或剧本内容..."
                                     rows={10}
-                                    className="glass-input w-full resize-none font-mono text-sm"
+                                    className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm text-slate-900 outline-none transition-colors focus:border-primary focus:bg-white"
                                 />
                             </div>
 
                             <div className="flex gap-3 pt-4">
                                 <button
                                     onClick={onClose}
-                                    className="flex-1 glass-button"
+                                    className="flex-1 rounded-full border border-slate-200 bg-white px-6 py-3 font-medium text-slate-600"
                                 >
                                     取消
                                 </button>
                                 <button
                                     onClick={handleCreate}
                                     disabled={isCreating || !title}
-                                    className="flex-1 bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="flex-1 rounded-full bg-primary px-6 py-3 font-medium text-white transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {isCreating ? "创建中..." : "创建项目"}
                                 </button>

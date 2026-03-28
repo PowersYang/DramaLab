@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Upload, FileText, Loader2, ChevronLeft, ChevronRight, Check, BookOpen } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 
@@ -10,6 +11,7 @@ interface ImportFileDialogProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess?: (result: any) => void;
+    redirectBasePath?: string;
 }
 
 interface EpisodePreview {
@@ -27,7 +29,8 @@ interface PreviewResult {
 
 type Step = 1 | 2 | 3;
 
-export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportFileDialogProps) {
+export default function ImportFileDialog({ isOpen, onClose, onSuccess, redirectBasePath = "/studio/series" }: ImportFileDialogProps) {
+    const router = useRouter();
     const waitForJob = useTaskStore((state) => state.waitForJob);
     // Step state
     const [step, setStep] = useState<Step>(1);
@@ -168,7 +171,7 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportF
     const handleViewSeries = () => {
         if (createdResult) {
             onSuccess?.(createdResult);
-            window.location.hash = `#/series/${createdResult.series_id}`;
+            router.push(`${redirectBasePath}/${createdResult.series_id}`);
         }
         handleClose();
     };
@@ -189,7 +192,7 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess }: ImportF
                         initial={{ scale: 0.9, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.9, opacity: 0 }}
-                        className="glass-panel p-8 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+                        className="studio-panel w-full max-w-3xl max-h-[85vh] flex flex-col rounded-[2rem] p-8"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Header */}

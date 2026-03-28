@@ -28,12 +28,18 @@ async def get_task(job_id: str):
 @router.get("/tasks")
 async def list_tasks(
     project_id: str | None = None,
+    series_id: str | None = None,
     statuses: str | None = Query(None, description="Comma separated task statuses"),
+    limit: int = Query(200, ge=1, le=500, description="Maximum tasks to return"),
 ):
-    if not project_id:
-        raise HTTPException(status_code=400, detail="project_id is required in phase 1")
-    parsed_statuses = [item.strip() for item in statuses.split(",")] if statuses else None
-    jobs = task_service.list_project_jobs(project_id, statuses=parsed_statuses)
+    # 任务中心页需要直接拉最近任务，不能再依赖“先枚举项目再逐个查询”。
+    parsed_statuses = [item.strip() for item in statuses.split(",") if item.strip()] if statuses else None
+    jobs = task_service.list_jobs(
+        project_id=project_id,
+        series_id=series_id,
+        statuses=parsed_statuses,
+        limit=limit,
+    )
     return signed_response(jobs)
 
 
@@ -55,4 +61,3 @@ async def retry_task(job_id: str):
     except ValueError as exc:
         logger.warning("TASK_API: retry_task failed job_id=%s detail=%s", job_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
-

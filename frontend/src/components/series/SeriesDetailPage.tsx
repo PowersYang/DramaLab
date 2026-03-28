@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { Image as ImageIcon, Play, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Series, Character, Scene, Prop, Project } from "@/store/projectStore";
 import AssetCard from "@/components/common/AssetCard";
@@ -13,6 +14,7 @@ const ImportAssetsDialog = dynamic(() => import("./ImportAssetsDialog"), { ssr: 
 
 interface SeriesDetailPageProps {
   seriesId: string;
+  homeHref?: string;
 }
 
 type AssetTab = "characters" | "scenes" | "props";
@@ -23,7 +25,8 @@ const ASSET_LABELS: Record<AssetTab, string> = {
   props: "道具",
 };
 
-export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
+export default function SeriesDetailPage({ seriesId, homeHref = "/studio/projects" }: SeriesDetailPageProps) {
+  const router = useRouter();
   const [series, setSeries] = useState<Series | null>(null);
   const [episodes, setEpisodes] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +59,7 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
   }, [seriesId]);
 
   const handleBackToHome = () => {
-    window.location.hash = "";
+    router.push(homeHref);
   };
 
   const handleTitleSave = async () => {
@@ -102,7 +105,7 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
   };
 
   const handleOpenEpisode = (episodeId: string) => {
-    window.location.hash = `#/series/${seriesId}/episode/${episodeId}`;
+    router.push(`/studio/projects/${episodeId}?seriesId=${seriesId}`);
   };
 
   const refreshSeriesData = async () => {
@@ -133,7 +136,7 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
           <p className="text-gray-400 mb-4">系列未找到</p>
-          <a href="#/" className="text-primary hover:underline">返回首页</a>
+          <a href={homeHref} className="text-primary hover:underline">返回首页</a>
         </div>
       </div>
     );

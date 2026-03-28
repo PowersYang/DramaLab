@@ -6,6 +6,7 @@ import {
     ChevronLeft
 } from "lucide-react";
 import clsx from "clsx";
+import { useRouter } from "next/navigation";
 import LumenXBranding from "./LumenXBranding";
 import type { BreadcrumbSegment } from "./BreadcrumbBar";
 
@@ -25,14 +26,19 @@ interface PipelineSidebarProps {
 }
 
 export default function PipelineSidebar({ activeStep, onStepChange, steps, breadcrumbSegments, headerActions }: PipelineSidebarProps) {
+    const router = useRouter();
     const handleBack = () => {
         if (!breadcrumbSegments) return;
-        if (breadcrumbSegments.length >= 2 && breadcrumbSegments[breadcrumbSegments.length - 2].hash) {
-            window.location.hash = breadcrumbSegments[breadcrumbSegments.length - 2].hash!;
-        } else if (breadcrumbSegments[0]?.hash) {
-            window.location.hash = breadcrumbSegments[0].hash;
+        const previous = breadcrumbSegments.length >= 2 ? breadcrumbSegments[breadcrumbSegments.length - 2] : breadcrumbSegments[0];
+        const target = previous?.href || previous?.hash;
+        if (!target) {
+            router.push("/");
+            return;
+        }
+        if (target.startsWith("#")) {
+            window.location.hash = target;
         } else {
-            window.location.hash = "";
+            router.push(target);
         }
     };
 
@@ -61,9 +67,9 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                                     return (
                                         <span key={i} className="flex items-center gap-1 min-w-0">
                                             {i > 0 && <span className="text-gray-600 flex-shrink-0">&rsaquo;</span>}
-                                            {seg.hash && !isLast ? (
+                                            {(seg.href || seg.hash) && !isLast ? (
                                                 <a
-                                                    href={seg.hash}
+                                                    href={seg.href || seg.hash}
                                                     className="text-gray-500 hover:text-white transition-colors truncate"
                                                 >
                                                     {seg.label}

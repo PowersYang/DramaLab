@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Search, Users, MapPin, Package, Image as ImageIcon, ChevronDown, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import AssetCard from "@/components/common/AssetCard";
-import type { Series, Project, Character, Scene, Prop } from "@/store/projectStore";
+import { useProjectStore, type Series, type Project, type Character, type Scene, type Prop } from "@/store/projectStore";
 
 type AssetTab = "characters" | "scenes" | "props";
 
@@ -17,55 +17,75 @@ interface AssetSource {
   props: Prop[];
 }
 
+const buildAssetSources = (seriesList: Series[], projects: Project[]): AssetSource[] => {
+  const result: AssetSource[] = [];
+
+  for (const series of seriesList) {
+    if ((series.characters?.length || 0) + (series.scenes?.length || 0) + (series.props?.length || 0) > 0) {
+      result.push({
+        id: `series-${series.id}`,
+        name: series.title,
+        type: "series",
+        characters: series.characters || [],
+        scenes: series.scenes || [],
+        props: series.props || [],
+      });
+    }
+  }
+
+  for (const project of projects.filter((item) => !item.series_id)) {
+    if ((project.characters?.length || 0) + (project.scenes?.length || 0) + (project.props?.length || 0) > 0) {
+      result.push({
+        id: `project-${project.id}`,
+        name: project.title,
+        type: "project",
+        characters: project.characters || [],
+        scenes: project.scenes || [],
+        props: project.props || [],
+      });
+    }
+  }
+
+  return result;
+};
+
 export default function AssetLibraryPage() {
+  const cachedSeriesList = useProjectStore((state) => state.seriesList);
+  const cachedProjects = useProjectStore((state) => state.projects);
+  const setSeriesList = useProjectStore((state) => state.setSeriesList);
+  const setProjects = useProjectStore((state) => state.setProjects);
   const [sources, setSources] = useState<AssetSource[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<AssetTab>("characters");
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedSources, setCollapsedSources] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    loadAssets();
+    // 优先用 store 里的项目/系列缓存秒开页面，再异步刷新后端数据。
+    if (cachedSeriesList.length > 0 || cachedProjects.length > 0) {
+      setSources(buildAssetSources(cachedSeriesList, cachedProjects));
+    } else {
+      setLoading(true);
+    }
+
+    void loadAssets();
+    // 这里故意只在首次挂载时触发，避免 store 刷新后再次重复请求。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadAssets = async () => {
-    setLoading(true);
+    if (sources.length === 0) {
+      setLoading(true);
+    }
+
     try {
       const [seriesList, projects] = await Promise.all([
         api.listSeries(),
         api.getProjects(),
       ]);
-
-      const result: AssetSource[] = [];
-
-      for (const s of seriesList as Series[]) {
-        if ((s.characters?.length || 0) + (s.scenes?.length || 0) + (s.props?.length || 0) > 0) {
-          result.push({
-            id: `series-${s.id}`,
-            name: s.title,
-            type: "series",
-            characters: s.characters || [],
-            scenes: s.scenes || [],
-            props: s.props || [],
-          });
-        }
-      }
-
-      const standaloneProjects = (projects as Project[]).filter((p) => !p.series_id);
-      for (const p of standaloneProjects) {
-        if ((p.characters?.length || 0) + (p.scenes?.length || 0) + (p.props?.length || 0) > 0) {
-          result.push({
-            id: `project-${p.id}`,
-            name: p.title,
-            type: "project",
-            characters: p.characters || [],
-            scenes: p.scenes || [],
-            props: p.props || [],
-          });
-        }
-      }
-
-      setSources(result);
+      setSeriesList(seriesList);
+      setProjects(projects);
+      setSources(buildAssetSources(seriesList as Series[], projects as Project[]));
     } catch (error) {
       console.error("Failed to load asset library:", error);
     } finally {
@@ -95,10 +115,6 @@ export default function AssetLibraryPage() {
       });
   }, [sources, searchQuery, activeTab]);
 
-  const totalCount = filteredSources.reduce((acc, s) => {
-    return acc + (activeTab === "characters" ? s.characters.length : activeTab === "scenes" ? s.scenes.length : s.props.length);
-  }, 0);
-
   const toggleCollapse = (sourceId: string) => {
     setCollapsedSources((prev) => {
       const next = new Set(prev);
@@ -109,50 +125,47 @@ export default function AssetLibraryPage() {
   };
 
   return (
-    <div className="container mx-auto px-6 py-8 max-w-6xl">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-display font-bold text-white">主体库</h1>
-        <div className="relative w-72">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索资产..."
-            className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 transition-colors"
-          />
+    <div className="mx-auto max-w-7xl space-y-6">
+      <section className="studio-panel p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors ${
+                  activeTab === tab.id
+                    ? "bg-primary text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-950"
+                }`}
+              >
+                <tab.icon size={16} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full lg:w-80">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索资产..."
+              className="w-full rounded-full border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition-colors focus:border-primary focus:bg-white"
+            />
+          </div>
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-gray-700/50 mb-6">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === tab.id
-                ? "border-primary text-white"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <tab.icon size={16} />
-            {tab.label}
-          </button>
-        ))}
-        <div className="flex-1" />
-        <span className="self-center text-xs text-gray-500">{totalCount} 个资产</span>
-      </div>
+      </section>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400">加载中...</div>
+        <div className="studio-panel flex items-center justify-center py-20">
+          <div className="text-slate-500">加载中...</div>
         </div>
       ) : filteredSources.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-          <ImageIcon size={48} className="mb-3 text-gray-600" />
+        <div className="studio-panel flex flex-col items-center justify-center py-20 text-slate-500">
+          <ImageIcon size={48} className="mb-3 text-slate-400" />
           <p className="text-sm">暂无资产</p>
-          <p className="text-xs text-gray-600 mt-1">在系列或项目中生成资产后，它们会出现在这里</p>
+          <p className="mt-1 text-xs text-slate-400">在系列或项目中生成资产后，它们会出现在这里</p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -163,19 +176,19 @@ export default function AssetLibraryPage() {
             const isCollapsed = collapsedSources.has(source.id);
 
             return (
-              <div key={source.id}>
+              <div key={source.id} className="studio-panel p-6">
                 <button
                   onClick={() => toggleCollapse(source.id)}
-                  className="flex items-center gap-2 mb-3 text-sm text-gray-300 hover:text-white transition-colors"
+                  className="mb-4 flex items-center gap-2 text-sm text-slate-600 transition-colors hover:text-slate-950"
                 >
                   {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                   <span className="font-medium">{source.name}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-white/5 text-gray-500">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                     {source.type === "series" ? "系列" : "项目"} · {assets.length}
                   </span>
                 </button>
                 {!isCollapsed && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pl-6">
+                  <div className="grid grid-cols-2 gap-4 pl-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {assets.map((asset) => (
                       <AssetCard key={asset.id} asset={asset} type={activeTab} />
                     ))}

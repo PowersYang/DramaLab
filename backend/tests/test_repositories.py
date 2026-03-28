@@ -272,6 +272,46 @@ class RepositoryPersistenceTest(unittest.TestCase):
         self.assertEqual(reloaded_project.video_tasks, [])
         self.assertIsNotNone(task_repo.get("project_child_2", "task_child_1", include_deleted=True))
 
+    def test_task_job_repository_supports_global_recent_queries(self):
+        from src.repository import TaskJobRepository
+        from src.schemas.task_models import TaskJob, TaskStatus
+
+        repository = TaskJobRepository()
+        now = utc_now()
+        repository.create(
+            TaskJob(
+                id="job_global_1",
+                task_type="project.export",
+                status=TaskStatus.RUNNING,
+                queue_name="export",
+                project_id="project_a",
+                created_at=now,
+                updated_at=now,
+                scheduled_at=now,
+            )
+        )
+        repository.create(
+            TaskJob(
+                id="job_global_2",
+                task_type="series.import.preview",
+                status=TaskStatus.QUEUED,
+                queue_name="system",
+                series_id="series_a",
+                created_at=utc_now(),
+                updated_at=utc_now(),
+                scheduled_at=utc_now(),
+            )
+        )
+
+        all_jobs = repository.list_jobs(limit=10)
+        self.assertEqual([job.id for job in all_jobs], ["job_global_2", "job_global_1"])
+
+        queued_jobs = repository.list_jobs(statuses=["queued"], limit=10)
+        self.assertEqual([job.id for job in queued_jobs], ["job_global_2"])
+
+        project_jobs = repository.list_jobs(project_id="project_a", limit=10)
+        self.assertEqual([job.id for job in project_jobs], ["job_global_1"])
+
     def test_project_soft_delete_hides_graph_from_default_queries(self):
         from src.repository import ProjectRepository
         from src.schemas.models import Character, Script

@@ -45,10 +45,16 @@ export default function AssetCard({ asset, type }: AssetCardProps) {
   const imageUrl = getImageUrl(asset, type);
 
   return (
-    <div className="glass-panel rounded-xl overflow-hidden">
-      <div className="aspect-square bg-gray-800/50 flex items-center justify-center overflow-hidden">
+    <div className="glass-panel overflow-hidden rounded-xl">
+      <div className="flex aspect-square items-center justify-center overflow-hidden bg-gray-800/50">
         {imageUrl ? (
-          <img src={imageUrl} alt={asset.name} className="w-full h-full object-cover" />
+          <img
+            src={imageUrl}
+            alt={asset.name}
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
         ) : (
           <ImageIcon size={32} className="text-gray-600" />
         )}

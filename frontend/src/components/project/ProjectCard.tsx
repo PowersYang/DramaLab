@@ -8,9 +8,10 @@ import { Project } from "@/store/projectStore";
 interface ProjectCardProps {
     project: Project;
     onDelete: (id: string) => void;
+    href?: string;
 }
 
-export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
+export default function ProjectCard({ project, onDelete, href }: ProjectCardProps) {
     const router = useRouter();
     const parseDate = (value?: string | number | null) => {
         // 项目卡片需要同时兼容旧缓存里的时间戳和新接口返回的 datetime 字符串。
@@ -23,7 +24,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
         : parseDate(project.created_at);
 
     const handleOpen = () => {
-        window.location.hash = `#/project/${project.id}`;
+        router.push(href || `/studio/projects/${project.id}`);
     };
 
     const handleDelete = (e: React.MouseEvent) => {
@@ -44,7 +45,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             whileHover={{ scale: 1.02 }}
-            className="glass-panel p-6 rounded-xl cursor-pointer group relative border-l-2 border-l-gray-600"
+            className="studio-panel p-6 rounded-[1.75rem] cursor-pointer group relative"
             onClick={handleOpen}
         >
             <div className="flex items-start justify-between mb-4">

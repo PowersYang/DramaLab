@@ -1,9 +1,11 @@
 "use client";
 
 import { ChevronLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export interface BreadcrumbSegment {
   label: string;
+  href?: string;
   hash?: string;
 }
 
@@ -13,13 +15,20 @@ interface BreadcrumbBarProps {
 }
 
 export default function BreadcrumbBar({ segments, actions }: BreadcrumbBarProps) {
+  const router = useRouter();
   const handleBack = () => {
-    if (segments.length >= 2 && segments[segments.length - 2].hash) {
-      window.location.hash = segments[segments.length - 2].hash!;
-    } else if (segments[0]?.hash) {
-      window.location.hash = segments[0].hash;
+    const previous = segments.length >= 2 ? segments[segments.length - 2] : segments[0];
+    const target = previous?.href || previous?.hash;
+
+    if (!target) {
+      router.push("/");
+      return;
+    }
+
+    if (target.startsWith("#")) {
+      window.location.hash = target;
     } else {
-      window.location.hash = "";
+      router.push(target);
     }
   };
 
@@ -41,9 +50,9 @@ export default function BreadcrumbBar({ segments, actions }: BreadcrumbBarProps)
           return (
             <span key={i} className="flex items-center gap-1.5 min-w-0">
               {i > 0 && <span className="text-gray-600 flex-shrink-0">&rsaquo;</span>}
-              {seg.hash && !isLast ? (
+              {(seg.href || seg.hash) && !isLast ? (
                 <a
-                  href={seg.hash}
+                  href={seg.href || seg.hash}
                   className="text-gray-400 hover:text-white transition-colors truncate"
                 >
                   {seg.label}

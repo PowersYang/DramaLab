@@ -238,6 +238,7 @@ export interface TaskReceipt {
     status: "queued" | "claimed" | "running" | "retry_waiting" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "timed_out";
     queue_name: string;
     project_id?: string;
+    series_id?: string;
     resource_type?: string;
     resource_id?: string;
     source_video_task_id?: string;
@@ -251,6 +252,7 @@ export interface TaskJob {
     queue_name: string;
     priority: number;
     project_id?: string;
+    series_id?: string;
     resource_type?: string;
     resource_id?: string;
     payload_json?: Record<string, any>;
@@ -388,11 +390,17 @@ export const api = {
         return res.data;
     },
 
-    listTasks: async (projectId: string, statuses?: string[]): Promise<TaskJob[]> => {
+    listTasks: async (
+        projectId?: string,
+        statuses?: string[],
+        options?: { seriesId?: string; limit?: number }
+    ): Promise<TaskJob[]> => {
         const res = await axios.get(`${API_URL}/tasks`, {
             params: {
                 project_id: projectId,
+                series_id: options?.seriesId,
                 statuses: statuses?.join(","),
+                limit: options?.limit,
             },
         });
         return res.data;
