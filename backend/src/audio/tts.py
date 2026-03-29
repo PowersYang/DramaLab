@@ -9,7 +9,7 @@ import os
 import time
 from typing import Optional, Tuple
 
-from src.settings.env_settings import get_env
+from ..application.services.model_provider_service import ModelProviderService
 
 try:
     import dashscope
@@ -75,7 +75,7 @@ class TTSProcessor:
         if dashscope is None:
             raise RuntimeError("dashscope package not installed. Run: pip install dashscope")
 
-        self.api_key = api_key or get_env('DASHSCOPE_API_KEY')
+        self.api_key = api_key or ModelProviderService().get_provider_credential("DASHSCOPE", "api_key")
         if self.api_key:
             dashscope.api_key = self.api_key
 

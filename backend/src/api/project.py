@@ -158,13 +158,23 @@ async def list_project_summaries(context: RequestContext = Depends(get_request_c
 @router.get("/projects/{script_id}", response_model=Script)
 async def get_project(script_id: str, context: RequestContext = Depends(get_request_context)):
     """按项目 ID 读取项目详情。"""
+    started_at = time.perf_counter()
     script = project_service.get_project(script_id)
     if not script:
         logger.warning("PROJECT_API: get_project not_found script_id=%s", script_id)
         raise HTTPException(status_code=404, detail="Project not found")
     if script.workspace_id != context.current_workspace_id:
         raise HTTPException(status_code=404, detail="Project not found")
-    logger.info("PROJECT_API: get_project hit script_id=%s", script_id)
+    logger.info(
+        "PROJECT_API: get_project hit script_id=%s characters=%s scenes=%s props=%s frames=%s video_tasks=%s duration_ms=%.2f",
+        script_id,
+        len(script.characters or []),
+        len(script.scenes or []),
+        len(script.props or []),
+        len(script.frames or []),
+        len(script.video_tasks or []),
+        (time.perf_counter() - started_at) * 1000,
+    )
     return signed_response(script)
 
 
@@ -380,7 +390,8 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
         return signed_response(updated_script)
     except ValueError as exc:
         logger.warning("PROJECT_API: update_model_settings not_found script_id=%s detail=%s", script_id, exc)
-        raise HTTPException(status_code=404, detail=str(exc))
+        status_code = 400 if "model" in str(exc).lower() else 404
+        raise HTTPException(status_code=status_code, detail=str(exc))
     except Exception as exc:
         logger.exception("PROJECT_API: update_model_settings failed script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

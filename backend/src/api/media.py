@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 from ..application.tasks import TaskService
 from ..application.services import ProjectService, VideoTaskService
+from ..application.services.model_provider_service import ModelProviderService
 from ..auth.dependencies import get_request_context
 from ..application.workflows import MediaWorkflow
 from ..schemas.models import Script
@@ -29,6 +30,7 @@ video_task_service = VideoTaskService()
 media_workflow = MediaWorkflow()
 project_service = ProjectService()
 task_service = TaskService()
+model_provider_service = ModelProviderService()
 
 
 def _timeline_scope_suffix(final_mix_timeline: dict | None) -> str:
@@ -137,6 +139,9 @@ async def create_video_task(
         )
         logger.info("MEDIA_API: create_video_task completed script_id=%s job_count=%s", script_id, len(receipts))
         return signed_response(receipts)
+    except ValueError as exc:
+        logger.warning("MEDIA_API: create_video_task invalid_request script_id=%s detail=%s", script_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("MEDIA_API: create_video_task unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

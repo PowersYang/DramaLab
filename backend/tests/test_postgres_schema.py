@@ -51,6 +51,8 @@ class PostgresSchemaSqlTest(unittest.TestCase):
         sql_path = Path(__file__).resolve().parent.parent / "scripts" / "postgres_schema.sql"
         sql = sql_path.read_text(encoding="utf-8")
         self.assertIn("create table if not exists style_presets", sql)
+        self.assertIn("create table if not exists model_provider_configs", sql)
+        self.assertIn("create table if not exists model_catalog_entries", sql)
         self.assertIn("create table if not exists projects", sql)
         self.assertIn("id varchar(64) primary key", sql)
         self.assertIn("model_settings jsonb not null default '{}'::jsonb", sql)

@@ -100,7 +100,7 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden shadow-2xl"
+                className="storyboard-modal border border-white/10 rounded-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden shadow-2xl"
             >
                 {/* Header */}
                 <div className="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-black/20">
@@ -129,7 +129,7 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                     </div>
 
                     {/* Right: Controls & Prompt */}
-                    <div className="w-1/3 min-w-[350px] border-l border-white/10 bg-[#111] flex flex-col">
+                    <div className="storyboard-editor-sidebar w-1/3 min-w-[350px] border-l border-white/10 flex flex-col">
                         <div className="p-4 border-b border-white/5">
                             <h3 className="font-bold text-sm uppercase tracking-wider text-gray-400 mb-2">
                                 Scene Context
@@ -151,7 +151,7 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
-                                className="flex-1 w-full bg-black/20 border border-white/10 rounded-lg p-4 text-sm text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
+                                className="storyboard-field flex-1 w-full border border-white/10 rounded-lg p-4 text-sm text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
                                 placeholder="Enter prompt description..."
                             />
                             <p className="text-xs text-gray-500 mt-2">

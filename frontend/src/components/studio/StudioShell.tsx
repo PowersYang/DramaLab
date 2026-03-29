@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { startTransition, type ReactNode, useEffect, useState } from "react";
+import { startTransition, type ReactNode, useState } from "react";
 import { CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, Users2, Workflow } from "lucide-react";
 
 import LumenXBranding from "@/components/layout/LumenXBranding";
@@ -35,15 +35,6 @@ export default function StudioShell({ children, title, description, actions }: S
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
 
   const visibleNavItems = NAV_ITEMS.filter((item) => hasCapability(item.capability));
-
-  useEffect(() => {
-    // 侧栏只预热一级工作区路由，避免像项目中心那样把大量详情页一起预取到主线程里。
-    visibleNavItems.forEach((item) => {
-      if (item.href !== pathname) {
-        router.prefetch(item.href);
-      }
-    });
-  }, [pathname, router, visibleNavItems]);
 
   return (
     <div className="flex min-h-screen bg-[#f4f5f7] text-slate-900">

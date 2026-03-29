@@ -53,13 +53,25 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="studio-panel overflow-hidden bg-slate-950 p-8 text-white">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">生产流程</p>
-            <div className="mt-6 space-y-4">
+          <div className="studio-panel overflow-hidden border-slate-800 bg-slate-950 p-8 text-white shadow-[0_18px_44px_rgba(15,23,42,0.28)]">
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-300">生产流程</p>
+            <h2 className="mt-4 max-w-md font-display text-3xl leading-tight text-white md:text-[2rem]">
+              把剧本拆解、资产生成与视频交付放进同一条生产链。
+            </h2>
+            <p className="mt-4 max-w-lg text-base leading-7 text-slate-300">
+              首页右侧这组流程卡片用于强调 Studio 的完整生产节奏，所以这里统一提升了文字对比度和阅读层次。
+            </p>
+            <div className="mt-8 space-y-4">
+              {/* 用更明确的数字标签和正文层级，避免深色面板里的信息发灰难读。 */}
               {workflow.map((item, index) => (
-                <div key={item} className="flex items-center gap-4 rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-4">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-bold">{index + 1}</div>
-                  <p className="text-sm font-medium text-slate-100">{item}</p>
+                <div
+                  key={item}
+                  className="flex items-center gap-4 rounded-[1.5rem] border border-white/12 bg-white/8 px-5 py-4 backdrop-blur-sm"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-300/12 text-base font-semibold text-cyan-100">
+                    {index + 1}
+                  </div>
+                  <p className="text-base font-semibold leading-7 text-slate-50">{item}</p>
                 </div>
               ))}
             </div>

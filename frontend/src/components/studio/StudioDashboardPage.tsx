@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
-import { api } from "@/lib/api";
-import { useProjectStore } from "@/store/projectStore";
+import { api, type ProjectSummary, type SeriesSummary } from "@/lib/api";
+
+const DASHBOARD_CACHE_KEY = "dramalab-studio-dashboard-cache-v1";
 
 const formatDate = (value?: string | number | null) => {
   if (!value) return "-";
@@ -14,38 +15,91 @@ const formatDate = (value?: string | number | null) => {
   return date.toLocaleDateString("zh-CN");
 };
 
+interface DashboardCachePayload {
+  projects: ProjectSummary[];
+  seriesList: SeriesSummary[];
+  runningTasks: number;
+  updatedAt: number;
+}
+
+const readDashboardCache = (): DashboardCachePayload | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as DashboardCachePayload | null;
+    if (!parsed || !Array.isArray(parsed.projects) || !Array.isArray(parsed.seriesList)) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    console.error("Failed to read dashboard cache:", error);
+    return null;
+  }
+};
+
+const writeDashboardCache = (payload: DashboardCachePayload) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error("Failed to write dashboard cache:", error);
+  }
+};
+
 export default function StudioDashboardPage() {
-  const projects = useProjectStore((state) => state.projects);
-  const seriesList = useProjectStore((state) => state.seriesList);
-  const setProjects = useProjectStore((state) => state.setProjects);
-  const setSeriesList = useProjectStore((state) => state.setSeriesList);
-  const [runningTasks, setRunningTasks] = useState(0);
+  const cached = readDashboardCache();
+  const [projects, setProjects] = useState<ProjectSummary[]>(() => cached?.projects || []);
+  const [seriesList, setSeriesList] = useState<SeriesSummary[]>(() => cached?.seriesList || []);
+  const [runningTasks, setRunningTasks] = useState(() => cached?.runningTasks || 0);
 
   useEffect(() => {
+    let cancelled = false;
+
     const load = async () => {
-      const [projectsData, seriesData] = await Promise.all([api.getProjects(), api.listSeries()]);
-      setProjects(projectsData);
-      setSeriesList(seriesData);
+      try {
+        // 总览页只需要轻量统计和最近条目，避免首次进入时拉完整项目并按项目数做 N+1 任务查询。
+        const [projectsData, seriesData, taskList] = await Promise.all([
+          api.getProjectSummaries(),
+          api.listSeriesSummaries(),
+          api.listTasks(undefined, ["queued", "claimed", "running", "retry_waiting"], { limit: 200 }),
+        ]);
+        if (cancelled) {
+          return;
+        }
 
-      const tasks = await Promise.all(
-        projectsData.map(async (project: { id: string }) => {
-          try {
-            return await api.listTasks(project.id, ["queued", "claimed", "running", "retry_waiting"]);
-          } catch (error) {
-            console.error("Failed to load active tasks for project:", project.id, error);
-            return [];
-          }
-        })
-      );
-
-      setRunningTasks(tasks.flat().length);
+        setProjects(projectsData);
+        setSeriesList(seriesData);
+        setRunningTasks(taskList.length);
+        writeDashboardCache({
+          projects: projectsData,
+          seriesList: seriesData,
+          runningTasks: taskList.length,
+          updatedAt: Date.now(),
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load studio dashboard:", error);
+        }
+      }
     };
 
     void load();
-  }, [setProjects, setSeriesList]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const recentProjects = useMemo(
-    () => [...projects].sort((a, b) => String(b.updated_at || b.updatedAt).localeCompare(String(a.updated_at || a.updatedAt))).slice(0, 4),
+    () => [...projects].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 4),
     [projects]
   );
   const recentSeries = useMemo(
@@ -57,7 +111,7 @@ export default function StudioDashboardPage() {
     { label: "项目总数", value: projects.length, note: "活跃项目与独立创作任务" },
     { label: "系列总数", value: seriesList.length, note: "可复用世界观与资产库" },
     { label: "进行中任务", value: runningTasks, note: "统一追踪异步生成链路" },
-    { label: "最近导出", value: projects.filter((item) => item.merged_video_url).length, note: "已生成可交付成片" },
+    { label: "已建分镜项目", value: projects.filter((item) => (item.frame_count || 0) > 0).length, note: "已进入分镜生产的项目" },
   ];
 
   return (
@@ -88,7 +142,7 @@ export default function StudioDashboardPage() {
                 <Link key={project.id} href={`/studio/projects/${project.id}`} className="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 transition-colors hover:border-primary/40 hover:bg-white">
                   <div>
                     <p className="text-sm font-semibold text-slate-950">{project.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">更新于 {formatDate(project.updated_at || project.updatedAt)} · 分镜 {project.frames?.length || 0}</p>
+                    <p className="mt-1 text-xs text-slate-500">更新于 {formatDate(project.updated_at)} · 分镜 {project.frame_count || 0}</p>
                   </div>
                   <ArrowRight size={16} className="text-slate-400" />
                 </Link>
@@ -109,7 +163,7 @@ export default function StudioDashboardPage() {
               recentSeries.map((series) => (
                 <Link key={series.id} href={`/studio/series/${series.id}`} className="block rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 transition-colors hover:border-primary/40 hover:bg-white">
                   <p className="text-sm font-semibold text-slate-950">{series.title}</p>
-                  <p className="mt-1 text-xs text-slate-500">集数 {series.episode_ids?.length || 0} · 更新于 {formatDate(series.updated_at)}</p>
+                  <p className="mt-1 text-xs text-slate-500">集数 {series.episode_count || 0} · 更新于 {formatDate(series.updated_at)}</p>
                 </Link>
               ))
             )}

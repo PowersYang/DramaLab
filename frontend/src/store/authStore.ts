@@ -30,10 +30,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     set({ isBootstrapping: true, authStatus: get().me ? "authenticated" : "loading" });
     try {
-      const payload = await api.refreshSession();
-      setAccessToken(payload.session.access_token);
-      set({ me: payload.me, authStatus: "authenticated", isBootstrapping: false });
-      return payload.me;
+      try {
+        const me = await api.getMe();
+        set({ me, authStatus: "authenticated", isBootstrapping: false });
+        return me;
+      } catch {
+        const payload = await api.refreshSession();
+        setAccessToken(payload.session.access_token);
+        set({ me: payload.me, authStatus: "authenticated", isBootstrapping: false });
+        return payload.me;
+      }
     } catch {
       setAccessToken(null);
       set({ me: null, authStatus: "anonymous", isBootstrapping: false });

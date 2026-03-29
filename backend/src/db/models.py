@@ -28,6 +28,13 @@ class SoftDeleteMixin:
     deleted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class GlobalAuditMixin:
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
 class OrganizationRecord(Base):
     __tablename__ = "organizations"
 
@@ -176,6 +183,36 @@ class StylePresetRecord(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ModelProviderConfigRecord(GlobalAuditMixin, Base):
+    __tablename__ = "model_provider_configs"
+
+    provider_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credentials_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    settings_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+
+
+class ModelCatalogEntryRecord(GlobalAuditMixin, Base):
+    __tablename__ = "model_catalog_entries"
+    __table_args__ = (
+        Index("ix_model_catalog_entries_task_enabled_sort", "task_type", "enabled", "sort_order", "created_at"),
+    )
+
+    model_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    task_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    provider_key: Mapped[str] = mapped_column(String(64), ForeignKey("model_provider_configs.provider_key"), nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    capabilities_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    default_settings_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
 
 
 class ProjectRecord(TenantAuditMixin, SoftDeleteMixin, Base):

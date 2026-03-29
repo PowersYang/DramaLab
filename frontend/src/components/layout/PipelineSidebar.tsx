@@ -14,7 +14,7 @@ import type { BreadcrumbSegment } from "./BreadcrumbBar";
 interface Step {
     id: string;
     label: string;
-    icon: ComponentType<{ size?: number; className?: string }>;
+    icon: ComponentType<{ size?: string | number; className?: string }>;
 }
 
 interface PipelineSidebarProps {

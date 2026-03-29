@@ -1,12 +1,13 @@
 import time
 import logging
 import base64
+import os
 from typing import Tuple
 
 import requests
 
 from .base import VideoGenModel
-from src.settings.env_settings import get_env
+from ..application.services.model_provider_service import ModelProviderService
 
 # 尝试加载 Ark SDK；若环境未安装则延后在运行时报错
 try:
@@ -19,15 +20,17 @@ logger = logging.getLogger(__name__)
 class DoubaoModel(VideoGenModel):
     def __init__(self, config: dict):
         super().__init__(config)
-        self.api_key = get_env("ARK_API_KEY")
-        self.model_name = config.get('params', {}).get('model_name', 'doubao-seedance-1-0-pro-fast-251015')
+        service = ModelProviderService()
+        provider = service.get_provider_config("ARK")
+        self.api_key = service.get_provider_credential("ARK", "api_key")
+        self.model_name = config.get('params', {}).get('model_name', provider.settings_json.get('default_video_model', 'doubao-seedance-1-0-pro-fast-251015'))
         
         if not self.api_key:
             logger.warning("ARK_API_KEY not found in environment variables.")
             
         if Ark:
             self.client = Ark(
-                base_url="https://ark.cn-beijing.volces.com/api/v3",
+                base_url=service.get_provider_base_url("ARK", "https://ark.cn-beijing.volces.com/api/v3"),
                 api_key=self.api_key
             )
         else:

@@ -3,6 +3,8 @@ from .character_repository import CharacterRepository
 from .image_variant_repository import ImageVariantRepository
 from .invitation_repository import InvitationRepository
 from .membership_repository import MembershipRepository
+from .model_catalog_entry_repository import ModelCatalogEntryRepository
+from .model_provider_config_repository import ModelProviderConfigRepository
 from .organization_repository import OrganizationRepository
 from .prop_repository import PropRepository
 from .project_repository import ProjectRepository
@@ -27,6 +29,8 @@ __all__ = [
     "ImageVariantRepository",
     "InvitationRepository",
     "MembershipRepository",
+    "ModelCatalogEntryRepository",
+    "ModelProviderConfigRepository",
     "OrganizationRepository",
     "ProjectRepository",
     "PropRepository",

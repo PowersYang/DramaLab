@@ -315,7 +315,8 @@ async def update_series_model_settings(
         return signed_response(series)
     except ValueError as exc:
         logger.warning("SERIES_API: update_series_model_settings failed series_id=%s detail=%s", series_id, exc)
-        raise HTTPException(status_code=404, detail=str(exc))
+        status_code = 400 if "model" in str(exc).lower() else 404
+        raise HTTPException(status_code=status_code, detail=str(exc))
 
 
 @router.get("/series/{series_id}/assets")

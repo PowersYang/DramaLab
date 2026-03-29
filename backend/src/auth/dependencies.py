@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from fastapi import Cookie, Depends, Header, HTTPException
 
 from ..application.services.auth_service import AuthService
-from ..auth.constants import REFRESH_TOKEN_COOKIE, ROLE_PLATFORM_SUPER_ADMIN
+from ..auth.constants import ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, ROLE_PLATFORM_SUPER_ADMIN
 from ..schemas.models import User
 
 
@@ -35,8 +35,9 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
 
 def get_current_user(
     authorization: str | None = Header(default=None, alias="Authorization"),
+    access_token_cookie: str | None = Cookie(default=None, alias=ACCESS_TOKEN_COOKIE),
 ) -> User:
-    token = _extract_bearer_token(authorization)
+    token = _extract_bearer_token(authorization) or access_token_cookie
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
@@ -52,9 +53,10 @@ def get_current_user(
 def get_request_context(
     user: User = Depends(get_current_user),
     authorization: str | None = Header(default=None, alias="Authorization"),
+    access_token_cookie: str | None = Cookie(default=None, alias=ACCESS_TOKEN_COOKIE),
     refresh_token: str | None = Cookie(default=None, alias=REFRESH_TOKEN_COOKIE),
 ) -> RequestContext:
-    token = _extract_bearer_token(authorization)
+    token = _extract_bearer_token(authorization) or access_token_cookie
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:

@@ -262,7 +262,7 @@ export default function ScriptProcessor() {
                                             selectedNode.type === "scene" ? "bg-green-500/20 text-green-400" :
                                                 "bg-yellow-500/20 text-yellow-400"
                                             }`}>
-                                            {selectedNode.type}
+                                            {selectedNode.type === "character" ? "角色" : selectedNode.type === "scene" ? "场景" : "道具"}
                                         </span>
                                         <h2 className="text-xl font-bold text-white">{selectedNode.name}</h2>
                                     </div>
@@ -273,7 +273,7 @@ export default function ScriptProcessor() {
 
                             <div className="p-6 space-y-4">
                                 <div>
-                                    <label className="block text-xs text-gray-500 mb-1">视觉描述 (Visual Description)</label>
+                                    <label className="block text-xs text-gray-500 mb-1">视觉描述</label>
                                     <textarea
                                         value={selectedNode.desc}
                                         onChange={e => handleNodeUpdate({ ...selectedNode, desc: e.target.value })}
@@ -284,30 +284,30 @@ export default function ScriptProcessor() {
                                 {selectedNode.type === "character" && (
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-xs text-gray-500 mb-1">年龄 (Age)</label>
-                                                <input
-                                                    type="text"
-                                                    value={selectedNode.age || ""}
+                                            <label className="block text-xs text-gray-500 mb-1">年龄</label>
+                                            <input
+                                                type="text"
+                                                value={selectedNode.age || ""}
                                                     onChange={e => handleNodeUpdate({ ...selectedNode, age: e.target.value })}
                                                     className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
-                                                    placeholder="e.g. 18"
-                                                />
+                                                placeholder="e.g. 18"
+                                            />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-gray-500 mb-1">性别 (Gender)</label>
-                                                <input
-                                                    type="text"
-                                                    value={selectedNode.gender || ""}
+                                            <label className="block text-xs text-gray-500 mb-1">性别</label>
+                                            <input
+                                                type="text"
+                                                value={selectedNode.gender || ""}
                                                     onChange={e => handleNodeUpdate({ ...selectedNode, gender: e.target.value })}
                                                     className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
-                                                    placeholder="e.g. Female"
-                                                />
+                                                placeholder="e.g. Female"
+                                            />
                                         </div>
                                         <div className="col-span-2">
-                                            <label className="block text-xs text-gray-500 mb-1">服装 (Clothing)</label>
-                                                <input
-                                                    type="text"
-                                                    value={selectedNode.clothing || ""}
+                                            <label className="block text-xs text-gray-500 mb-1">服装</label>
+                                            <input
+                                                type="text"
+                                                value={selectedNode.clothing || ""}
                                                     onChange={e => handleNodeUpdate({ ...selectedNode, clothing: e.target.value })}
                                                     className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
                                                     placeholder="e.g. Black Hoodie"
@@ -318,7 +318,7 @@ export default function ScriptProcessor() {
 
                                 {selectedNode.type !== "prop" && (
                                     <div>
-                                        <label className="block text-xs text-gray-500 mb-2">视觉权重 (Visual Weight)</label>
+                                        <label className="block text-xs text-gray-500 mb-2">视觉权重</label>
                                         <div className="flex gap-2">
                                             {[1, 2, 3, 4, 5].map(w => (
                                                 <button
@@ -334,7 +334,7 @@ export default function ScriptProcessor() {
                                             ))}
                                         </div>
                                         <p className="text-[10px] text-gray-600 mt-1 text-center">
-                                            1: 背景路人 — 3: 重要配角 — 5: 核心主角 (需LoRA训练)
+                                            1: 背景路人 — 3: 重要配角 — 5: 核心主角
                                         </p>
                                     </div>
                                 )}

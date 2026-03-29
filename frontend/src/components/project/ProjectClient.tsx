@@ -5,7 +5,7 @@ import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, Sun,
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
 import type { BreadcrumbSegment } from "@/components/layout/BreadcrumbBar";
-import PropertiesPanel from "@/components/modules/PropertiesPanel";
+import ProjectRightSidebar from "@/components/project/ProjectRightSidebar";
 import ScriptProcessor from "@/components/modules/ScriptProcessor";
 import VideoGenerator from "@/components/modules/VideoGenerator";
 import VideoAssembly from "@/components/modules/VideoAssembly";
@@ -23,12 +23,26 @@ const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"
 type StudioTheme = "light" | "dark";
 
 const STUDIO_THEME_STORAGE_KEY = "lumenx-studio-theme";
+const PROJECT_STEP_STORAGE_KEY_PREFIX = "lumenx-project-active-step";
+const PROJECT_STEP_IDS = [
+    "script",
+    "art_direction",
+    "assets",
+    "storyboard",
+    "motion",
+    "assembly",
+    "audio",
+    "mix",
+    "export",
+];
 
 export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/studio/projects" }: { id: string; breadcrumbSegments?: BreadcrumbSegment[]; homeHref?: string }) {
     const router = useRouter();
     const [activeStep, setActiveStep] = useState("script");
     const [theme, setTheme] = useState<StudioTheme>("light");
+    const [hasRestoredStep, setHasRestoredStep] = useState(false);
 
+    const hasHydrated = useProjectStore((state) => state.hasHydrated);
     const selectProject = useProjectStore((state) => state.selectProject);
     const currentProject = useProjectStore((state) => state.currentProject);
 
@@ -47,10 +61,18 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
         { id: "mix", label: "最终混剪", icon: Music },
         { id: "export", label: "导出成片", icon: Share2 },
     ];
+    const projectStepStorageKey = `${PROJECT_STEP_STORAGE_KEY_PREFIX}:${id}`;
 
     useEffect(() => {
+        setHasRestoredStep(false);
+    }, [projectStepStorageKey]);
+
+    useEffect(() => {
+        if (!hasHydrated) {
+            return;
+        }
         selectProject(id);
-    }, [id, selectProject]);
+    }, [hasHydrated, id, selectProject]);
 
     useEffect(() => {
         // 读取本地主题偏好，让项目制作页和工作台的视觉习惯保持连续。
@@ -61,9 +83,43 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
     }, []);
 
     useEffect(() => {
+        if (!hasHydrated) {
+            return;
+        }
+
+        // 按项目记住用户离开前所在的生产阶段，刷新后继续留在原页面。
+        const savedStep = window.localStorage.getItem(projectStepStorageKey);
+        if (savedStep && PROJECT_STEP_IDS.includes(savedStep)) {
+            setActiveStep(savedStep);
+        } else {
+            setActiveStep("script");
+        }
+        setHasRestoredStep(true);
+    }, [hasHydrated, projectStepStorageKey]);
+
+    useEffect(() => {
         // 持久化主题偏好，避免每次重新打开项目都回到默认状态。
         window.localStorage.setItem(STUDIO_THEME_STORAGE_KEY, theme);
     }, [theme]);
+
+    useEffect(() => {
+        if (!hasHydrated || !hasRestoredStep || !PROJECT_STEP_IDS.includes(activeStep)) {
+            return;
+        }
+
+        // 当前步骤单独存储，避免刷新时总是落回默认的剧本处理页。
+        window.localStorage.setItem(projectStepStorageKey, activeStep);
+    }, [activeStep, hasHydrated, hasRestoredStep, projectStepStorageKey]);
+
+    if (!hasHydrated) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-background">
+                <div className="text-center">
+                    <p className="text-gray-400">正在恢复项目状态...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (!currentProject) {
         return (
@@ -148,7 +204,7 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
                 </div>
 
                 {/* Right Sidebar - Contextual Inspector */}
-                {activeStep !== "assembly" && activeStep !== "art_direction" && <PropertiesPanel activeStep={activeStep} />}
+                {activeStep !== "assembly" && activeStep !== "art_direction" && <ProjectRightSidebar activeStep={activeStep} />}
             </div>
         </main>
     );

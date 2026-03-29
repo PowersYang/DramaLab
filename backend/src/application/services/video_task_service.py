@@ -16,6 +16,7 @@ from ...schemas.models import VideoTask
 from ...schemas.task_models import TaskReceipt, TaskType
 from ...utils.path_safety import safe_resolve_path, validate_safe_id
 from .character_service import CharacterService
+from .model_provider_service import ModelProviderService
 
 
 logger = get_logger(__name__)
@@ -28,6 +29,7 @@ class VideoTaskService:
         self.project_repository = ProjectRepository()
         self.video_task_repository = VideoTaskRepository()
         self.task_service = TaskService()
+        self.model_provider_service = ModelProviderService()
 
     def create_tasks(
         self,
@@ -66,6 +68,7 @@ class VideoTaskService:
         if not project:
             logger.warning("VIDEO_TASK_SERVICE: create_tasks project_missing script_id=%s", script_id)
             raise ValueError("Script not found")
+        self.model_provider_service.require_model_enabled(model, "i2v")
 
         tasks = []
         for _ in range(batch_size):

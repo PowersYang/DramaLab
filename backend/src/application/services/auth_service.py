@@ -6,10 +6,12 @@ import hashlib
 import hmac
 import json
 import secrets
+import smtplib
 import uuid
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
 from datetime import timedelta, timezone
+from email.message import EmailMessage
 
 from ...auth.constants import (
     ROLE_CAPABILITIES,
@@ -48,6 +50,7 @@ from ...utils.datetime import utc_now
 
 
 logger = get_logger(__name__)
+SUPPORTED_AUTH_PURPOSES = {"signin", "signup"}
 
 
 @dataclass
@@ -92,15 +95,15 @@ def _minutes_from_env(key: str, default: int) -> int:
     value = get_env(key)
     if value is None:
         return default
+    try:
+        return max(1, int(value))
+    except ValueError:
+        return default
 
 
 def _days_from_env(key: str, default: int) -> int:
     value = get_env(key)
     if value is None:
-        return default
-    try:
-        return max(1, int(value))
-    except ValueError:
         return default
     try:
         return max(1, int(value))
@@ -140,6 +143,9 @@ class AuthService:
 
     def send_email_code(self, email: str, purpose: str) -> dict:
         normalized_email = _normalize_email(email)
+        # 中文注释：登录/注册入口已经拆分，只允许显式支持的认证用途继续向下执行。
+        if purpose not in SUPPORTED_AUTH_PURPOSES:
+            raise ValueError("Unsupported auth purpose")
         code = f"{secrets.randbelow(1_000_000):06d}"
         now = utc_now()
         verification = VerificationCode(
@@ -157,8 +163,12 @@ class AuthService:
         self.verification_code_repository.create(verification)
         logger.info("AUTH_SERVICE: email code generated email=%s purpose=%s code=%s", normalized_email, purpose, code)
         payload = {"status": "sent", "email": normalized_email, "purpose": purpose}
-        if get_env_bool("AUTH_EXPOSE_TEST_CODE", True):
+        if self._email_delivery_is_configured():
+            self._send_email_code_via_smtp(normalized_email, code, purpose)
+        elif get_env_bool("AUTH_EXPOSE_TEST_CODE", False):
             payload["debug_code"] = code
+        else:
+            raise ValueError("Email delivery is not configured. Set SMTP config or enable AUTH_EXPOSE_TEST_CODE for testing.")
         return payload
 
     def verify_email_code(
@@ -171,6 +181,9 @@ class AuthService:
         user_agent: str | None = None,
     ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
         normalized_email = _normalize_email(email)
+        # 中文注释：登录和注册现在是两条明确路径，避免老用户误走注册或新用户误走登录。
+        if purpose not in SUPPORTED_AUTH_PURPOSES:
+            raise ValueError("Unsupported auth purpose")
         latest = self.verification_code_repository.get_latest_active("email", normalized_email, purpose)
         if latest is None:
             raise ValueError("Verification code not found")
@@ -186,6 +199,11 @@ class AuthService:
         self.verification_code_repository.consume(latest.id)
 
         user = self.user_repository.get_by_email(normalized_email)
+        if purpose == "signin" and user is None:
+            raise ValueError("Account not found, please sign up first")
+        if purpose == "signup" and user is not None:
+            raise ValueError("Account already exists, please sign in")
+
         if user is None:
             user = self._create_user_with_personal_workspace(normalized_email, display_name)
         else:
@@ -519,6 +537,42 @@ class AuthService:
     def _platform_super_admin_emails(self) -> set[str]:
         raw = get_env("AUTH_PLATFORM_SUPER_ADMIN_EMAILS", "") or ""
         return {_normalize_email(item) for item in raw.split(",") if item.strip()}
+
+    def _email_delivery_is_configured(self) -> bool:
+        required = [
+            "AUTH_EMAIL_SMTP_HOST",
+            "AUTH_EMAIL_SMTP_USER",
+            "AUTH_EMAIL_SMTP_PASSWORD",
+            "AUTH_EMAIL_FROM",
+        ]
+        return all((get_env(item) or "").strip() for item in required)
+
+    def _send_email_code_via_smtp(self, email: str, code: str, purpose: str) -> None:
+        smtp_host = get_env("AUTH_EMAIL_SMTP_HOST")
+        smtp_port = int(get_env("AUTH_EMAIL_SMTP_PORT", "587") or "587")
+        smtp_user = get_env("AUTH_EMAIL_SMTP_USER")
+        smtp_password = get_env("AUTH_EMAIL_SMTP_PASSWORD")
+        smtp_from = get_env("AUTH_EMAIL_FROM")
+        use_ssl = get_env_bool("AUTH_EMAIL_SMTP_SSL", False)
+        use_tls = get_env_bool("AUTH_EMAIL_SMTP_TLS", True)
+
+        message = EmailMessage()
+        message["From"] = smtp_from
+        message["To"] = email
+        message["Subject"] = "DramaLab 登录验证码"
+        message.set_content(
+            f"你的 DramaLab 验证码是：{code}\n\n"
+            f"用途：{purpose}\n"
+            "验证码 10 分钟内有效，请勿泄露给他人。"
+        )
+
+        smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+        with smtp_cls(smtp_host, smtp_port, timeout=20) as server:
+            if not use_ssl and use_tls:
+                server.starttls()
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(message)
 
     def _encode_jwt(self, payload: dict) -> str:
         header = {"alg": "HS256", "typ": "JWT"}

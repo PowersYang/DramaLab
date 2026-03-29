@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Settings, Sliders, Image as ImageIcon, Type, FileText, Users, Layout, Video, Mic, Music, Film, StickyNote, Palette, Wand2, Sparkles } from "lucide-react";
+import { Settings, Sliders, Image as ImageIcon, Type, FileText, Users, Layout, Video, Mic, Music, Film, Palette, Wand2, Sparkles } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useState, useEffect } from "react";
@@ -10,9 +10,10 @@ import { getAssetUrl } from "@/lib/utils";
 
 interface PropertiesPanelProps {
     activeStep: string;
+    embedded?: boolean;
 }
 
-export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
+export default function PropertiesPanel({ activeStep, embedded = false }: PropertiesPanelProps) {
     const currentProject = useProjectStore((state) => state.currentProject);
 
     // Hide panel for Motion step as it has its own sidebar
@@ -38,6 +39,14 @@ export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
                 return <div className="p-4 text-gray-500">请选择左侧步骤查看对应属性。</div>;
         }
     };
+
+    if (embedded) {
+        return (
+            <div className="h-full overflow-y-auto p-4 space-y-6">
+                {renderContent()}
+            </div>
+        );
+    }
 
     return (
         <motion.aside
@@ -76,16 +85,6 @@ function ScriptInspector({ project }: { project: any }) {
                     <StatBox label="场景" value={sceneCount} />
                     <StatBox label="预计时长" value="约2分钟" />
                 </div>
-            </div>
-
-            <div className="space-y-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <StickyNote size={14} /> 速记备注
-                </h3>
-                <textarea
-                    className="w-full h-32 bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
-                    placeholder="在这里记录灵感或注意事项..."
-                />
             </div>
 
             <div className="pt-4 border-t border-white/10">
@@ -235,7 +234,7 @@ function ArtDirectionStyleDisplay({ project }: { project: any }) {
 
                     <div>
                         <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">正向提示词</label>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed max-h-20 overflow-y-auto">
+                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-24 max-h-[28vh] overflow-y-auto">
                             {artDirectionStyle.positive_prompt || '暂无正向提示词'}
                         </div>
                     </div>
@@ -243,7 +242,7 @@ function ArtDirectionStyleDisplay({ project }: { project: any }) {
                     {artDirectionStyle.negative_prompt && (
                         <div>
                             <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">负向提示词</label>
-                            <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed max-h-16 overflow-y-auto">
+                            <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-20 max-h-[24vh] overflow-y-auto">
                                 {artDirectionStyle.negative_prompt}
                             </div>
                         </div>
@@ -398,11 +397,11 @@ function StoryboardInspector() {
                 }));
                 setFeedbackText("");
             } else {
-                throw new Error(job.error_message || "Prompt polishing failed");
+                throw new Error(job.error_message || "提示词润色失败");
             }
         } catch (err) {
             console.error("Polish failed", err);
-            alert("Prompt polishing failed");
+            alert("提示词润色失败");
         } finally {
             setIsPolishing(false);
         }
@@ -412,10 +411,10 @@ function StoryboardInspector() {
         return (
             <div className="space-y-6">
                 <div className="p-4 bg-white/5 rounded-lg border border-white/10 text-center text-gray-500 text-xs">
-                    Select a frame to edit its details.
+                    请选择一个分镜帧以编辑其详情。
                 </div>
                 <p className="text-xs text-gray-500 text-center">
-                    Tip: Use the ⚙️ icon in the sidebar to configure aspect ratios.
+                    提示：可通过侧边栏中的 ⚙️ 图标配置画幅比例。
                 </p>
             </div>
         );
@@ -425,21 +424,21 @@ function StoryboardInspector() {
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Layout size={14} /> Frame Editor
+                    <Layout size={14} /> 分镜编辑
                 </h3>
                 <div className="text-xs text-gray-400">
-                    Editing Frame {currentProject?.frames?.findIndex((f: any) => f.id === selectedFrameId) + 1}
+                    正在编辑第 {currentProject?.frames?.findIndex((f: any) => f.id === selectedFrameId) + 1} 帧
                 </div>
             </div>
 
             {/* Action Description */}
             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Action / Visuals</label>
+                <label className="text-xs font-bold text-gray-500 uppercase">动作 / 画面</label>
                 <textarea
                     className="w-full h-24 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.action_description || ""}
                     onChange={(e) => updateFrame({ action_description: e.target.value })}
-                    placeholder="Describe the action..."
+                    placeholder="描述这一帧中的动作与画面..."
                 />
             </div>
 
@@ -450,7 +449,7 @@ function StoryboardInspector() {
                     className="w-full h-16 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.dialogue || ""}
                     onChange={(e) => updateFrame({ dialogue: e.target.value })}
-                    placeholder="Speaker: Content"
+                    placeholder="角色名：对白内容"
                 />
             </div>
 
@@ -477,15 +476,15 @@ function StoryboardInspector() {
                     return (
                         <>
                             <div className="flex justify-between items-center">
-                                <label className="text-xs font-bold text-gray-500 uppercase">Reference Assets</label>
+                                <label className="text-xs font-bold text-gray-500 uppercase">参考资产</label>
                                 <span className={`text-[10px] ${isLimitReached ? "text-yellow-500 font-bold" : "text-gray-500"}`}>
-                                    {referenceCount}/{referenceLimit} Images
+                                    {referenceCount}/{referenceLimit} 张图片
                                 </span>
                             </div>
 
                             {/* Scene Selector */}
                             <div className="mb-2 space-y-2">
-                                <label className="text-[10px] font-bold text-gray-500 uppercase">Scene</label>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">场景</label>
                                 <select
                                     className="w-full bg-black/20 border border-white/10 rounded p-2 text-xs text-gray-300 focus:outline-none"
                                     value={selectedFrame.scene_id || ""}
@@ -504,13 +503,13 @@ function StoryboardInspector() {
                                         const predictedCount = (newSceneHasImage ? 1 : 0) + charImageCount + propImageCount;
 
                                         if (predictedCount > referenceLimit) {
-                                            alert(`Cannot select this scene: Reference image limit (${referenceLimit}) would be exceeded. Deselect some characters or props first.`);
+                                            alert(`无法选择该场景：参考图片数量将超过上限（${referenceLimit}）。请先取消部分角色或道具。`);
                                             return;
                                         }
                                         updateFrame({ scene_id: newSceneId });
                                     }}
                                 >
-                                    <option value="">Select Scene...</option>
+                                    <option value="">选择场景...</option>
                                     {currentProject?.scenes?.map((scene: any) => (
                                         <option key={scene.id} value={scene.id}>{scene.name}</option>
                                     ))}
@@ -519,7 +518,7 @@ function StoryboardInspector() {
                                 {/* Show Scene Description if selected */}
                                 {selectedScene?.description && (
                                     <div className="bg-white/5 p-2 rounded text-[10px] text-gray-400 italic border border-white/5">
-                                        <span className="font-bold not-italic text-gray-500">Scene: </span>
+                                        <span className="font-bold not-italic text-gray-500">场景说明：</span>
                                         {selectedScene.description}
                                     </div>
                                 )}
@@ -527,7 +526,7 @@ function StoryboardInspector() {
 
                             {/* Character Toggles */}
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-gray-500 uppercase">Characters</label>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">角色</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {currentProject?.characters?.map((char: any) => {
                                         const isSelected = selectedFrame.character_ids?.includes(char.id);
@@ -575,7 +574,7 @@ function StoryboardInspector() {
                             {/* Prop Toggles */}
                             {currentProject?.props && currentProject.props.length > 0 && (
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Props</label>
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase">道具</label>
                                     <div className="grid grid-cols-2 gap-2">
                                         {currentProject.props.map((prop: any) => {
                                             const isSelected = selectedFrame.prop_ids?.includes(prop.id);
@@ -638,20 +637,20 @@ function StoryboardInspector() {
 
             {/* Camera Controls */}
             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Camera</label>
+                <label className="text-xs font-bold text-gray-500 uppercase">镜头</label>
                 <div className="grid grid-cols-1 gap-2">
                     <select
                         className="bg-black/20 border border-white/10 rounded p-2 text-xs text-gray-300 focus:outline-none"
                         value={selectedFrame.camera_angle || ""}
                         onChange={(e) => updateFrame({ camera_angle: e.target.value })}
                     >
-                        <option value="">Angle...</option>
-                        <option value="Wide Shot">Wide Shot</option>
-                        <option value="Medium Shot">Medium Shot</option>
-                        <option value="Close Up">Close Up</option>
-                        <option value="Low Angle">Low Angle</option>
-                        <option value="High Angle">High Angle</option>
-                        <option value="Over the Shoulder">Over the Shoulder</option>
+                        <option value="">选择镜头角度...</option>
+                        <option value="Wide Shot">远景</option>
+                        <option value="Medium Shot">中景</option>
+                        <option value="Close Up">特写</option>
+                        <option value="Low Angle">低机位</option>
+                        <option value="High Angle">高机位</option>
+                        <option value="Over the Shoulder">过肩镜头</option>
                     </select>
                 </div>
             </div>
@@ -659,28 +658,28 @@ function StoryboardInspector() {
             {/* Prompt */}
             <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-gray-500 uppercase">Image Prompt</label>
+                    <label className="text-xs font-bold text-gray-500 uppercase">生图提示词</label>
                     <button
                         onClick={handleComposePrompt}
                         className="flex items-center gap-1 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white transition-colors"
-                        title="Auto-generate prompt from metadata"
+                        title="根据分镜元数据自动生成提示词"
                     >
-                        <Wand2 size={10} /> Auto-Compose
+                        <Wand2 size={10} /> 自动生成
                     </button>
                     <button
                         onClick={() => handlePolish()}
                         disabled={isPolishing}
                         className="flex items-center gap-1 text-[10px] bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded text-white transition-colors ml-2 disabled:opacity-50"
-                        title="AI Polish Prompt"
+                        title="AI 润色提示词"
                     >
-                        {isPolishing ? <Sparkles size={10} className="animate-spin" /> : <Sparkles size={10} />} Polish
+                        {isPolishing ? <Sparkles size={10} className="animate-spin" /> : <Sparkles size={10} />} 润色
                     </button>
                 </div>
                 <textarea
                     className="w-full h-32 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.image_prompt || ""}
                     onChange={(e) => updateFrame({ image_prompt: e.target.value })}
-                    placeholder="Full image generation prompt..."
+                    placeholder="输入完整的生图提示词..."
                 />
 
                 {/* Polished Result Display - Bilingual */}
@@ -737,11 +736,11 @@ function StoryboardInspector() {
                                     <button
                                         onClick={() => {
                                             navigator.clipboard.writeText(polishedPrompt.en);
-                                            alert("English prompt copied");
+                                            alert("英文提示词已复制");
                                         }}
                                         className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-0.5 rounded"
                                     >
-                                        Copy
+                                        复制
                                     </button>
                                     <button
                                         onClick={() => {

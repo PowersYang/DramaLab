@@ -13,7 +13,7 @@ from typing import Dict, Any, Tuple
 import requests
 
 from .base import VideoGenModel
-from src.settings.env_settings import get_env
+from ..application.services.model_provider_service import ModelProviderService
 from ..utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ DEFAULT_I2V_MODEL = "viduq3-pro"
 class ViduModel(VideoGenModel):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.api_key = config.get("api_key") or get_env("VIDU_API_KEY", "")
+        self.api_key = config.get("api_key") or ModelProviderService().get_provider_credential("VIDU", "api_key") or ""
         self.model_name = config.get("params", {}).get("model_name", DEFAULT_I2V_MODEL)
 
     def _headers(self) -> Dict[str, str]:

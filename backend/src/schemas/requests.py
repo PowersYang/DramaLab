@@ -319,6 +319,40 @@ class UpdateRoleRequest(BaseModel):
     is_system: Optional[bool] = None
 
 
+class UpdateModelProviderRequest(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+    base_url: Optional[str] = None
+    credentials_patch: Dict[str, Optional[str]] = Field(default_factory=dict)
+    settings_patch: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CreateModelCatalogEntryRequest(BaseModel):
+    model_id: str
+    task_type: str
+    provider_key: str
+    display_name: str
+    description: Optional[str] = None
+    enabled: bool = True
+    sort_order: int = 100
+    is_public: bool = True
+    capabilities_json: Dict[str, Any] = Field(default_factory=dict)
+    default_settings_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateModelCatalogEntryRequest(BaseModel):
+    task_type: Optional[str] = None
+    provider_key: Optional[str] = None
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+    sort_order: Optional[int] = None
+    is_public: Optional[bool] = None
+    capabilities_json: Optional[Dict[str, Any]] = None
+    default_settings_json: Optional[Dict[str, Any]] = None
+
+
 class CreateMembershipRequest(BaseModel):
     organization_id: Optional[str] = None
     workspace_id: Optional[str] = None

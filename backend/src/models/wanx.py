@@ -9,7 +9,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
 from .base import VideoGenModel
-from src.settings.env_settings import get_env
+from ..application.services.model_provider_service import ModelProviderService
 from ..utils import get_logger
 from ..utils.endpoints import get_provider_base_url
 
@@ -26,9 +26,9 @@ class WanxModel(VideoGenModel):
 
     @property
     def api_key(self):
-        api_key = get_env("DASHSCOPE_API_KEY")
+        api_key = ModelProviderService().get_provider_credential("DASHSCOPE", "api_key")
         if not api_key:
-            logger.warning("Dashscope API Key not found in .env configuration.")
+            logger.warning("Dashscope API Key not configured in provider management.")
         return api_key
 
     def generate(self, prompt: str, output_path: str, img_path: str = None, model_name: str = None, **kwargs) ->Tuple[str, float]:

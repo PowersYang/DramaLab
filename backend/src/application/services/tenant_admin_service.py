@@ -5,6 +5,8 @@ import uuid
 from ...common.log import get_logger
 from ...repository import (
     MembershipRepository,
+    ModelCatalogEntryRepository,
+    ModelProviderConfigRepository,
     OrganizationRepository,
     RoleRepository,
     UserRepository,
@@ -26,6 +28,8 @@ class TenantAdminService:
         self.user_repository = UserRepository()
         self.role_repository = RoleRepository()
         self.membership_repository = MembershipRepository()
+        self.model_provider_repository = ModelProviderConfigRepository()
+        self.model_catalog_repository = ModelCatalogEntryRepository()
 
     def list_organizations(self):
         """列出全部组织。"""
@@ -240,6 +244,47 @@ class TenantAdminService:
         self.role_repository.delete(role_id)
         logger.info("TENANT_ADMIN_SERVICE: delete_role role_id=%s", role_id)
         return {"status": "deleted", "id": role_id, "code": role.code}
+
+    def list_model_providers(self):
+        """列出平台模型供应商配置摘要。"""
+        from .model_provider_service import ModelProviderService
+
+        return ModelProviderService().list_provider_summaries()
+
+    def update_model_provider(self, provider_key: str, payload: dict):
+        """更新模型供应商配置。"""
+        from .model_provider_service import ModelProviderService
+
+        logger.info("TENANT_ADMIN_SERVICE: update_model_provider provider_key=%s fields=%s", provider_key, sorted(payload.keys()))
+        return ModelProviderService().update_provider(
+            provider_key=provider_key,
+            display_name=payload.get("display_name"),
+            description=payload.get("description"),
+            enabled=payload.get("enabled"),
+            base_url=payload.get("base_url"),
+            credentials_patch=payload.get("credentials_patch"),
+            settings_patch=payload.get("settings_patch"),
+        )
+
+    def list_model_catalog(self, task_type: str | None = None):
+        """列出平台模型目录。"""
+        from .model_provider_service import ModelProviderService
+
+        return ModelProviderService().list_model_catalog(task_type=task_type)
+
+    def create_model_catalog_entry(self, payload: dict):
+        """创建模型目录项。"""
+        from .model_provider_service import ModelProviderService
+
+        logger.info("TENANT_ADMIN_SERVICE: create_model_catalog_entry model_id=%s", payload.get("model_id"))
+        return ModelProviderService().create_model_catalog_entry(payload)
+
+    def update_model_catalog_entry(self, model_id: str, payload: dict):
+        """更新模型目录项。"""
+        from .model_provider_service import ModelProviderService
+
+        logger.info("TENANT_ADMIN_SERVICE: update_model_catalog_entry model_id=%s fields=%s", model_id, sorted(payload.keys()))
+        return ModelProviderService().update_model_catalog_entry(model_id, payload)
 
     def list_memberships(
         self,

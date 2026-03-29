@@ -39,6 +39,18 @@ def _set_refresh_cookie(response, refresh_token: str) -> None:
     )
 
 
+def _set_access_cookie(response, access_token: str, expires_in: int) -> None:
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        value=access_token,
+        httponly=False,
+        samesite="lax",
+        secure=False,
+        max_age=expires_in,
+        path="/",
+    )
+
+
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(REFRESH_TOKEN_COOKIE, path="/")
     response.delete_cookie(ACCESS_TOKEN_COOKIE, path="/")
@@ -70,6 +82,7 @@ async def verify_email_code(request: VerifyEmailCodeRequest, response: Response,
         }
         http_response = signed_response(payload)
         _set_refresh_cookie(http_response, refresh_token)
+        _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
         return http_response
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -83,7 +96,9 @@ async def refresh_auth_session(
         raise HTTPException(status_code=401, detail="Refresh token is missing")
     try:
         auth_payload, me = auth_service.refresh_session(refresh_token)
-        return signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
+        return http_response
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc))
 
@@ -111,7 +126,9 @@ async def switch_workspace(
         raise HTTPException(status_code=401, detail="Refresh token is missing")
     try:
         auth_payload, me = auth_service.switch_workspace(context.user, context.refresh_token, request.workspace_id)
-        return signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
+        return http_response
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

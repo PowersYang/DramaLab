@@ -87,6 +87,22 @@ const writeAssetLibraryCache = (sources: AssetSource[]) => {
   }
 };
 
+const scheduleDeferredRefresh = (task: () => void) => {
+  if (typeof window === "undefined") {
+    task();
+    return () => undefined;
+  }
+
+  // 有缓存时把完整资产刷新挪到空闲时段，优先保证首次切页和交互响应。
+  if ("requestIdleCallback" in window) {
+    const idleId = window.requestIdleCallback(() => task(), { timeout: 1200 });
+    return () => window.cancelIdleCallback(idleId);
+  }
+
+  const timeoutId = globalThis.setTimeout(task, 180);
+  return () => globalThis.clearTimeout(timeoutId);
+};
+
 export default function AssetLibraryPage() {
   const cachedSeriesList = useProjectStore((state) => state.seriesList);
   const cachedProjects = useProjectStore((state) => state.projects);
@@ -99,25 +115,44 @@ export default function AssetLibraryPage() {
   const [collapsedSources, setCollapsedSources] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    let cancelled = false;
+    let hasWarmCache = false;
+
     // 优先用 store 里的项目/系列缓存秒开页面，再异步刷新后端数据。
     if (cachedSeriesList.length > 0 || cachedProjects.length > 0) {
       const nextSources = buildAssetSources(cachedSeriesList, cachedProjects);
       setSources(nextSources);
       writeAssetLibraryCache(nextSources);
       setLoading(false);
+      hasWarmCache = true;
     } else {
       const sessionCachedSources = readAssetLibraryCache();
       if (sessionCachedSources.length > 0) {
         setSources(sessionCachedSources);
         setLoading(false);
+        hasWarmCache = true;
       } else {
         setLoading(true);
       }
     }
 
-    void loadAssets();
+    const cancelDeferredRefresh = hasWarmCache
+      ? scheduleDeferredRefresh(() => {
+          if (!cancelled) {
+            void loadAssets();
+          }
+        })
+      : (() => {
+          void loadAssets();
+          return () => undefined;
+        })();
+
     // 这里故意只在首次挂载时触发，避免 store 刷新后再次重复请求。
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+      cancelDeferredRefresh();
+    };
   }, []);
 
   const loadAssets = async () => {

@@ -9,6 +9,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
 from ..application.services import AssetService, VideoTaskService
+from ..application.services.model_provider_service import ModelProviderService
 from ..application.tasks import TaskService
 from ..auth.dependencies import get_request_context
 from ..application.workflows import AssetWorkflow
@@ -35,6 +36,7 @@ asset_service = AssetService()
 asset_workflow = AssetWorkflow()
 video_task_service = VideoTaskService()
 task_service = TaskService()
+model_provider_service = ModelProviderService()
 
 
 @router.post("/projects/{script_id}/assets/generate_motion_ref")
@@ -108,6 +110,8 @@ async def generate_single_asset(
             request.asset_id,
             request.asset_type,
         )
+        if request.model_name:
+            model_provider_service.require_model_enabled(request.model_name, "t2i")
         receipt = task_service.create_job(
             task_type="asset.generate",
             payload={
@@ -136,7 +140,8 @@ async def generate_single_asset(
         return signed_response(receipt)
     except ValueError as exc:
         logger.warning("ASSET_API: generate_single_asset failed script_id=%s detail=%s", script_id, exc)
-        raise HTTPException(status_code=404, detail=str(exc))
+        status_code = 400 if "model" in str(exc).lower() else 404
+        raise HTTPException(status_code=status_code, detail=str(exc))
     except Exception as exc:
         logger.exception("ASSET_API: generate_single_asset unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

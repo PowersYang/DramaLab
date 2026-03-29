@@ -14,9 +14,12 @@ class TenantAdminApiTest(unittest.TestCase):
         self.env_path.write_text(f"DATABASE_URL=sqlite:///{db_path}\n", encoding="utf-8")
 
         from src.db.base import Base
-        from src.auth.dependencies import require_platform_role
+        from src.auth.dependencies import RequestContext, get_request_context, require_platform_role
         from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory, init_database
+        from src.schemas.models import User
+        from src.application.services.model_provider_service import ModelProviderService
+        from src.utils.datetime import utc_now
 
         override_env_path_for_tests(self.env_path)
         get_engine.cache_clear()
@@ -24,12 +27,32 @@ class TenantAdminApiTest(unittest.TestCase):
         engine = get_engine()
         Base.metadata.drop_all(bind=engine)
         init_database()
+        ModelProviderService().ensure_defaults()
 
         from src.api.tenant_admin import router as tenant_admin_router
+        from src.api.system import router as system_router
 
         app = FastAPI()
         app.include_router(tenant_admin_router)
+        app.include_router(system_router)
         app.dependency_overrides[require_platform_role] = lambda: None
+        app.dependency_overrides[get_request_context] = lambda: RequestContext(
+            user=User(
+                id="user_super_admin",
+                email="admin@example.com",
+                display_name="Admin",
+                auth_provider="email_otp",
+                platform_role="platform_super_admin",
+                status="active",
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            ),
+            current_workspace_id=None,
+            current_organization_id=None,
+            current_role_code=None,
+            capabilities={"org.manage"},
+            refresh_token=None,
+        )
         self.client = TestClient(app)
 
     def tearDown(self):
@@ -167,3 +190,39 @@ class TenantAdminApiTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Workspace does not belong", response.json()["detail"])
+
+    def test_model_provider_and_catalog_management_flow(self):
+        providers = self.client.get("/model-providers")
+        self.assertEqual(providers.status_code, 200)
+        provider_list = providers.json()
+        self.assertTrue(any(item["provider_key"] == "DASHSCOPE" for item in provider_list))
+        dashscope_before = next(item for item in provider_list if item["provider_key"] == "DASHSCOPE")
+        self.assertFalse(dashscope_before["has_credentials"])
+
+        updated_provider = self.client.put(
+            "/model-providers/DASHSCOPE",
+            json={
+                "enabled": True,
+                "base_url": "https://dashscope.example.com",
+                "credentials_patch": {"api_key": "sk-test-dashscope"},
+                "settings_patch": {"default_text_model": "qwen-test"},
+            },
+        )
+        self.assertEqual(updated_provider.status_code, 200)
+        self.assertNotIn("credentials_json", updated_provider.json())
+        self.assertTrue(updated_provider.json()["has_credentials"])
+        self.assertIn("api_key", updated_provider.json()["configured_fields"])
+
+        updated_model = self.client.put(
+            "/model-catalog/wan2.6-i2v",
+            json={"enabled": False, "display_name": "Wan 2.6 I2V Disabled"},
+        )
+        self.assertEqual(updated_model.status_code, 200)
+        self.assertFalse(updated_model.json()["enabled"])
+
+        available_models = self.client.get("/system/models/available")
+        self.assertEqual(available_models.status_code, 200)
+        payload = available_models.json()
+        self.assertGreaterEqual(len(payload["t2i"]), 1)
+        self.assertGreaterEqual(len(payload["i2i"]), 1)
+        self.assertFalse(any(item["model_id"] == "wan2.6-i2v" for item in payload["i2v"]))

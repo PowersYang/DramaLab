@@ -10,16 +10,18 @@ const getApiUrl = (): string => {
     }
 
     if (typeof window !== "undefined") {
+        const { protocol, hostname, port } = window.location;
+
         if (process.env.NODE_ENV !== "production") {
             // 开发态默认直连后端，避免 Next dev 代理在长耗时接口（如 reparse）上提前断开连接。
+            // 这里优先跟随当前页面主机名，避免前端从 localhost 打开、后端却固定请求 127.0.0.1，
+            // 导致验证码登录成功后 cookie 因站点不一致无法在 /auth/me 阶段带回去。
             // 如果确实需要继续走代理，可显式设置 NEXT_PUBLIC_USE_DEV_PROXY=true。
             if (process.env.NEXT_PUBLIC_USE_DEV_PROXY === "true") {
                 return "/api-proxy";
             }
-            return "http://127.0.0.1:17177";
+            return `${protocol}//${hostname}:17177`;
         }
-
-        const { protocol, hostname, port } = window.location;
 
         if (port === "3000" || port === "3001") {
             return `${protocol}//${hostname}:17177`;
@@ -28,8 +30,8 @@ const getApiUrl = (): string => {
         return `${protocol}//${hostname}${port ? ":" + port : ""}`;
     }
 
-    // SSR 或少量直接请求场景下也保持和开发代理一致，避免前后端连到不同回环地址。
-    return "http://127.0.0.1:17177";
+    // SSR 场景拿不到浏览器主机名时，退回 localhost，和本地最常见的开发入口保持一致。
+    return "http://localhost:17177";
 };
 
 
@@ -193,6 +195,9 @@ const fetchJson = async (input: string, init?: RequestInit) => {
 
     // fetch 场景也保持和 axios 一样的请求 ID 策略，避免日志链路断掉。
     headers.set("X-Request-ID", requestId);
+    if (accessToken) {
+        headers.set("Authorization", `Bearer ${accessToken}`);
+    }
 
     console.info(LOG_PREFIX, "fetch:start", {
         requestId,
@@ -203,6 +208,7 @@ const fetchJson = async (input: string, init?: RequestInit) => {
     const response = await fetch(input, {
         ...init,
         headers,
+        credentials: "include",
     });
     const durationMs = Date.now() - startedAt;
 
@@ -361,6 +367,45 @@ export interface AuthMeResponse {
 export interface AuthBootstrapPayload {
     session: AuthSession;
     me: AuthMeResponse;
+}
+
+export interface ModelProviderSummary {
+    provider_key: string;
+    display_name: string;
+    description?: string | null;
+    enabled: boolean;
+    base_url?: string | null;
+    credential_fields: string[];
+    configured_fields: string[];
+    has_credentials: boolean;
+    settings_json: Record<string, any>;
+    created_by?: string | null;
+    updated_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface ModelCatalogEntry {
+    model_id: string;
+    task_type: "t2i" | "i2i" | "i2v" | string;
+    provider_key: string;
+    display_name: string;
+    description?: string | null;
+    enabled: boolean;
+    sort_order: number;
+    is_public: boolean;
+    capabilities_json: Record<string, any>;
+    default_settings_json: Record<string, any>;
+    created_by?: string | null;
+    updated_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface AvailableModelCatalog {
+    t2i: ModelCatalogEntry[];
+    i2i: ModelCatalogEntry[];
+    i2v: ModelCatalogEntry[];
 }
 
 export interface FinalMixClipDraft {
@@ -1033,6 +1078,11 @@ export const api = {
         return res.data;
     },
 
+    getAvailableModels: async (): Promise<AvailableModelCatalog> => {
+        const res = await axios.get(`${API_URL}/system/models/available`);
+        return res.data;
+    },
+
     getEnvConfig: async () => {
         const res = await axios.get(`${API_URL}/config/env`);
         return res.data;
@@ -1042,6 +1092,39 @@ export const api = {
         const res = await axios.post(`${API_URL}/config/env`, config, {
             timeout: 60000, // 60 seconds timeout
         });
+        return res.data;
+    },
+
+    listModelProviders: async (): Promise<ModelProviderSummary[]> => {
+        const res = await axios.get(`${API_URL}/model-providers`);
+        return res.data;
+    },
+
+    updateModelProvider: async (
+        providerKey: string,
+        payload: {
+            display_name?: string;
+            description?: string;
+            enabled?: boolean;
+            base_url?: string;
+            credentials_patch?: Record<string, string | null>;
+            settings_patch?: Record<string, any>;
+        },
+    ): Promise<ModelProviderSummary> => {
+        const res = await axios.put(`${API_URL}/model-providers/${providerKey}`, payload);
+        return res.data;
+    },
+
+    listModelCatalog: async (taskType?: string): Promise<ModelCatalogEntry[]> => {
+        const res = await axios.get(`${API_URL}/model-catalog`, { params: taskType ? { task_type: taskType } : undefined });
+        return res.data;
+    },
+
+    updateModelCatalogEntry: async (
+        modelId: string,
+        payload: Partial<Pick<ModelCatalogEntry, "task_type" | "provider_key" | "display_name" | "description" | "enabled" | "sort_order" | "is_public" | "capabilities_json" | "default_settings_json">>,
+    ): Promise<ModelCatalogEntry> => {
+        const res = await axios.put(`${API_URL}/model-catalog/${modelId}`, payload);
         return res.data;
     },
 

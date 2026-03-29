@@ -416,6 +416,7 @@ const mergeProjectDrafts = (incomingProject: any, existingProject?: any): any =>
 interface ProjectStore {
     projects: Project[];
     currentProject: Project | null;
+    hasHydrated: boolean;
     isLoading: boolean;
     isAnalyzing: boolean;
     isAnalyzingArtStyle: boolean;
@@ -426,6 +427,7 @@ interface ProjectStore {
     selectedFrameId: string | null;
 
     // Actions
+    setHasHydrated: (value: boolean) => void;
     setProjects: (projects: Project[]) => void;  // For syncing from backend
     createProject: (title: string, text: string, skipAnalysis?: boolean) => Promise<void>;
     analyzeProject: (script: string) => Promise<void>;
@@ -472,9 +474,12 @@ export const useProjectStore = create<ProjectStore>()(
         (set, get) => ({
             projects: [],
             currentProject: null,
+            hasHydrated: false,
             isLoading: false,
             isAnalyzing: false,
             selectedFrameId: null,
+
+            setHasHydrated: (value: boolean) => set({ hasHydrated: value }),
 
             // Sync projects from backend
             setProjects: (projects: Project[]) => set({ projects: projects.map((project) => normalizeProject(project)) }),
@@ -728,6 +733,10 @@ export const useProjectStore = create<ProjectStore>()(
                 seriesList: state.seriesList,
                 generatingTasks: state.generatingTasks // Now persisting this to maintain state across refreshes
             }),
+            onRehydrateStorage: () => (state) => {
+                // 等待持久化状态回灌完成后，再让页面决定是否直接复用本地项目缓存。
+                state?.setHasHydrated(true);
+            },
         }
     )
 );

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
 from ..application.tasks import TaskService
 from ..application.services import SystemService
+from ..application.services.model_provider_service import ModelProviderService
 from ..auth.dependencies import get_request_context
 from src.settings.env_settings import (
     get_env,
@@ -38,6 +39,7 @@ from ..schemas.task_models import TaskReceipt
 router = APIRouter(dependencies=[Depends(get_request_context)])
 task_service = TaskService()
 system_service = SystemService()
+model_provider_service = ModelProviderService()
 
 
 @router.get("/debug/config")
@@ -66,6 +68,13 @@ async def check_system():
     """检查系统依赖与基础配置。"""
     logger.info("SYSTEM_API: check_system")
     return run_system_checks()
+
+
+@router.get("/system/models/available")
+async def get_available_models():
+    """返回当前平台已启用的业务可用模型。"""
+    logger.info("SYSTEM_API: get_available_models")
+    return signed_response(model_provider_service.list_available_models())
 
 
 @router.post("/upload")
@@ -228,7 +237,7 @@ async def update_env_config(config: EnvConfig):
         endpoint_overrides = config_dict.pop("endpoint_overrides", {})
         config_dict = {key: value for key, value in config_dict.items() if value is not None}
 
-        allowed_keys = {f"{provider}_BASE_URL" for provider in PROVIDER_DEFAULTS}
+        allowed_keys = {meta["env_base_url"] for meta in PROVIDER_DEFAULTS.values() if meta.get("env_base_url")}
         keys_to_remove = []
         for env_key, value in endpoint_overrides.items():
             if env_key not in allowed_keys:
@@ -265,8 +274,10 @@ async def get_env_config():
     try:
         logger.info("SYSTEM_API: get_env_config")
         endpoint_overrides = {}
-        for provider in PROVIDER_DEFAULTS:
-            env_key = f"{provider}_BASE_URL"
+        for meta in PROVIDER_DEFAULTS.values():
+            env_key = meta.get("env_base_url")
+            if not env_key:
+                continue
             value = get_env(env_key)
             if value:
                 endpoint_overrides[env_key] = value

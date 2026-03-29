@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Palette, Wand2, Plus, Check, Loader2, ChevronRight } from "lucide-react";
+import { motion } from "framer-motion";
+import { Sparkles, SwatchBook, Wand2, Check, Loader2 } from "lucide-react";
 import { useProjectStore, type StyleConfig, type StylePreset } from "@/store/projectStore"; // Combined imports
 import { api } from "@/lib/api";
 
@@ -21,6 +21,7 @@ export default function ArtDirection() {
 
     // Editor state
     const [editingName, setEditingName] = useState("");
+    const [editingDescription, setEditingDescription] = useState("");
     const [editingPositive, setEditingPositive] = useState("");
     const [editingNegative, setEditingNegative] = useState("");
     const [isSaving, setIsSaving] = useState(false);
@@ -38,6 +39,7 @@ export default function ArtDirection() {
             if (currentProject.art_direction.style_config) {
                 setSelectedStyle(currentProject.art_direction.style_config);
                 setEditingName(currentProject.art_direction.style_config.name || "");
+                setEditingDescription(currentProject.art_direction.style_config.description || "");
                 setEditingPositive(currentProject.art_direction.style_config.positive_prompt || "");
                 setEditingNegative(currentProject.art_direction.style_config.negative_prompt || "");
             }
@@ -88,6 +90,7 @@ export default function ArtDirection() {
     const handleSelectStyle = (style: StyleConfig) => {
         setSelectedStyle(style);
         setEditingName(style.name);
+        setEditingDescription(style.description || "");
         setEditingPositive(style.positive_prompt);
         setEditingNegative(style.negative_prompt);
     };
@@ -101,6 +104,7 @@ export default function ArtDirection() {
         const newCustomStyle: StyleConfig = {
             id: `custom-${Date.now()}`,
             name: editingName,
+            description: editingDescription,
             positive_prompt: editingPositive,
             negative_prompt: editingNegative,
             is_custom: true
@@ -139,6 +143,7 @@ export default function ArtDirection() {
         const finalConfig: StyleConfig = {
             ...selectedStyle,
             name: editingName,
+            description: editingDescription,
             positive_prompt: editingPositive,
             negative_prompt: editingNegative
         };
@@ -167,11 +172,11 @@ export default function ArtDirection() {
             {/* Header */}
             <div className="h-20 border-b border-white/10 bg-black/20 flex items-center px-8 justify-between">
                 <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                        <Palette className="text-white" size={20} />
+                    <div className="w-10 h-10 rounded-lg bg-white/10 border border-white/10 flex items-center justify-center">
+                        <SwatchBook className="text-gray-200" size={18} />
                     </div>
                     <div>
-                        <h2 className="text-xl font-display font-bold text-white">Art Direction</h2>
+                        <h2 className="text-xl font-display font-bold text-white">艺术指导</h2>
                         <p className="text-xs text-gray-400">风格定调 - 建立全局视觉标准</p>
                     </div>
                 </div>
@@ -179,7 +184,7 @@ export default function ArtDirection() {
                 <button
                     onClick={handleApply}
                     disabled={!selectedStyle || isSaving}
-                    className="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="px-5 py-2 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 bg-white/10 text-white hover:bg-white/15"
                 >
                     {isSaving ? (
                         <>
@@ -187,10 +192,7 @@ export default function ArtDirection() {
                             保存中...
                         </>
                     ) : (
-                        <>
-                            应用并继续
-                            <ChevronRight size={16} />
-                        </>
+                        <>应用并继续</>
                     )}
                 </button>
             </div>
@@ -198,6 +200,25 @@ export default function ArtDirection() {
             <div className="flex-1 flex overflow-hidden">
                 {/* Left Panel: AI + Presets */}
                 <div className="w-2/3 flex flex-col p-8 overflow-y-auto gap-8 border-r border-white/10">
+                    {/* Built-in Presets */}
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                            <SwatchBook size={20} className="text-slate-300" />
+                            系统内置风格
+                        </h3>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {presets.map((style) => (
+                                <StylePresetCard
+                                    key={style.id}
+                                    style={style}
+                                    isSelected={selectedStyle?.id === style.id}
+                                    onSelect={() => handleSelectStyle(style)}
+                                />
+                            ))}
+                        </div>
+                    </div>
+
                     {/* AI Recommendations */}
                     <div>
                         <div className="flex items-center justify-between mb-4">
@@ -208,7 +229,7 @@ export default function ArtDirection() {
                             <button
                                 onClick={handleAnalyze}
                                 disabled={isAnalyzingArtStyle}
-                                className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white text-sm rounded-lg font-medium transition-all disabled:opacity-50 flex items-center gap-2"
+                                className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm rounded-lg font-medium transition-all disabled:opacity-50 flex items-center gap-2"
                             >
                                 {isAnalyzingArtStyle ? (
                                     <>
@@ -227,25 +248,6 @@ export default function ArtDirection() {
                         <div className="grid grid-cols-1 gap-4">
                             {aiRecommendations.map((style) => (
                                 <StyleRecommendationCard
-                                    key={style.id}
-                                    style={style}
-                                    isSelected={selectedStyle?.id === style.id}
-                                    onSelect={() => handleSelectStyle(style)}
-                                />
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Built-in Presets */}
-                    <div>
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <Palette size={20} className="text-blue-400" />
-                            内置风格预设
-                        </h3>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            {presets.map((style) => (
-                                <StylePresetCard
                                     key={style.id}
                                     style={style}
                                     isSelected={selectedStyle?.id === style.id}
@@ -281,9 +283,11 @@ export default function ArtDirection() {
                 <div className="w-1/3 flex flex-col p-8 overflow-y-auto bg-black/10">
                     <StyleEditor
                         name={editingName}
+                        description={editingDescription}
                         positivePrompt={editingPositive}
                         negativePrompt={editingNegative}
                         onNameChange={setEditingName}
+                        onDescriptionChange={setEditingDescription}
                         onPositiveChange={setEditingPositive}
                         onNegativeChange={setEditingNegative}
                         onSaveCustom={handleSaveCustom}
@@ -301,7 +305,7 @@ function StyleRecommendationCard({ style, isSelected, onSelect }: any) {
         <motion.div
             layout
             onClick={onSelect}
-            className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${isSelected
+            className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${isSelected
                 ? "bg-purple-500/20 border-purple-500 shadow-lg shadow-purple-500/20"
                 : "bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10"
                 }`}
@@ -311,23 +315,16 @@ function StyleRecommendationCard({ style, isSelected, onSelect }: any) {
                     {isSelected ? <Check size={16} className="text-white" /> : <Sparkles size={16} className="text-gray-400" />}
                 </div>
                 <div className="flex-1">
-                    <h4 className="font-bold text-white mb-1">{style.name}</h4>
-                    <p className="text-xs text-gray-400 mb-3">{style.description}</p>
+                    <h4 className="font-bold text-white text-base mb-1.5">{style.name}</h4>
+                    <p className="text-sm text-gray-400 mb-3 leading-relaxed">{style.description}</p>
                     {style.reason && (
-                        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-3">
-                            <p className="text-xs text-yellow-300">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-3">
+                            <p className="text-sm text-gray-300 leading-relaxed">
                                 <span className="font-bold">推荐理由：</span>
                                 {style.reason}
                             </p>
                         </div>
                     )}
-                    <div className="flex flex-wrap gap-2">
-                        {style.positive_prompt.split(",").slice(0, 3).map((keyword: string, i: number) => (
-                            <span key={i} className="text-[10px] px-2 py-1 bg-primary/20 text-primary rounded border border-primary/30">
-                                {keyword.trim()}
-                            </span>
-                        ))}
-                    </div>
                 </div>
             </div>
         </motion.div>
@@ -339,28 +336,25 @@ function StylePresetCard({ style, isSelected, onSelect }: any) {
         <motion.div
             layout
             onClick={onSelect}
-            className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected
+            className={`min-h-[108px] p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected
                 ? "bg-blue-500/20 border-blue-500 shadow-lg shadow-blue-500/20"
                 : "bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10"
                 }`}
         >
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-2.5">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center ${isSelected ? 'bg-blue-500' : 'bg-white/10'}`}>
                     {isSelected && <Check size={12} className="text-white" />}
                 </div>
-                <h4 className="font-bold text-white text-sm">{style.name}</h4>
+                <h4 className="font-bold text-white text-base">{style.name}</h4>
             </div>
-            {style.description && (
-                <p className="text-xs text-gray-400 mb-2">{style.description}</p>
-            )}
-            <div className="text-[10px] text-gray-500 truncate">
-                {style.positive_prompt.substring(0, 50)}...
-            </div>
+            <p className="text-sm text-gray-400 leading-relaxed truncate">
+                {style.description || "暂无风格描述"}
+            </p>
         </motion.div>
     );
 }
 
-function StyleEditor({ name, positivePrompt, negativePrompt, onNameChange, onPositiveChange, onNegativeChange, onSaveCustom, selectedStyle }: any) {
+function StyleEditor({ name, description, positivePrompt, negativePrompt, onNameChange, onDescriptionChange, onPositiveChange, onNegativeChange, onSaveCustom, selectedStyle }: any) {
     return (
         <div className="space-y-6">
             <div>
@@ -382,6 +376,19 @@ function StyleEditor({ name, positivePrompt, negativePrompt, onNameChange, onPos
                     onChange={(e) => onNameChange(e.target.value)}
                     placeholder="例如: Cyberpunk Neon"
                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-primary focus:outline-none"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                    艺术风格描述
+                </label>
+                <textarea
+                    value={description}
+                    onChange={(e) => onDescriptionChange(e.target.value)}
+                    placeholder="填写这套风格的整体视觉气质、适用题材或镜头感觉"
+                    rows={2}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-primary focus:outline-none resize-none"
                 />
             </div>
 
@@ -421,22 +428,11 @@ function StyleEditor({ name, positivePrompt, negativePrompt, onNameChange, onPos
                 <button
                     onClick={onSaveCustom}
                     disabled={!name || !positivePrompt}
-                    className="w-full px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/10 text-white text-sm font-semibold transition-all hover:bg-white/15 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <Plus size={14} />
                     保存为自定义风格
                 </button>
             </div>
-
-            {/* Preview */}
-            {positivePrompt && (
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-2">生成时的最终提示词预览：</p>
-                    <p className="text-xs text-blue-400 font-mono">
-                        "{positivePrompt}, [用户描述]"
-                    </p>
-                </div>
-            )}
         </div>
     );
 }

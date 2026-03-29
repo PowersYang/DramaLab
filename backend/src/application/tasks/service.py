@@ -1,6 +1,7 @@
 import hashlib
 import json
 import uuid
+from datetime import timedelta, timezone
 
 from ...common.log import get_logger
 from ...repository import ProjectRepository, TaskAttemptRepository, TaskEventRepository, TaskJobRepository, VideoTaskRepository
@@ -217,6 +218,66 @@ class TaskService:
     def get_job_by_idempotency_key(self, idempotency_key: str) -> TaskJob | None:
         return self.task_job_repository.get_by_idempotency_key(idempotency_key)
 
+    def recover_stale_jobs(self, stale_after_seconds: int = 60) -> list[TaskJob]:
+        """回收重启后遗留的 claimed/running 任务，避免状态永久悬空。"""
+        now = utc_now()
+        stale_before = now - timedelta(seconds=stale_after_seconds)
+        recovered: list[TaskJob] = []
+        candidates = self.task_job_repository.list_jobs(
+            statuses=[TaskStatus.CLAIMED.value, TaskStatus.RUNNING.value],
+            limit=None,
+        )
+
+        for job in candidates:
+            last_seen_at = self._normalize_datetime(job.heartbeat_at or job.started_at or job.claimed_at or job.updated_at or job.created_at)
+            if last_seen_at > stale_before:
+                continue
+
+            message = (
+                f"Recovered stale {job.status.value} job after worker restart. "
+                f"Last heartbeat at {last_seen_at.isoformat()}."
+            )
+            self._close_running_attempts(job.id, message, ended_at=now)
+
+            if job.attempt_count >= job.max_attempts:
+                recovered.append(self.mark_job_timed_out(job.id, message))
+                continue
+
+            updated = self.task_job_repository.patch(
+                job.id,
+                {
+                    "status": TaskStatus.QUEUED.value,
+                    "scheduled_at": now,
+                    "claimed_at": None,
+                    "started_at": None,
+                    "heartbeat_at": None,
+                    "finished_at": None,
+                    "cancel_requested_at": None,
+                    "worker_id": None,
+                    "error_code": None,
+                    "error_message": message,
+                },
+            )
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job.id,
+                    organization_id=updated.organization_id,
+                    workspace_id=updated.workspace_id,
+                    created_by=updated.created_by,
+                    updated_by=updated.updated_by,
+                    event_type="job.recovered",
+                    from_status=job.status,
+                    to_status=updated.status,
+                    progress=0,
+                    message=message,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            recovered.append(updated)
+        return recovered
+
     def cancel_job(self, job_id: str) -> TaskJob:
         job = self.task_job_repository.get(job_id)
         if not job:
@@ -419,6 +480,42 @@ class TaskService:
         )
         return updated
 
+    def mark_job_timed_out(self, job_id: str, error_message: str) -> TaskJob:
+        """把已无剩余重试次数的陈旧任务标记为超时，便于前端退出等待态。"""
+        job = self.task_job_repository.get(job_id)
+        if not job:
+            raise ValueError(f"Task job {job_id} not found")
+        now = utc_now()
+        updated = self.task_job_repository.patch(
+            job_id,
+            {
+                "status": TaskStatus.TIMED_OUT.value,
+                "error_code": "task_timeout",
+                "error_message": error_message,
+                "heartbeat_at": now,
+                "finished_at": now,
+                "worker_id": None,
+            },
+        )
+        self.task_event_repository.create(
+            TaskEvent(
+                id=f"evt_{uuid.uuid4().hex[:16]}",
+                job_id=job_id,
+                organization_id=updated.organization_id,
+                workspace_id=updated.workspace_id,
+                created_by=updated.created_by,
+                updated_by=updated.updated_by,
+                event_type="job.timed_out",
+                from_status=job.status,
+                to_status=updated.status,
+                progress=100,
+                message=error_message,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return updated
+
     def mark_job_cancelled(self, job_id: str, message: str = "Task cancelled") -> TaskJob:
         job = self.task_job_repository.get(job_id)
         if not job:
@@ -511,3 +608,22 @@ class TaskService:
             source_video_task_id=source_video_task_id or (job.payload_json or {}).get("video_task_id"),
             created_at=job.created_at,
         )
+
+    def _close_running_attempts(self, job_id: str, error_message: str, *, ended_at) -> None:
+        # 重启恢复时同步收口 attempt，避免审计视图里一直残留 running 记录。
+        for attempt in self.task_attempt_repository.list_by_job(job_id):
+            if attempt.ended_at is not None or attempt.outcome != "running":
+                continue
+            self.task_attempt_repository.patch(
+                attempt.id,
+                {
+                    "outcome": "failed",
+                    "error_message": error_message,
+                    "ended_at": ended_at,
+                },
+            )
+
+    def _normalize_datetime(self, value):
+        if value.tzinfo is not None:
+            return value
+        return value.replace(tzinfo=timezone.utc)

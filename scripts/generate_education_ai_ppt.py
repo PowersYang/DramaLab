@@ -128,7 +128,7 @@ def add_footer(slide, page_no):
     line.fill.solid()
     line.fill.fore_color.rgb = LIGHT_BORDER
     line.line.fill.background()
-    add_textbox(slide, Cm(1.2), Cm(18.6), Cm(8), Cm(0.4), "LumenX Studio | AI赋能教育与组织效率", size=9, color=MUTED)
+    add_textbox(slide, Cm(1.2), Cm(18.6), Cm(8), Cm(0.4), "DramaLab | AI赋能教育与组织效率", size=9, color=MUTED)
     add_textbox(slide, Cm(31.0), Cm(18.5), Cm(1.2), Cm(0.5), str(page_no), size=10, color=MUTED, align=PP_ALIGN.RIGHT)
 
 

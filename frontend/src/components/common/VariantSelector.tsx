@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ImageAsset, ImageVariant } from '@/store/projectStore';
-import { Trash2, Check, ChevronLeft, ChevronRight, Layers, X, Maximize2, Star } from 'lucide-react';
-import { API_URL } from '@/lib/api';
+import { ImageAsset } from '@/store/projectStore';
+import { Trash2, Check, Layers, X, Maximize2, Star, Sparkles, Wand2 } from 'lucide-react';
 import { getAssetUrl } from '@/lib/utils';
 
 interface VariantSelectorProps {
@@ -16,9 +15,6 @@ interface VariantSelectorProps {
     className?: string;
     aspectRatio?: string; // e.g., "9:16", "16:9", "1:1"
 }
-
-// Use the API_URL constant for consistent behavior
-const getApiBaseUrl = () => API_URL;
 
 export const VariantSelector: React.FC<VariantSelectorProps> = ({
     asset,
@@ -51,7 +47,6 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
 
     // Determine the image to display
     const selectedVariant = asset?.variants?.find(v => v.id === asset.selected_id);
-    const apiBase = getApiBaseUrl();
     const displayUrl = selectedVariant ?
         getAssetUrl(selectedVariant.url) :
         getAssetUrl(currentImageUrl);
@@ -69,10 +64,9 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
     };
 
     return (
-        <div className={`flex flex-col gap-4 ${className}`}>
-            {/* Main Viewer */}
+        <div className={`variant-selector flex flex-col gap-4 ${className}`}>
             <div
-                className={`relative w-full ${getAspectRatioClass()} bg-gray-900 rounded-lg overflow-hidden border border-gray-700 group cursor-pointer`}
+                className={`variant-selector-viewer relative w-full ${getAspectRatioClass()} rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-black/40 to-black/70 group cursor-pointer`}
                 onClick={() => displayUrl && setZoomedImage(displayUrl)}
             >
                 {displayUrl ? (
@@ -83,26 +77,33 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                             className="w-full h-full object-contain"
                         />
                         {/* Zoom hint */}
-                        <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div className="flex items-center gap-1 px-2 py-1 bg-black/60 rounded-md backdrop-blur-sm">
-                                <Maximize2 size={12} className="text-white/70" />
-                                <span className="text-xs text-white/70">Click to zoom</span>
+                        <div className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="variant-selector-hint flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-white/10 bg-black/50 backdrop-blur-sm">
+                                <Maximize2 size={12} className="text-gray-300" />
+                                <span className="text-xs text-gray-300">点击放大查看</span>
+                            </div>
+                        </div>
+                        <div className="absolute left-3 top-3">
+                            <div className="flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] text-emerald-300 backdrop-blur-sm">
+                                <Sparkles size={11} />
+                                当前展示版本
                             </div>
                         </div>
                     </>
                 ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-500">
-                        No image generated
+                    <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-2">
+                        <Wand2 size={28} className="opacity-50" />
+                        <span className="text-sm">还没有生成图片</span>
+                        <span className="text-xs text-gray-600">下方选择数量后可直接开始生成</span>
                     </div>
                 )}
 
-                {/* Overlay Actions */}
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                     {selectedVariant && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onDelete(selectedVariant.id); }}
                             className="p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm"
-                            title="Delete this variant"
+                            title="删除当前版本"
                         >
                             <Trash2 size={16} />
                         </button>
@@ -110,50 +111,65 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                 </div>
 
                 {isGenerating && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10 backdrop-blur-sm">
+                    <div className="variant-selector-loading absolute inset-0 flex items-center justify-center z-10 backdrop-blur-sm">
                         <div className="flex flex-col items-center gap-3">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white"></div>
-                            <span className="text-white font-medium">Generating {displayGeneratingBatchSize} variant{displayGeneratingBatchSize > 1 ? 's' : ''}...</span>
+                            <div className="variant-selector-spinner animate-spin rounded-full h-10 w-10 border-b-2"></div>
+                            <span className="text-white font-medium">正在生成 {displayGeneratingBatchSize} 个候选版本...</span>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Controls & Filmstrip */}
             <div className="flex flex-col gap-3">
-                {/* Generation Controls */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 bg-gray-800 rounded-lg p-1 border border-gray-700">
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="mb-3 flex items-center justify-between">
+                        <div>
+                            <div className="text-xs font-semibold text-gray-300">生成设置</div>
+                            <div className="mt-1 text-[11px] text-gray-500">一次生成多张，方便快速筛选最好的一版</div>
+                        </div>
+                        <div className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-gray-400">
+                            当前共 {variants.length} 张
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="variant-selector-batch flex items-center gap-2 rounded-xl p-1 border border-white/10 bg-black/20">
                         {[1, 2, 3, 4].map(size => (
                             <button
                                 key={size}
                                 onClick={() => setBatchSize(size)}
-                                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${batchSize === size
+                                className={`variant-selector-batch-button px-3 py-1 text-xs font-medium rounded-md transition-colors ${batchSize === size
                                     ? 'bg-blue-600 text-white'
-                                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                                    : 'text-gray-400 hover:text-white'
                                     }`}
                             >
                                 x{size}
                             </button>
                         ))}
-                    </div>
+                        </div>
 
-                    <button
-                        onClick={() => onGenerate(batchSize)}
-                        disabled={isGenerating}
-                        className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${isGenerating
-                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20'
-                            }`}
-                    >
-                        <Layers size={16} />
-                        Generate
-                    </button>
+                        <button
+                            onClick={() => onGenerate(batchSize)}
+                            disabled={isGenerating}
+                            className={`variant-selector-generate flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isGenerating
+                                ? 'bg-white/5 text-gray-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20'
+                                }`}
+                        >
+                            <Layers size={16} />
+                            生成候选
+                        </button>
+                    </div>
                 </div>
 
-                {/* Variants Filmstrip */}
                 {variants.length > 0 && (
-                    <div className="relative">
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                        <div className="mb-3 flex items-center justify-between">
+                            <div>
+                                <div className="text-xs font-semibold text-gray-300">候选版本</div>
+                                <div className="mt-1 text-[11px] text-gray-500">点击缩略图切换主预览，收藏版本会被保护</div>
+                            </div>
+                        </div>
                         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent snap-x">
                             {variants.map((variant) => {
                                 const isSelected = variant.id === asset?.selected_id;
@@ -164,11 +180,10 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                     <div
                                         key={variant.id}
                                         className={`
-                                            relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden border-2 transition-all snap-start group/variant
-                                            ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/30' : isFavorited ? 'border-yellow-500/50' : 'border-transparent hover:border-gray-500'}
+                                            relative flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border-2 transition-all snap-start group/variant bg-black/30
+                                            ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/30 scale-[1.02]' : isFavorited ? 'border-yellow-500/50' : 'border-transparent hover:border-gray-500'}
                                         `}
                                     >
-                                        {/* Clickable image area */}
                                         <img
                                             src={url}
                                             alt="Variant"
@@ -193,34 +208,32 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                                 }}
                                                 className={`absolute top-1 right-1 p-1 rounded-full transition-all ${isFavorited
                                                     ? 'bg-yellow-500 text-white'
-                                                    : 'bg-black/50 text-gray-300 opacity-0 group-hover/variant:opacity-100 hover:bg-yellow-500 hover:text-white'
+                                                    : 'variant-selector-favorite text-gray-300 opacity-0 group-hover/variant:opacity-100 hover:bg-yellow-500 hover:text-white'
                                                     }`}
-                                                title={isFavorited ? 'Click to unfavorite' : 'Click to favorite (protected from auto-delete)'}
+                                                title={isFavorited ? '取消收藏' : '收藏该版本'}
                                             >
                                                 <Star size={12} fill={isFavorited ? 'currentColor' : 'none'} />
                                             </button>
                                         )}
 
-                                        {/* Delete button - only show if NOT favorited */}
                                         {!isFavorited && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (confirm('Delete this variant?')) {
+                                                    if (confirm('确认删除这个候选版本吗？')) {
                                                         onDelete(variant.id);
                                                     }
                                                 }}
                                                 className="absolute bottom-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 rounded-full text-white opacity-0 group-hover/variant:opacity-100 transition-all"
-                                                title="Delete variant"
+                                                title="删除版本"
                                             >
                                                 <Trash2 size={10} />
                                             </button>
                                         )}
 
-                                        {/* Favorited protection indicator */}
                                         {isFavorited && (
                                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-yellow-900/80 to-transparent py-1 px-1">
-                                                <span className="text-[8px] text-yellow-200 font-medium">Protected</span>
+                                                <span className="text-[8px] text-yellow-200 font-medium">已收藏</span>
                                             </div>
                                         )}
                                     </div>

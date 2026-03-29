@@ -7,11 +7,14 @@ from ..auth.dependencies import require_platform_role
 from ..common import signed_response
 from ..common.log import get_logger
 from ..schemas.requests import (
+    CreateModelCatalogEntryRequest,
     CreateMembershipRequest,
     CreateOrganizationRequest,
     CreateRoleRequest,
     CreateUserRequest,
     CreateWorkspaceRequest,
+    UpdateModelCatalogEntryRequest,
+    UpdateModelProviderRequest,
     UpdateMembershipRequest,
     UpdateOrganizationRequest,
     UpdateRoleRequest,
@@ -328,5 +331,56 @@ async def delete_membership(membership_id: str):
     try:
         logger.info("TENANT_ADMIN_API: delete_membership membership_id=%s", membership_id)
         return signed_response(tenant_admin_service.delete_membership(membership_id))
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
+@router.get("/model-providers")
+async def list_model_providers():
+    """列出平台级模型供应商配置摘要。"""
+    providers = tenant_admin_service.list_model_providers()
+    logger.info("TENANT_ADMIN_API: list_model_providers count=%s", len(providers))
+    return signed_response(providers)
+
+
+@router.put("/model-providers/{provider_key}")
+async def update_model_provider(provider_key: str, request: UpdateModelProviderRequest):
+    """更新模型供应商配置。"""
+    try:
+        logger.info("TENANT_ADMIN_API: update_model_provider provider_key=%s", provider_key)
+        return signed_response(
+            tenant_admin_service.update_model_provider(
+                provider_key=provider_key,
+                payload=request.model_dump(exclude_unset=True),
+            )
+        )
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
+@router.get("/model-catalog")
+async def list_model_catalog(task_type: str | None = Query(default=None)):
+    """列出平台模型目录。"""
+    catalog = tenant_admin_service.list_model_catalog(task_type=task_type)
+    logger.info("TENANT_ADMIN_API: list_model_catalog task_type=%s count=%s", task_type, len(catalog))
+    return signed_response(catalog)
+
+
+@router.post("/model-catalog")
+async def create_model_catalog_entry(request: CreateModelCatalogEntryRequest):
+    """新增模型目录项。"""
+    try:
+        logger.info("TENANT_ADMIN_API: create_model_catalog_entry model_id=%s", request.model_id)
+        return signed_response(tenant_admin_service.create_model_catalog_entry(request.model_dump()))
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
+@router.put("/model-catalog/{model_id}")
+async def update_model_catalog_entry(model_id: str, request: UpdateModelCatalogEntryRequest):
+    """更新模型目录项。"""
+    try:
+        logger.info("TENANT_ADMIN_API: update_model_catalog_entry model_id=%s", model_id)
+        return signed_response(tenant_admin_service.update_model_catalog_entry(model_id, request.model_dump(exclude_unset=True)))
     except ValueError as exc:
         _raise_http_error(exc)

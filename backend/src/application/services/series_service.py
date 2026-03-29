@@ -10,6 +10,7 @@ from ...common.log import get_logger
 from ...repository import ProjectRepository, SeriesRepository
 from ...schemas.models import PromptConfig, Series
 from ...utils.datetime import utc_now
+from .model_provider_service import ModelProviderService
 
 
 logger = get_logger(__name__)
@@ -21,6 +22,7 @@ class SeriesService:
     def __init__(self):
         self.series_repository = SeriesRepository()
         self.project_repository = ProjectRepository()
+        self.model_provider_service = ModelProviderService()
 
     def create_series(
         self,
@@ -172,6 +174,7 @@ class SeriesService:
         if not series:
             logger.warning("SERIES_SERVICE: update_model_settings series_missing series_id=%s", series_id)
             raise ValueError("Series not found")
+        self.model_provider_service.ensure_model_settings_allowed({k: v for k, v in updates.items() if v is not None})
         series.model_settings = series.model_settings.model_copy(update={k: v for k, v in updates.items() if v is not None})
         series.updated_at = utc_now()
         return self.series_repository.patch_metadata(series_id, {"updated_at": utc_now(), "model_settings": series.model_settings.model_dump(mode="json")}, expected_version=series.version)

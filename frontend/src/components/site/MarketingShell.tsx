@@ -5,6 +5,7 @@ import LumenXBranding from "@/components/layout/LumenXBranding";
 
 interface MarketingShellProps {
   children: ReactNode;
+  ctaMode?: "default" | "auth";
 }
 
 const NAV_ITEMS = [
@@ -13,7 +14,7 @@ const NAV_ITEMS = [
   { href: "/studio", label: "工作台" },
 ];
 
-export default function MarketingShell({ children }: MarketingShellProps) {
+export default function MarketingShell({ children, ctaMode = "default" }: MarketingShellProps) {
   return (
     <div className="min-h-screen bg-transparent text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl">
@@ -29,12 +30,28 @@ export default function MarketingShell({ children }: MarketingShellProps) {
             ))}
           </nav>
           <div className="flex items-center gap-3">
-            <Link href="/signin" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
-              登录
-            </Link>
-            <Link href="/studio" className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.01] hover:bg-secondary">
-              进入工作台
-            </Link>
+            {ctaMode === "auth" ? (
+              <>
+                <Link href="/signin" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
+                  登录
+                </Link>
+                <Link href="/signup" className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.01] hover:bg-slate-800">
+                  注册
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/signin" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
+                  登录
+                </Link>
+                <Link href="/signup" className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950">
+                  注册
+                </Link>
+                <Link href="/studio" className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.01] hover:bg-secondary">
+                  进入工作台
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>

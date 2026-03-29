@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, RefreshCw, Check, AlertTriangle, Image as ImageIcon, Lock, Unlock, ChevronRight, Maximize2, Video } from "lucide-react";
-import { api, API_URL } from "@/lib/api";
+import { X, RefreshCw, Check, Image as ImageIcon, Lock, Video, Sparkles, Eye } from "lucide-react";
+import { api } from "@/lib/api";
 
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
@@ -288,19 +288,71 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         }
     };
 
+    // 用统一的面板元信息，避免 UI 状态和业务数据在多个地方分叉。
+    const panelConfigs = [
+        {
+            key: "full_body" as const,
+            title: "主素材",
+            subtitle: "角色一致性的主参考图",
+            hint: "建议先完成主素材，再衍生三视图和头像。",
+            icon: PhotoIcon,
+            accent: "from-cyan-400/30 via-sky-500/15 to-transparent",
+            previewUrl: asset.full_body_image_url,
+            variantsCount: asset.full_body_asset?.variants?.length || 0,
+            isGenerating: getGeneratingInfo("full_body").isGenerating,
+            isLocked: false,
+            motionEnabled: true
+        },
+        {
+            key: "three_view" as const,
+            title: "三视图",
+            subtitle: "正侧背结构参考",
+            hint: "适合控制角色服装和体态在多视角下的一致性。",
+            icon: Sparkles,
+            accent: "from-emerald-400/25 via-teal-500/15 to-transparent",
+            previewUrl: asset.three_view_image_url,
+            variantsCount: asset.three_view_asset?.variants?.length || 0,
+            isGenerating: getGeneratingInfo("three_view").isGenerating,
+            isLocked: !asset.full_body_image_url && !hasAnyUpload,
+            motionEnabled: false
+        },
+        {
+            key: "headshot" as const,
+            title: "头像特写",
+            subtitle: "面部细节与表情参考",
+            hint: "更适合锁定五官、妆容和近景表情特征。",
+            icon: Eye,
+            accent: "from-amber-400/25 via-orange-500/15 to-transparent",
+            previewUrl: asset.headshot_image_url || asset.avatar_url,
+            variantsCount: asset.headshot_asset?.variants?.length || 0,
+            isGenerating: getGeneratingInfo("headshot").isGenerating,
+            isLocked: !asset.full_body_image_url && !hasAnyUpload,
+            motionEnabled: true
+        }
+    ];
+
+    const activePanelConfig = panelConfigs.find((panel) => panel.key === activePanel) ?? panelConfigs[0];
+    const completedPanels = panelConfigs.filter((panel) => !!panel.previewUrl || panel.variantsCount > 0).length;
+
     return (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8">
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+                className="asset-surface-strong border border-white/10 rounded-2xl w-full max-w-[1500px] h-[90vh] flex flex-col overflow-hidden shadow-2xl"
             >
                 <div className="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-black/20">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-white">{asset.name} <span className="text-gray-500 font-normal text-sm ml-2">Character Workbench</span></h2>
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-bold text-white">{asset.name} <span className="text-gray-500 font-normal text-sm ml-2">角色工作台</span></h2>
+                            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                                <span className="text-xs text-gray-400">制作进度</span>
+                                <span className="text-xs font-semibold text-white">{completedPanels}/{panelConfigs.length}</span>
+                            </div>
+                        </div>
                         <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
-                            <span className="text-xs text-blue-400 font-medium">💡 Tip: Keep the three images consistent for best results</span>
+                            <span className="text-xs text-blue-400 font-medium">建议保持三张图风格一致，生成效果会更稳定</span>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
@@ -308,136 +360,211 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                     </button>
                 </div>
 
-                {/* Main Content - 3 Columns */}
-                <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
+                    <aside className="border-r border-white/10 bg-black/25 overflow-hidden">
+                        <div className="grid grid-cols-1 gap-3 p-4">
+                            {panelConfigs.map((panel, index) => {
+                                const Icon = panel.icon;
+                                const isActive = panel.key === activePanel;
+                                const hasPreview = !!panel.previewUrl || panel.variantsCount > 0;
+                                const previewUrl = hasPreview ? getAssetUrl(panel.previewUrl) : null;
 
-                    {/* Panel 1: Full Body (Master) */}
-                    <WorkbenchPanel
-                        title="1. Master Asset (Full Body)"
-                        isActive={activePanel === "full_body"}
-                        onClick={() => setActivePanel("full_body")}
+                                return (
+                                    <button
+                                        key={panel.key}
+                                        type="button"
+                                        onClick={() => setActivePanel(panel.key)}
+                                        className={`w-full text-left rounded-2xl border p-4 transition-all ${isActive
+                                            ? 'border-primary/40 bg-white/[0.06] shadow-lg shadow-primary/10'
+                                            : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.04]'
+                                            }`}
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <div className="relative shrink-0">
+                                                <div className={`flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${panel.accent} border border-white/10`}>
+                                                    {previewUrl ? (
+                                                        <img
+                                                            src={previewUrl}
+                                                            alt={panel.title}
+                                                            className="h-full w-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <Icon size={20} className={isActive ? "text-white" : "text-gray-300"} />
+                                                    )}
+                                                </div>
+                                                <div className="absolute -bottom-1 -right-1 rounded-full border border-black/30 bg-black/70 px-1.5 py-0.5 text-[10px] text-gray-300">
+                                                    {index + 1}
+                                                </div>
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <div className="text-[11px] tracking-[0.2em] text-gray-500">步骤 {index + 1}</div>
+                                                        <div className={`text-sm font-semibold ${isActive ? 'text-white' : 'text-gray-200'}`}>{panel.title}</div>
+                                                    </div>
+                                                    {panel.isGenerating ? (
+                                                        <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-[11px] text-sky-300">生成中</span>
+                                                    ) : panel.isLocked ? (
+                                                        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-gray-500">待解锁</span>
+                                                    ) : hasPreview ? (
+                                                        <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] text-emerald-300">已产出</span>
+                                                    ) : (
+                                                        <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] text-amber-300">待制作</span>
+                                                    )}
+                                                </div>
 
-                        asset={asset.full_body_asset}
-                        currentImageUrl={asset.full_body_image_url}
-                        onSelect={(id: string) => handleSelectVariant("full_body", id)}
-                        onDelete={(id: string) => handleDeleteVariant("full_body", id)}
-                        onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("full_body", id, isFav)}
+                                                <p className="mt-2 text-xs text-gray-400 leading-5">{panel.subtitle}</p>
 
-                        prompt={fullBodyPrompt}
-                        setPrompt={setFullBodyPrompt}
-                        onGenerate={(batchSize: number) => handleGenerateClick("full_body", batchSize)}
-                        isGenerating={getGeneratingInfo("full_body").isGenerating}
-                        generatingBatchSize={getGeneratingInfo("full_body").batchSize}
-                        description="The primary reference for character consistency."
-                        aspectRatio="9:16"
+                                                <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
+                                                    <span>{panel.variantsCount} 个候选</span>
+                                                    <span>{panel.motionEnabled ? "支持静态/动态" : "静态板块"}</span>
+                                                </div>
 
-                        // Reverse generation: Show hint if upload detected but no full body
-                        reverseGenerationMode={hasNonFullBodyUpload && !hasFullBodyImage}
-                        reverseReferenceUrl={getUploadedReferenceUrl()}
+                                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
+                                                    <div
+                                                        className={`h-full rounded-full transition-all ${hasPreview ? 'bg-gradient-to-r from-emerald-400 to-cyan-400' : panel.isLocked ? 'bg-white/10' : 'bg-gradient-to-r from-amber-400 to-orange-400'}`}
+                                                        style={{ width: `${hasPreview ? 100 : panel.isLocked ? 20 : 45}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </aside>
 
-                        supportsMotion={true}
-                        mode={fullBodyMode}
-                        onModeChange={setFullBodyMode}
-                        hasStaticImage={!!asset.full_body_image_url || (asset.full_body_asset?.variants?.length > 0)}
-                        motionRefVideos={asset.full_body?.video_variants || []}
-                        onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('full_body', prompt, audioUrl)}
-                        isGeneratingMotion={generatingTypes.some(t => t.type === "video_full_body")}
-                        motionPrompt={fullBodyMotionPrompt}
-                        setMotionPrompt={setFullBodyMotionPrompt}
-                        audioUrl={fullBodyAudioUrl}
-                        onAudioUpload={(file: File) => handleAudioUpload(file, 'full_body')}
-                        isUploadingAudio={isUploadingAudio}
-                        isVideoLoading={isVideoLoading}
-                        setIsVideoLoading={setIsVideoLoading}
-                        onResetPrompt={() => handleResetMotionPrompt('full_body')}
-                    />
+                    <div className="overflow-hidden flex flex-col bg-gradient-to-br from-white/[0.02] via-transparent to-black/10">
+                        <div className="border-b border-white/10 px-6 py-4 bg-black/10">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-[11px] uppercase tracking-[0.22em] text-gray-500">{activePanelConfig.subtitle}</div>
+                                    <h3 className="mt-1 text-xl font-semibold text-white">{activePanelConfig.title}</h3>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-gray-300">
+                                        {activePanelConfig.variantsCount} 个候选结果
+                                    </span>
+                                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-gray-300">
+                                        {activePanelConfig.motionEnabled ? "静态 + 动态工作流" : "静态工作流"}
+                                    </span>
+                                </div>
+                            </div>
+                            <p className="mt-3 text-sm text-gray-400">{activePanelConfig.hint}</p>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] text-gray-400">先看左侧状态，再集中处理当前板块</span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] text-gray-400">候选图在主预览下方统一切换</span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] text-gray-400">提示词编辑已独立到右侧</span>
+                            </div>
+                        </div>
 
+                        <div className="flex-1 overflow-hidden">
+                            {activePanel === "full_body" && (
+                                <WorkbenchPanel
+                                    title="主素材（全身图）"
+                                    asset={asset.full_body_asset}
+                                    currentImageUrl={asset.full_body_image_url}
+                                    onSelect={(id: string) => handleSelectVariant("full_body", id)}
+                                    onDelete={(id: string) => handleDeleteVariant("full_body", id)}
+                                    onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("full_body", id, isFav)}
+                                    prompt={fullBodyPrompt}
+                                    setPrompt={setFullBodyPrompt}
+                                    onGenerate={(batchSize: number) => handleGenerateClick("full_body", batchSize)}
+                                    isGenerating={getGeneratingInfo("full_body").isGenerating}
+                                    generatingBatchSize={getGeneratingInfo("full_body").batchSize}
+                                    description="角色一致性的主参考图，也是后续三视图和头像的基础来源。"
+                                    aspectRatio="9:16"
+                                    reverseGenerationMode={hasNonFullBodyUpload && !hasFullBodyImage}
+                                    reverseReferenceUrl={getUploadedReferenceUrl()}
+                                    supportsMotion={true}
+                                    mode={fullBodyMode}
+                                    onModeChange={setFullBodyMode}
+                                    hasStaticImage={!!asset.full_body_image_url || (asset.full_body_asset?.variants?.length > 0)}
+                                    motionRefVideos={asset.full_body?.video_variants || []}
+                                    onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('full_body', prompt, audioUrl)}
+                                    isGeneratingMotion={generatingTypes.some(t => t.type === "video_full_body")}
+                                    motionPrompt={fullBodyMotionPrompt}
+                                    setMotionPrompt={setFullBodyMotionPrompt}
+                                    audioUrl={fullBodyAudioUrl}
+                                    onAudioUpload={(file: File) => handleAudioUpload(file, 'full_body')}
+                                    isUploadingAudio={isUploadingAudio}
+                                    isVideoLoading={isVideoLoading}
+                                    setIsVideoLoading={setIsVideoLoading}
+                                    onResetPrompt={() => handleResetMotionPrompt('full_body')}
+                                    panelHint="先稳定人物整体造型、服装和比例，后续两个板块会更容易保持统一。"
+                                />
+                            )}
 
-                    {/* Divider */}
-                    <div className="w-px bg-white/10 flex items-center justify-center">
-                        <ChevronRight size={16} className="text-gray-600" />
+                            {activePanel === "three_view" && (
+                                <WorkbenchPanel
+                                    title="三视图"
+                                    asset={asset.three_view_asset}
+                                    currentImageUrl={asset.three_view_image_url}
+                                    onSelect={(id: string) => handleSelectVariant("three_view", id)}
+                                    onDelete={(id: string) => handleDeleteVariant("three_view", id)}
+                                    onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("three_view", id, isFav)}
+                                    prompt={threeViewPrompt}
+                                    setPrompt={setThreeViewPrompt}
+                                    onGenerate={(batchSize: number) => handleGenerateClick("three_view", batchSize)}
+                                    isGenerating={getGeneratingInfo("three_view").isGenerating}
+                                    generatingBatchSize={getGeneratingInfo("three_view").batchSize}
+                                    isLocked={!asset.full_body_image_url && !hasAnyUpload}
+                                    description="用于保证角色在正面、侧面、背面三个视角下保持结构一致。"
+                                    aspectRatio="16:9"
+                                    panelHint="这个板块更偏结构校对，适合快速确认服装层级、轮廓和背面设计。"
+                                />
+                            )}
+
+                            {activePanel === "headshot" && (
+                                <WorkbenchPanel
+                                    title="头像特写"
+                                    asset={asset.headshot_asset}
+                                    currentImageUrl={asset.headshot_image_url || asset.avatar_url}
+                                    onSelect={(id: string) => handleSelectVariant("headshot", id)}
+                                    onDelete={(id: string) => handleDeleteVariant("headshot", id)}
+                                    onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("headshot", id, isFav)}
+                                    prompt={headshotPrompt}
+                                    setPrompt={setHeadshotPrompt}
+                                    onGenerate={(batchSize: number) => handleGenerateClick("headshot", batchSize)}
+                                    isGenerating={getGeneratingInfo("headshot").isGenerating}
+                                    generatingBatchSize={getGeneratingInfo("headshot").batchSize}
+                                    isLocked={!asset.full_body_image_url && !hasAnyUpload}
+                                    description="用于保留面部细节、妆容和表情特征，适合做近景参考。"
+                                    aspectRatio="1:1"
+                                    supportsMotion={true}
+                                    mode={headshotMode}
+                                    onModeChange={setHeadshotMode}
+                                    hasStaticImage={!!asset.headshot_image_url || (asset.headshot_asset?.variants?.length > 0)}
+                                    motionRefVideos={asset.head_shot?.video_variants || []}
+                                    onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('head_shot', prompt, audioUrl)}
+                                    isGeneratingMotion={generatingTypes.some(t => t.type === "video_head_shot")}
+                                    motionPrompt={headshotMotionPrompt}
+                                    setMotionPrompt={setHeadshotMotionPrompt}
+                                    audioUrl={headshotAudioUrl}
+                                    onAudioUpload={(file: File) => handleAudioUpload(file, 'head_shot')}
+                                    isUploadingAudio={isUploadingAudio}
+                                    isVideoLoading={isVideoLoading}
+                                    setIsVideoLoading={setIsVideoLoading}
+                                    onResetPrompt={() => handleResetMotionPrompt('headshot')}
+                                    panelHint="头像更适合单独抠细节，比如眼神、发际线、妆面和微表情。"
+                                />
+                            )}
+                        </div>
                     </div>
-
-                    {/* Panel 2: Three View (Derived) */}
-                    <WorkbenchPanel
-                        title="2. Three-Views"
-                        isActive={activePanel === "three_view"}
-                        onClick={() => setActivePanel("three_view")}
-
-                        asset={asset.three_view_asset}
-                        currentImageUrl={asset.three_view_image_url}
-                        onSelect={(id: string) => handleSelectVariant("three_view", id)}
-                        onDelete={(id: string) => handleDeleteVariant("three_view", id)}
-                        onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("three_view", id, isFav)}
-
-                        prompt={threeViewPrompt}
-                        setPrompt={setThreeViewPrompt}
-                        onGenerate={(batchSize: number) => handleGenerateClick("three_view", batchSize)}
-                        isGenerating={getGeneratingInfo("three_view").isGenerating}
-                        generatingBatchSize={getGeneratingInfo("three_view").batchSize}
-                        isLocked={!asset.full_body_image_url && !hasAnyUpload}
-                        description="Front, side, and back views for 3D-like consistency."
-                        aspectRatio="16:9"
-                    />
-
-                    {/* Divider */}
-                    <div className="w-px bg-white/10 flex items-center justify-center">
-                        <ChevronRight size={16} className="text-gray-600" />
-                    </div>
-
-                    {/* Panel 3: Headshot (Derived) */}
-                    <WorkbenchPanel
-                        title="3. Avatar (Headshot)"
-                        isActive={activePanel === "headshot"}
-                        onClick={() => setActivePanel("headshot")}
-
-                        asset={asset.headshot_asset}
-                        currentImageUrl={asset.headshot_image_url || asset.avatar_url}
-                        onSelect={(id: string) => handleSelectVariant("headshot", id)}
-                        onDelete={(id: string) => handleDeleteVariant("headshot", id)}
-                        onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("headshot", id, isFav)}
-
-                        prompt={headshotPrompt}
-                        setPrompt={setHeadshotPrompt}
-                        onGenerate={(batchSize: number) => handleGenerateClick("headshot", batchSize)}
-                        isGenerating={getGeneratingInfo("headshot").isGenerating}
-                        generatingBatchSize={getGeneratingInfo("headshot").batchSize}
-                        isLocked={!asset.full_body_image_url && !hasAnyUpload}
-                        description="Close-up facial details and expressions."
-                        aspectRatio="1:1"
-
-                        supportsMotion={true}
-                        mode={headshotMode}
-                        onModeChange={setHeadshotMode}
-                        hasStaticImage={!!asset.headshot_image_url || (asset.headshot_asset?.variants?.length > 0)}
-                        motionRefVideos={asset.head_shot?.video_variants || []}
-                        onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('head_shot', prompt, audioUrl)}
-                        isGeneratingMotion={generatingTypes.some(t => t.type === "video_head_shot")}
-                        motionPrompt={headshotMotionPrompt}
-                        setMotionPrompt={setHeadshotMotionPrompt}
-                        audioUrl={headshotAudioUrl}
-                        onAudioUpload={(file: File) => handleAudioUpload(file, 'head_shot')}
-                        isUploadingAudio={isUploadingAudio}
-                        isVideoLoading={isVideoLoading}
-                        setIsVideoLoading={setIsVideoLoading}
-                        onResetPrompt={() => handleResetMotionPrompt('headshot')}
-                    />
-
-
                 </div>
 
                 {/* Footer: Negative Prompt & Art Direction Settings */}
-                <div className="border-t border-white/10 bg-[#111] flex flex-col">
+                <div className="border-t border-white/10 bg-black/20 flex flex-col">
                     {/* Top Row: User's Negative Prompt + Apply Style Toggle */}
                     <div className="px-6 py-3 flex items-start gap-4">
                         {/* User's Negative Prompt (Editable) */}
                         <div className="flex-1">
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Your Negative Prompt</label>
+                            <label className="text-xs font-bold text-gray-500 mb-2 block">负向提示词</label>
                             <textarea
                                 value={negativePrompt}
                                 onChange={(e) => setNegativePrompt(e.target.value)}
                                 className="w-full h-16 bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono"
-                                placeholder="Enter your negative prompt (avoid unwanted elements)..."
+                                placeholder="请输入需要规避的元素..."
                             />
                         </div>
 
@@ -452,7 +579,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                     className="rounded border-gray-600 bg-gray-700 text-primary focus:ring-primary w-4 h-4"
                                 />
                                 <label htmlFor="applyStyleFooter" className="text-xs font-bold text-gray-300 cursor-pointer select-none whitespace-nowrap">
-                                    Apply Art Direction Style
+                                    应用艺术指导风格
                                 </label>
                             </div>
                         </div>
@@ -467,7 +594,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                             >
                                 <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500" />
-                                    <span className="text-xs font-bold text-gray-400 uppercase">Art Direction Style (Will Be Appended)</span>
+                                    <span className="text-xs font-bold text-gray-400">艺术指导风格（生成时自动拼接）</span>
                                 </div>
                                 <ChevronRight size={14} className={`text-gray-500 transform transition-transform ${showStyleExpanded ? 'rotate-90' : ''}`} />
                             </button>
@@ -484,7 +611,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                             <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-white/10 rounded-lg p-4">
                                                 {stylePrompt && (
                                                     <div className="mb-3">
-                                                        <span className="text-xs font-bold text-green-400 block mb-1">+ Style Prompt:</span>
+                                                        <span className="text-xs font-bold text-green-400 block mb-1">+ 风格提示词：</span>
                                                         <p className="text-xs text-gray-400 font-mono bg-black/20 p-2 rounded border border-white/5 leading-relaxed">
                                                             {stylePrompt}
                                                         </p>
@@ -493,7 +620,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                                                 {styleNegativePrompt && (
                                                     <div>
-                                                        <span className="text-xs font-bold text-red-400 block mb-1">+ Negative Prompt:</span>
+                                                        <span className="text-xs font-bold text-red-400 block mb-1">+ 负向提示词：</span>
                                                         <p className="text-xs text-gray-400 font-mono bg-black/20 p-2 rounded border border-white/5 leading-relaxed">
                                                             {styleNegativePrompt}
                                                         </p>
@@ -514,10 +641,6 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
 function WorkbenchPanel({
     title,
-    isActive,
-    onClick,
-
-    // Variant Props
     asset,
     currentImageUrl,
     onSelect,
@@ -555,270 +678,339 @@ function WorkbenchPanel({
     isVideoLoading = false,
     setIsVideoLoading,
     onResetPrompt,
+    panelHint,
     // Reverse Generation Props
     reverseGenerationMode = false,
     reverseReferenceUrl = null
 }: any) {
+    const variantsCount = asset?.variants?.length || 0;
+    const hasResult = !!currentImageUrl || variantsCount > 0;
+    const selectedVariant = asset?.variants?.find((variant: any) => variant.id === asset?.selected_id);
+    const modeLabel = supportsMotion ? (mode === "motion" ? "动态制作中" : "静态制作中") : "静态制作";
 
     return (
-        <div
-            className={`flex-1 flex flex-col min-w-[300px] transition-colors ${isActive ? 'bg-white/5' : 'bg-transparent hover:bg-white/[0.02]'}`}
-            onClick={onClick}
-        >
-            {/* Panel Header */}
-            <div className="p-4 border-b border-white/5">
-                <div className="flex items-center justify-between mb-1">
-                    <h3 className={`font-bold text-sm uppercase tracking-wider ${isActive ? 'text-primary' : 'text-gray-400'}`}>
-                        {title}
-                    </h3>
-
-                    {/* Mode Switcher (Asset Activation v2) */}
-                    {supportsMotion && (
-                        <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/10">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onModeChange?.('static'); }}
-                                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${mode === 'static'
-                                    ? 'bg-primary/20 text-primary'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                <PhotoIcon size={12} />
-                                Static
-                            </button>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (!hasStaticImage) {
-                                        alert('Please generate a static image first.');
-                                        return;
-                                    }
-                                    onModeChange?.('motion');
-                                }}
-                                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${mode === 'motion'
-                                    ? 'bg-purple-500/20 text-purple-400'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                <Video size={12} />
-                                Motion
-                            </button>
+        <div className="h-full overflow-y-auto">
+            <div className="grid h-full min-w-0 grid-cols-1 gap-6 p-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
+                <div className="min-h-0 rounded-3xl border border-white/10 bg-black/20 overflow-hidden">
+                    <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                        <div>
+                            <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-gray-300">{title}</h3>
+                            <p className="mt-1 text-sm text-gray-500">{description}</p>
                         </div>
-                    )}
-                </div>
-                <p className="text-xs text-gray-500">{description}</p>
-            </div>
 
-            {/* Image Area with Variant Selector */}
-            <div className="flex-1 relative bg-black/40 p-4 flex flex-col overflow-y-auto group">
-
-                {/* Locked Overlay */}
-                {isLocked && (
-                    <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center text-center p-6">
-                        <div className="text-gray-500 flex flex-col items-center gap-2">
-                            <Lock size={32} />
-                            <span className="text-sm">Generate Master Asset first</span>
-                        </div>
-                    </div>
-                )}
-
-                {/* Reverse Generation Hint - shown in Full Body panel when upload detected */}
-                {reverseGenerationMode && (
-                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent z-10 flex flex-col items-center justify-center text-center p-6 pointer-events-none">
-                        <div className="flex flex-col items-center gap-3 bg-black/60 backdrop-blur-md rounded-xl p-6 border border-primary/30 pointer-events-auto">
-                            <div className="flex items-center gap-2 text-primary">
-                                <RefreshCw size={20} />
-                                <span className="text-sm font-bold">Upload Detected</span>
+                        {/* 静态/动态模式切换只保留在支持的视频板块，避免在所有面板重复占空间。 */}
+                        {supportsMotion && (
+                            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/10">
+                                <button
+                                    onClick={() => onModeChange?.('static')}
+                                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${mode === 'static'
+                                        ? 'bg-primary/20 text-primary'
+                                        : 'text-gray-400 hover:text-white'
+                                        }`}
+                                >
+                                    <PhotoIcon size={12} />
+                                    静态
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!hasStaticImage) {
+                                            alert('请先生成静态图片。');
+                                            return;
+                                        }
+                                        onModeChange?.('motion');
+                                    }}
+                                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${mode === 'motion'
+                                        ? 'bg-purple-500/20 text-purple-400'
+                                        : 'text-gray-400 hover:text-white'
+                                        }`}
+                                >
+                                    <Video size={12} />
+                                    动态
+                                </button>
                             </div>
-                            <p className="text-xs text-gray-300 max-w-[200px]">
-                                Generate Full Body from your uploaded reference image
-                            </p>
-                            {reverseReferenceUrl && (
-                                <img
-                                    src={typeof reverseReferenceUrl === 'string' && reverseReferenceUrl.startsWith('http')
-                                        ? reverseReferenceUrl
-                                        : `${window.location.origin}/${reverseReferenceUrl}`}
-                                    alt="Reference"
-                                    className="w-16 h-16 rounded-lg object-cover border border-white/20"
+                        )}
+                    </div>
+
+                    <div className="relative h-[calc(100%-73px)] min-h-[520px] bg-black/30 p-5">
+                        {isLocked && (
+                            <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center text-center p-6">
+                                <div className="text-gray-500 flex flex-col items-center gap-2">
+                                    <Lock size={32} />
+                                    <span className="text-sm">请先完成主素材，再继续当前板块</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {reverseGenerationMode && (
+                            <div className="absolute inset-x-5 top-5 z-10 rounded-2xl border border-primary/30 bg-black/70 p-4 backdrop-blur-md">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                                        <RefreshCw size={18} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-white">检测到已上传参考图</div>
+                                        <p className="mt-1 text-xs text-gray-400">可以基于现有上传图继续反推完整主素材，不需要重头开始。</p>
+                                    </div>
+                                    {reverseReferenceUrl && (
+                                        <img
+                                            src={typeof reverseReferenceUrl === 'string' && reverseReferenceUrl.startsWith('http')
+                                                ? reverseReferenceUrl
+                                                : `${window.location.origin}/${reverseReferenceUrl}`}
+                                            alt="Reference"
+                                            className="h-14 w-14 rounded-xl object-cover border border-white/20"
+                                        />
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="h-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-700">
+                            {mode === 'motion' && supportsMotion ? (
+                                <div className="flex flex-col gap-4 p-4">
+                                    <div className="flex items-center gap-2 pb-2 border-b border-purple-500/20">
+                                        <div className="w-1 h-4 bg-gradient-to-b from-purple-400 to-pink-500 rounded-full"></div>
+                                        <span className="text-xs font-bold text-purple-300 tracking-wider">动态参考</span>
+                                    </div>
+
+                                    <div className={`relative w-full ${aspectRatio === '9:16' ? 'aspect-[9/16] max-h-[40vh]' : aspectRatio === '1:1' ? 'aspect-square max-h-[35vh]' : 'aspect-video'} bg-gradient-to-br from-gray-900/80 to-black rounded-xl overflow-hidden border border-white/5 shadow-xl backdrop-blur-sm`}>
+                                        {isGeneratingMotion ? (
+                                            <div className="absolute inset-0 z-10 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center gap-4">
+                                                <div className="relative">
+                                                    <RefreshCw size={48} className="text-purple-400 animate-spin" />
+                                                    <div className="absolute inset-0 blur-xl bg-purple-500/30 animate-pulse"></div>
+                                                </div>
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-sm font-bold text-white tracking-widest animate-pulse">正在生成视频</span>
+                                                    <span className="text-[10px] text-purple-300/60 mt-1">AI 正在处理动态内容...</span>
+                                                </div>
+                                            </div>
+                                        ) : isVideoLoading && motionRefVideos?.length > 0 ? (
+                                            <div className="absolute inset-0 z-10 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                                                <RefreshCw size={32} className="text-gray-400 animate-spin" />
+                                                <span className="text-xs text-gray-400 font-medium">正在加载视频文件...</span>
+                                            </div>
+                                        ) : null}
+
+                                        {motionRefVideos?.length > 0 ? (
+                                            <video
+                                                key={motionRefVideos[motionRefVideos.length - 1]?.url}
+                                                src={getAssetUrl(motionRefVideos[motionRefVideos.length - 1]?.url)}
+                                                onCanPlay={() => setIsVideoLoading(false)}
+                                                onLoadStart={() => setIsVideoLoading(true)}
+                                                className="w-full h-full object-contain"
+                                                controls
+                                                loop
+                                                autoPlay
+                                                muted
+                                            />
+                                        ) : !isGeneratingMotion && (
+                                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-2">
+                                                <Video size={40} className="opacity-50" />
+                                                <span className="text-sm">暂无动态参考</span>
+                                                <span className="text-xs opacity-70">可在下方生成</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="bg-black/20 rounded-lg border border-white/10 p-3">
+                                        <label className="text-xs font-bold text-gray-500 mb-2 block">音频输入（可选）</label>
+                                        <p className="text-xs text-gray-600 mb-3">上传音频后可驱动口型和动作节奏</p>
+
+                                        <label className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition-all ${audioUrl
+                                            ? 'border-green-500/50 bg-green-500/10 text-green-400'
+                                            : 'border-indigo-500/30 hover:border-indigo-400/50 hover:bg-indigo-500/5 text-gray-400'
+                                            }`}>
+                                            <input
+                                                type="file"
+                                                accept="audio/*"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) onAudioUpload?.(file);
+                                                }}
+                                                disabled={isUploadingAudio}
+                                            />
+                                            {isUploadingAudio ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary/30 border-t-primary"></div>
+                                                    <span className="text-xs">上传中...</span>
+                                                </>
+                                            ) : audioUrl ? (
+                                                <>
+                                                    <Check size={14} />
+                                                    <span className="text-xs font-medium">音频已上传</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <ImageIcon size={14} />
+                                                    <span className="text-xs">上传音频文件</span>
+                                                </>
+                                            )}
+                                        </label>
+                                    </div>
+
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-gray-500">动态提示词</label>
+                                            <button
+                                                onClick={() => onResetPrompt?.()}
+                                                className="text-[10px] text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                                                title="恢复推荐提示词"
+                                            >
+                                                <RefreshCw size={10} />
+                                                重置
+                                            </button>
+                                        </div>
+                                        <textarea
+                                            value={motionPrompt}
+                                            onChange={(e) => setMotionPrompt?.(e.target.value)}
+                                            className="w-full h-24 bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
+                                            placeholder="请输入你想要的动态描述..."
+                                        />
+                                    </div>
+
+                                    <button
+                                        onClick={() => onGenerateMotionRef?.(motionPrompt, audioUrl)}
+                                        disabled={isGeneratingMotion}
+                                        className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${isGeneratingMotion
+                                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                            : 'bg-primary hover:bg-primary/90 text-white shadow-lg'
+                                            }`}
+                                    >
+                                        <Video size={16} />
+                                        生成动态参考
+                                    </button>
+                                </div>
+                            ) : isVideo ? (
+                                <VideoVariantSelector
+                                    videos={videos}
+                                    onDelete={onDeleteVideo}
+                                    onGenerate={onGenerateVideo}
+                                    isGenerating={isGenerating}
+                                    aspectRatio={aspectRatio}
+                                    className="h-full"
+                                />
+                            ) : (
+                                <VariantSelector
+                                    asset={asset}
+                                    currentImageUrl={currentImageUrl}
+                                    onSelect={onSelect}
+                                    onDelete={onDelete}
+                                    onFavorite={onFavorite}
+                                    onGenerate={onGenerate}
+                                    isGenerating={isGenerating}
+                                    generatingBatchSize={generatingBatchSize}
+                                    aspectRatio={aspectRatio}
+                                    className="h-full"
                                 />
                             )}
                         </div>
-                    </div>
-                )}
 
-                {/* Variant Selector / Motion Ref Content */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-700">
-                    {mode === 'motion' && supportsMotion ? (
-                        /* Motion Ref Mode Content - Matching Static Style */
-                        <div className="flex flex-col gap-4 p-4">
-                            {/* Header with gradient accent */}
-                            <div className="flex items-center gap-2 pb-2 border-b border-purple-500/20">
-                                <div className="w-1 h-4 bg-gradient-to-b from-purple-400 to-pink-500 rounded-full"></div>
-                                <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">Motion Reference</span>
+                        {status === "outdated" && !isGenerating && (
+                            <div className="absolute top-5 right-5 z-10">
+                                <div className="bg-yellow-500/20 border border-yellow-500/50 px-3 py-1 rounded-lg flex items-center gap-2 backdrop-blur-sm">
+                                    <RefreshCw size={12} className="text-yellow-500" />
+                                    <span className="text-xs font-bold text-yellow-500">建议更新</span>
+                                </div>
                             </div>
+                        )}
+                    </div>
+                </div>
 
-                            {/* Video Player with glassmorphism */}
-                            <div className={`relative w-full ${aspectRatio === '9:16' ? 'aspect-[9/16] max-h-[40vh]' : aspectRatio === '1:1' ? 'aspect-square max-h-[35vh]' : 'aspect-video'} bg-gradient-to-br from-gray-900/80 to-black rounded-xl overflow-hidden border border-white/5 shadow-xl backdrop-blur-sm`}>
-                                {isGeneratingMotion ? (
-                                    <div className="absolute inset-0 z-10 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center gap-4">
-                                        <div className="relative">
-                                            <RefreshCw size={48} className="text-purple-400 animate-spin" />
-                                            <div className="absolute inset-0 blur-xl bg-purple-500/30 animate-pulse"></div>
-                                        </div>
-                                        <div className="flex flex-col items-center">
-                                            <span className="text-sm font-bold text-white uppercase tracking-widest animate-pulse">Generating Video</span>
-                                            <span className="text-[10px] text-purple-300/60 mt-1">AI is processing motion...</span>
-                                        </div>
-                                    </div>
-                                ) : isVideoLoading && motionRefVideos?.length > 0 ? (
-                                    <div className="absolute inset-0 z-10 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
-                                        <RefreshCw size={32} className="text-gray-400 animate-spin" />
-                                        <span className="text-xs text-gray-400 font-medium">Loading Video File...</span>
-                                    </div>
-                                ) : null}
+                <aside className="min-h-0 rounded-3xl border border-white/10 bg-black/20 overflow-hidden">
+                    <div className="border-b border-white/10 px-5 py-4">
+                        <div className="text-[11px] uppercase tracking-[0.22em] text-gray-500">编辑区</div>
+                        <div className="mt-1 text-base font-semibold text-white">提示词与操作建议</div>
+                    </div>
 
-                                {motionRefVideos?.length > 0 ? (
-                                    <video
-                                        key={motionRefVideos[motionRefVideos.length - 1]?.url}
-                                        src={getAssetUrl(motionRefVideos[motionRefVideos.length - 1]?.url)}
-                                        onCanPlay={() => setIsVideoLoading(false)}
-                                        onLoadStart={() => setIsVideoLoading(true)}
-                                        className="w-full h-full object-contain"
-                                        controls
-                                        loop
-                                        autoPlay
-                                        muted
-                                    />
-                                ) : !isGeneratingMotion && (
-                                    <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-2">
-                                        <Video size={40} className="opacity-50" />
-                                        <span className="text-sm">No motion reference yet</span>
-                                        <span className="text-xs opacity-70">Generate one below</span>
-                                    </div>
+                    <div className="h-[calc(100%-73px)] overflow-y-auto p-5 space-y-5">
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-gray-300">当前状态</span>
+                                {isGenerating ? (
+                                    <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-[11px] text-sky-300">生成中</span>
+                                ) : hasResult ? (
+                                    <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] text-emerald-300">已有结果</span>
+                                ) : (
+                                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-gray-400">等待生成</span>
                                 )}
                             </div>
-
-                            <div className="bg-black/20 rounded-lg border border-white/10 p-3">
-                                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Audio Input (Optional)</label>
-                                <p className="text-xs text-gray-600 mb-3">Upload audio to drive lip-sync or body rhythm</p>
-
-                                <label className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition-all ${audioUrl
-                                    ? 'border-green-500/50 bg-green-500/10 text-green-400'
-                                    : 'border-indigo-500/30 hover:border-indigo-400/50 hover:bg-indigo-500/5 text-gray-400'
-                                    }`}>
-                                    <input
-                                        type="file"
-                                        accept="audio/*"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) onAudioUpload?.(file);
-                                        }}
-                                        disabled={isUploadingAudio}
-                                    />
-                                    {isUploadingAudio ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary/30 border-t-primary"></div>
-                                            <span className="text-xs">Uploading...</span>
-                                        </>
-                                    ) : audioUrl ? (
-                                        <>
-                                            <Check size={14} />
-                                            <span className="text-xs font-medium">Audio Uploaded</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ImageIcon size={14} />
-                                            <span className="text-xs">Upload Audio File</span>
-                                        </>
-                                    )}
-                                </label>
-                            </div>
-
-                            {/* Motion Prompt */}
-                            <div className="flex flex-col gap-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Motion Prompt</label>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onResetPrompt?.();
-                                        }}
-                                        className="text-[10px] text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
-                                        title="Reset to recommended prompt"
-                                    >
-                                        <RefreshCw size={10} />
-                                        Reset
-                                    </button>
+                            <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                    <div className="text-gray-500">候选数量</div>
+                                    <div className="mt-1 text-lg font-semibold text-white">{variantsCount}</div>
                                 </div>
-                                <textarea
-                                    value={motionPrompt}
-                                    onChange={(e) => setMotionPrompt?.(e.target.value)}
-                                    className="w-full h-24 bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
-                                    placeholder="Describe the motion you want..."
-                                />
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                    <div className="text-gray-500">已选版本</div>
+                                    <div className="mt-1 text-lg font-semibold text-white">{selectedVariant ? "已选择" : "未选择"}</div>
+                                </div>
                             </div>
-
-                            {/* Generate Button */}
-                            <button
-                                onClick={() => onGenerateMotionRef?.(motionPrompt, audioUrl)}
-                                disabled={isGeneratingMotion}
-                                className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${isGeneratingMotion
-                                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                    : 'bg-primary hover:bg-primary/90 text-white shadow-lg'
-                                    }`}
-                            >
-                                <Video size={16} />
-                                Generate Motion Reference
-                            </button>
+                            <div className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-gray-400">
+                                当前模式：<span className="text-gray-200">{modeLabel}</span>
+                            </div>
                         </div>
-                    ) : isVideo ? (
-                        <VideoVariantSelector
-                            videos={videos}
-                            onDelete={onDeleteVideo}
-                            onGenerate={onGenerateVideo}
-                            isGenerating={isGenerating}
-                            aspectRatio={aspectRatio}
-                            className="h-full"
-                        />
-                    ) : (
-                        <VariantSelector
-                            asset={asset}
-                            currentImageUrl={currentImageUrl}
-                            onSelect={onSelect}
-                            onDelete={onDelete}
-                            onFavorite={onFavorite}
-                            onGenerate={onGenerate}
-                            isGenerating={isGenerating}
-                            generatingBatchSize={generatingBatchSize}
-                            aspectRatio={aspectRatio}
-                            className="h-full"
-                        />
-                    )}
-                </div>
 
-                {/* Status Overlay (if outdated) */}
-                {status === "outdated" && !isGenerating && (
-                    <div className="absolute top-4 right-4 z-10">
-                        <div className="bg-yellow-500/20 border border-yellow-500/50 px-3 py-1 rounded-lg flex items-center gap-2 backdrop-blur-sm">
-                            <RefreshCw size={12} className="text-yellow-500" />
-                            <span className="text-xs font-bold text-yellow-500">Update Recommended</span>
+                        {panelHint && (
+                            <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                                    <Sparkles size={15} className="text-primary" />
+                                    操作建议
+                                </div>
+                                <p className="mt-2 text-xs leading-6 text-gray-400">{panelHint}</p>
+                            </div>
+                        )}
+
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="mb-3 text-xs font-semibold text-gray-300">本板块重点</div>
+                            <div className="space-y-2 text-[11px] text-gray-400">
+                                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                                    先用批量生成快速筛图，再收藏或选中最稳定的一版。
+                                </div>
+                                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                                    提示词里优先写清人物固定特征，动作和镜头语言放后面。
+                                </div>
+                                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                                    如果结果已经接近，优先小修提示词，不建议每次大改整段描述。
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="mb-2 flex items-center justify-between">
+                                <span className="text-xs font-semibold text-gray-300">提示词</span>
+                                <span className="text-[11px] text-gray-500">{prompt?.length || 0} 字符</span>
+                            </div>
+                            <textarea
+                                value={prompt}
+                                onChange={(e) => setPrompt(e.target.value)}
+                                disabled={isLocked}
+                                className="h-[280px] w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
+                                placeholder="请输入提示词描述..."
+                            />
+                            <p className="mt-2 text-[11px] leading-5 text-gray-500">
+                                这里保留完整提示词编辑区，图片预览和候选操作放在左侧，避免来回跳读。
+                            </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 p-4">
+                            <div className="text-xs font-semibold text-gray-300">快速检查</div>
+                            <div className="mt-3 space-y-2 text-[11px] text-gray-500">
+                                <div className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2">
+                                    <span>角色固定特征是否明确</span>
+                                    <span className="text-gray-300">建议确认</span>
+                                </div>
+                                <div className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2">
+                                    <span>背景是否足够干净</span>
+                                    <span className="text-gray-300">建议确认</span>
+                                </div>
+                                <div className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2">
+                                    <span>是否与其他板块风格一致</span>
+                                    <span className="text-gray-300">建议确认</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                )}
-            </div>
-
-            {/* Prompt Editor (Bottom) */}
-            <div className="h-1/3 border-t border-white/10 flex flex-col bg-[#111]">
-                <div className="p-2 border-b border-white/5 flex justify-between items-center bg-black/20">
-                    <span className="text-xs font-bold text-gray-500 uppercase px-2">Prompt</span>
-                </div>
-                <textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    disabled={isLocked}
-                    className="flex-1 w-full bg-transparent p-4 text-xs text-gray-300 resize-none focus:outline-none focus:bg-white/5 font-mono leading-relaxed"
-                    placeholder="Enter prompt description..."
-                />
+                </aside>
             </div>
         </div>
     );

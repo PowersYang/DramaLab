@@ -8,6 +8,7 @@
 from ...repository import ProjectRepository, SeriesRepository
 from ...common.log import get_logger
 from ...providers import ScriptProcessor
+from .model_provider_service import ModelProviderService
 from ...schemas.models import ModelSettings, PromptConfig
 from ...utils.datetime import utc_now
 
@@ -22,6 +23,7 @@ class ProjectService:
         self.project_repository = ProjectRepository()
         self.series_repository = SeriesRepository()
         self.text_provider = ScriptProcessor()
+        self.model_provider_service = ModelProviderService()
 
     def create_project(
         self,
@@ -204,6 +206,7 @@ class ProjectService:
         if not project:
             logger.warning("PROJECT_SERVICE: update_model_settings target missing script_id=%s", script_id)
             raise ValueError("Script not found")
+        self.model_provider_service.ensure_model_settings_allowed(effective_updates)
         project.model_settings = project.model_settings.model_copy(update=effective_updates)
         return self.project_repository.patch_metadata(
             script_id,

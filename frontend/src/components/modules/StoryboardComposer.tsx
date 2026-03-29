@@ -322,8 +322,8 @@ export default function StoryboardComposer() {
             }
 
             // Construct final prompt:
-            // If image_prompt exists (polished or manually edited), it already contains action/dialogue,
-            // so only prepend the style. Otherwise, build from action_description and dialogue.
+            // If image_prompt exists (polished or manually edited), only prepend the style.
+            // Otherwise, build from visual action only and keep dialogue out of the image prompt.
             let finalPrompt = "";
 
             if (frame.image_prompt && frame.image_prompt.trim()) {
@@ -332,11 +332,10 @@ export default function StoryboardComposer() {
                     ? `${globalStylePrompt} . ${frame.image_prompt}`
                     : frame.image_prompt;
             } else {
-                // No custom prompt - build from action_description and dialogue
+                // No custom prompt - build from style and action description only.
                 const parts = [
                     globalStylePrompt,
                     frame.action_description,
-                    frame.dialogue ? `Dialogue context: "${frame.dialogue}"` : ""
                 ].filter(Boolean);
                 finalPrompt = parts.join(" . ");
             }
@@ -411,13 +410,13 @@ export default function StoryboardComposer() {
                                     key={frame.id}
                                     layoutId={frame.id}
                                     onClick={() => setSelectedFrameId(frame.id)}
-                                    className={`group relative flex gap-6 p-4 rounded-xl border transition-all cursor-pointer ${selectedFrameId === frame.id
+                                    className={`storyboard-frame-card group relative flex gap-6 p-4 rounded-xl border transition-all cursor-pointer ${selectedFrameId === frame.id
                                         ? "bg-white/5 border-primary ring-1 ring-primary"
-                                        : "bg-[#161616] border-white/5 hover:border-white/20"
+                                        : "asset-surface hover:border-white/20"
                                         }`}
                                 >
                                     {/* Frame Number */}
-                                    <div className="absolute -left-3 -top-3 w-8 h-8 rounded-full bg-[#222] border border-white/10 flex items-center justify-center text-xs font-bold text-gray-400 shadow-lg z-10">
+                                    <div className="storyboard-frame-index absolute -left-3 -top-3 w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-xs font-bold text-gray-400 shadow-lg z-10">
                                         {typeof frame.frame_order === "number" ? frame.frame_order + 1 : index + 1}
                                     </div>
 
@@ -441,7 +440,7 @@ export default function StoryboardComposer() {
                                         }
 
                                         {/* Hover Actions - pointer-events-none to allow image click */}
-                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none">
+                                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none">
                                             {/* Lock Button */}
                                             <button
                                                 onClick={async (e) => {
@@ -582,7 +581,7 @@ export default function StoryboardComposer() {
                                 < div className="flex justify-center opacity-0 hover:opacity-100 transition-opacity -my-3 z-10 relative" >
                                     <button
                                         onClick={() => { setInsertIndex(index + 1); setIsCreateDialogOpen(true); }}
-                                        className="p-1 bg-[#222] border border-white/20 rounded-full text-gray-400 hover:text-white hover:border-primary hover:bg-primary/20 transition-all transform hover:scale-110"
+                                        className="storyboard-insert-button p-1 border border-white/20 rounded-full text-gray-400 hover:text-white hover:border-primary hover:bg-primary/20 transition-all transform hover:scale-110"
                                         title="在这里插入分镜"
                                     >
                                         <Plus size={16} />
@@ -609,7 +608,7 @@ export default function StoryboardComposer() {
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 16 }}
                             transition={{ duration: 0.25, ease: [0.25, 1, 0.5, 1] }}
-                            className="w-full max-w-2xl max-h-[80vh] bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+                            className="storyboard-modal w-full max-w-2xl max-h-[80vh] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20">
@@ -702,7 +701,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
+                className="storyboard-modal border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
             >
                 <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
                     <div className="flex items-center gap-3">
@@ -720,7 +719,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                         <select
                             value={sceneId}
                             onChange={(e) => setSceneId(e.target.value)}
-                            className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white focus:border-primary/50 focus:outline-none appearance-none"
+                            className="storyboard-field w-full px-4 py-3 border border-white/10 rounded-lg text-white focus:border-primary/50 focus:outline-none appearance-none"
                         >
                             <option value="" disabled>请选择场景</option>
                             {scenes.map((s: any) => (
@@ -735,7 +734,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                             onChange={(e) => setAction(e.target.value)}
                             placeholder="描述这一帧中发生的内容"
                             rows={3}
-                            className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
+                            className="storyboard-field w-full px-4 py-3 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
                         />
                     </div>
                     <div>
@@ -745,7 +744,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                             onChange={(e) => setDialogue(e.target.value)}
                             placeholder="输入角色对白..."
                             rows={2}
-                            className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
+                            className="storyboard-field w-full px-4 py-3 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
                         />
                     </div>
                 </div>
@@ -809,7 +808,7 @@ function ImageWithRetry({ src, alt, className, onClick }: { src: string, alt: st
         <div className={`relative ${className}`}>
             {isLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/5 backdrop-blur-sm z-10">
-                    <RefreshCw className="animate-spin text-white/50" size={24} />
+                    <RefreshCw className="animate-spin text-gray-400" size={24} />
                 </div>
             )}
             <img

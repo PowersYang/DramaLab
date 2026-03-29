@@ -156,6 +156,42 @@ create table if not exists style_presets (
 
 create index if not exists ix_style_presets_active_sort on style_presets (is_active, sort_order, created_at);
 
+create table if not exists model_provider_configs (
+    provider_key varchar(64) primary key,
+    display_name varchar(255) not null,
+    description text,
+    enabled boolean not null default true,
+    base_url text,
+    credentials_json jsonb not null default '{}'::jsonb,
+    settings_json jsonb not null default '{}'::jsonb,
+    created_by varchar(64),
+    updated_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists model_catalog_entries (
+    model_id varchar(128) primary key,
+    task_type varchar(16) not null,
+    provider_key varchar(64) not null,
+    display_name varchar(255) not null,
+    description text,
+    enabled boolean not null default true,
+    sort_order integer not null default 100,
+    is_public boolean not null default true,
+    capabilities_json jsonb not null default '{}'::jsonb,
+    default_settings_json jsonb not null default '{}'::jsonb,
+    created_by varchar(64),
+    updated_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint fk_model_catalog_entries_provider foreign key (provider_key) references model_provider_configs (provider_key)
+);
+
+create index if not exists ix_model_catalog_entries_provider_key on model_catalog_entries (provider_key);
+create index if not exists ix_model_catalog_entries_task_type on model_catalog_entries (task_type);
+create index if not exists ix_model_catalog_entries_task_enabled_sort on model_catalog_entries (task_type, enabled, sort_order, created_at);
+
 create table if not exists projects (
     id varchar(64) primary key,
     organization_id varchar(64),

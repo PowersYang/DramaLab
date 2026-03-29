@@ -57,7 +57,7 @@ class AuthApiTest(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def _login(self, email: str, display_name: str | None = None):
-        send_result = self.client.post("/auth/email-code/send", json={"email": email, "purpose": "signin"})
+        send_result = self.client.post("/auth/email-code/send", json={"email": email, "purpose": "signup"})
         self.assertEqual(send_result.status_code, 200)
         debug_code = send_result.json()["debug_code"]
         verify_result = self.client.post(
@@ -65,7 +65,7 @@ class AuthApiTest(unittest.TestCase):
             json={
                 "email": email,
                 "code": debug_code,
-                "purpose": "signin",
+                "purpose": "signup",
                 "display_name": display_name,
             },
         )
@@ -101,10 +101,10 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(list_result.json()[0]["title"], "Alice Draft")
 
         second_client = TestClient(self.app)
-        second_send = second_client.post("/auth/email-code/send", json={"email": "bob@example.com", "purpose": "signin"}).json()
+        second_send = second_client.post("/auth/email-code/send", json={"email": "bob@example.com", "purpose": "signup"}).json()
         second_login = second_client.post(
             "/auth/email-code/verify",
-            json={"email": "bob@example.com", "code": second_send["debug_code"], "purpose": "signin", "display_name": "Bob"},
+            json={"email": "bob@example.com", "code": second_send["debug_code"], "purpose": "signup", "display_name": "Bob"},
         ).json()
         second_headers = {"Authorization": f"Bearer {second_login['session']['access_token']}"}
 
@@ -121,6 +121,31 @@ class AuthApiTest(unittest.TestCase):
         refreshed = refresh_result.json()
         self.assertEqual(refreshed["me"]["user"]["email"], "refresh@example.com")
         self.assertIn("access_token", refreshed["session"])
+
+    def test_signin_requires_existing_account(self):
+        send_result = self.client.post("/auth/email-code/send", json={"email": "missing@example.com", "purpose": "signin"})
+        self.assertEqual(send_result.status_code, 200)
+        debug_code = send_result.json()["debug_code"]
+
+        verify_result = self.client.post(
+            "/auth/email-code/verify",
+            json={"email": "missing@example.com", "code": debug_code, "purpose": "signin"},
+        )
+        self.assertEqual(verify_result.status_code, 400)
+        self.assertEqual(verify_result.json()["detail"], "Account not found, please sign up first")
+
+    def test_signup_rejects_existing_account(self):
+        self._login("existing@example.com", "Existing")
+        send_result = self.client.post("/auth/email-code/send", json={"email": "existing@example.com", "purpose": "signup"})
+        self.assertEqual(send_result.status_code, 200)
+        debug_code = send_result.json()["debug_code"]
+
+        verify_result = self.client.post(
+            "/auth/email-code/verify",
+            json={"email": "existing@example.com", "code": debug_code, "purpose": "signup", "display_name": "Another Name"},
+        )
+        self.assertEqual(verify_result.status_code, 400)
+        self.assertEqual(verify_result.json()["detail"], "Account already exists, please sign in")
 
 
 if __name__ == "__main__":

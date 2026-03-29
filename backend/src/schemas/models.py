@@ -418,6 +418,67 @@ class Membership(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
 
 
+class ModelProviderConfig(BaseModel):
+    """平台级模型供应商配置。"""
+
+    provider_key: str = Field(..., description="供应商唯一键，例如 DASHSCOPE/KLING")
+    display_name: str = Field(..., description="供应商展示名称")
+    description: Optional[str] = Field(None, description="供应商说明")
+    enabled: bool = Field(True, description="供应商是否启用")
+    base_url: Optional[str] = Field(None, description="覆盖后的基础地址")
+    credentials_json: Dict[str, str] = Field(default_factory=dict, description="供应商凭据明文字典，仅服务端可见")
+    settings_json: Dict[str, Any] = Field(default_factory=dict, description="运行时补充设置，如默认文本模型")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class ModelProviderConfigSummary(BaseModel):
+    """面向管理端的供应商配置摘要，不回显真实密钥。"""
+
+    provider_key: str = Field(..., description="供应商唯一键")
+    display_name: str = Field(..., description="供应商展示名称")
+    description: Optional[str] = Field(None, description="供应商说明")
+    enabled: bool = Field(True, description="供应商是否启用")
+    base_url: Optional[str] = Field(None, description="覆盖后的基础地址")
+    credential_fields: List[str] = Field(default_factory=list, description="该供应商需要的凭据字段名")
+    configured_fields: List[str] = Field(default_factory=list, description="当前已配置的凭据字段名")
+    has_credentials: bool = Field(False, description="是否至少配置了一项凭据")
+    settings_json: Dict[str, Any] = Field(default_factory=dict, description="公开的非敏感运行时设置")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class ModelCatalogEntry(BaseModel):
+    """平台可管理的模型目录项。"""
+
+    model_id: str = Field(..., description="模型唯一键")
+    task_type: str = Field(..., description="适用任务类型：t2i/i2i/i2v")
+    provider_key: str = Field(..., description="所属供应商")
+    display_name: str = Field(..., description="模型展示名称")
+    description: Optional[str] = Field(None, description="模型说明")
+    enabled: bool = Field(True, description="是否允许业务前端展示并使用")
+    sort_order: int = Field(100, description="排序值，越小越靠前")
+    is_public: bool = Field(True, description="是否面向业务前端公开")
+    capabilities_json: Dict[str, Any] = Field(default_factory=dict, description="前端渲染所需的能力描述")
+    default_settings_json: Dict[str, Any] = Field(default_factory=dict, description="模型默认参数")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class AvailableModelCatalog(BaseModel):
+    """面向业务前端返回的可用模型目录。"""
+
+    t2i: List[ModelCatalogEntry] = Field(default_factory=list, description="可用文生图模型")
+    i2i: List[ModelCatalogEntry] = Field(default_factory=list, description="可用图生图模型")
+    i2v: List[ModelCatalogEntry] = Field(default_factory=list, description="可用图生视频模型")
+
+
 class VerificationCode(BaseModel):
     id: str
     target_type: str

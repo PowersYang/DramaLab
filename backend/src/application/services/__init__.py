@@ -1,6 +1,7 @@
 from .asset_service import AssetService
 from .auth_service import AuthService
 from .character_service import CharacterService
+from .model_provider_service import ModelProviderService
 from .project_service import ProjectService
 from .prop_service import PropService
 from .scene_service import SceneService
@@ -14,6 +15,7 @@ __all__ = [
     "CharacterService",
     "AssetService",
     "AuthService",
+    "ModelProviderService",
     "ProjectService",
     "PropService",
     "SceneService",

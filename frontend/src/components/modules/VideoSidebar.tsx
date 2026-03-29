@@ -5,8 +5,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Settings2, List, RefreshCw, ChevronDown, ChevronUp, Mic, Music, VolumeX, Wand2 } from "lucide-react";
 import VideoQueue from "./VideoQueue";
 import { TaskJob, VideoTask, api } from "@/lib/api";
-import { I2V_MODELS, DurationConfig, ModelParamSupport, VideoParams, GRID_COLS_CLASS } from "@/store/projectStore";
+import { DurationConfig, ModelParamSupport, VideoParams, GRID_COLS_CLASS } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
+import { useAvailableModelCatalog } from "@/lib/modelCatalog";
 
 interface VideoSidebarProps {
     tasks: VideoTask[];
@@ -23,6 +24,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
     const [showNegative, setShowNegative] = useState(false);
     const jobsById = useTaskStore((state) => state.jobsById);
     const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
+    const { catalog } = useAvailableModelCatalog({ i2v: params.model });
 
     const activeJobs: TaskJob[] = projectId
         ? (jobIdsByProject[projectId] || [])
@@ -30,14 +32,14 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
             .filter((job): job is TaskJob => !!job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested", "failed", "timed_out"].includes(job.status))
         : [];
 
-    const currentModelConfig = I2V_MODELS.find(m => m.id === params.model);
+    const currentModelConfig = catalog.i2v.find(m => m.id === params.model);
     const modelParams: ModelParamSupport = currentModelConfig?.params ?? {};
 
     const updateParam = (key: string, value: any) => {
         const newParams = { ...params, [key]: value };
         // When model changes, clamp duration and reset model-specific params
         if (key === "model") {
-            const newModelConfig = I2V_MODELS.find(m => m.id === value);
+            const newModelConfig = catalog.i2v.find(m => m.id === value);
             if (newModelConfig?.duration) {
                 const dc = newModelConfig.duration;
                 if (dc.type === 'fixed') {
@@ -171,7 +173,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                         )}
                                     </label>
                                     <div className="space-y-2">
-                                        {I2V_MODELS.map((model) => {
+                                        {catalog.i2v.map((model) => {
                                             const isR2VMode = params.generationMode === "r2v";
                                             const isWan26 = model.id === "wan2.6-i2v";
                                             const isDisabled = isR2VMode && !isWan26;

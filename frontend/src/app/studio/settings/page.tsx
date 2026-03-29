@@ -1,6 +1,7 @@
 "use client";
 
 import StudioShell from "@/components/studio/StudioShell";
+import PlatformModelAdmin from "@/components/studio/PlatformModelAdmin";
 import { useAuthStore } from "@/store/authStore";
 
 export default function StudioSettingsRoutePage() {
@@ -55,6 +56,8 @@ export default function StudioSettingsRoutePage() {
             </p>
           </section>
         ) : null}
+
+        {me?.is_platform_super_admin ? <PlatformModelAdmin /> : null}
       </div>
     </StudioShell>
   );

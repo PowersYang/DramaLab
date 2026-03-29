@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, X, Image, Video, Film, Check, Layout, User, Building, Box } from 'lucide-react';
-import { useProjectStore, T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from '@/store/projectStore';
+import { useProjectStore, ASPECT_RATIOS } from '@/store/projectStore';
 import { api } from '@/lib/api';
+import { useAvailableModelCatalog } from '@/lib/modelCatalog';
 
 interface ModelSettingsModalProps {
     isOpen: boolean;
@@ -23,6 +24,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
     const [propAspectRatio, setPropAspectRatio] = useState(currentProject?.model_settings?.prop_aspect_ratio || '1:1');
     const [storyboardAspectRatio, setStoryboardAspectRatio] = useState(currentProject?.model_settings?.storyboard_aspect_ratio || '16:9');
     const [isSaving, setIsSaving] = useState(false);
+    const { catalog } = useAvailableModelCatalog({ t2i: t2iModel, i2i: i2iModel, i2v: i2vModel });
 
     // Sync state when project changes
     useEffect(() => {
@@ -111,10 +113,11 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                             <div className="space-y-2">
                                 <label className="text-xs text-gray-400">Model</label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {T2I_MODELS.map((model) => (
+                                    {catalog.t2i.map((model) => (
                                         <button
                                             key={model.id}
-                                            onClick={() => setT2iModel(model.id)}
+                                            onClick={() => !model.disabled && setT2iModel(model.id)}
+                                            disabled={model.disabled}
                                             className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${t2iModel === model.id
                                                     ? 'border-green-500/50 bg-green-500/10'
                                                     : 'border-white/10 hover:border-white/20 bg-white/5'
@@ -127,6 +130,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                                             )}
                                             <span className="text-sm font-medium text-white">{model.name}</span>
                                             <span className="text-xs text-gray-500">{model.description}</span>
+                                            {model.disabled ? <span className="text-[10px] text-amber-300 mt-1">{model.unavailableReason}</span> : null}
                                         </button>
                                     ))}
                                 </div>
@@ -215,10 +219,11 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                             <div className="space-y-2">
                                 <label className="text-xs text-gray-400">Model</label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {I2I_MODELS.map((model) => (
+                                    {catalog.i2i.map((model) => (
                                         <button
                                             key={model.id}
-                                            onClick={() => setI2iModel(model.id)}
+                                            onClick={() => !model.disabled && setI2iModel(model.id)}
+                                            disabled={model.disabled}
                                             className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${i2iModel === model.id
                                                     ? 'border-blue-500/50 bg-blue-500/10'
                                                     : 'border-white/10 hover:border-white/20 bg-white/5'
@@ -231,6 +236,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                                             )}
                                             <span className="text-sm font-medium text-white">{model.name}</span>
                                             <span className="text-xs text-gray-500">{model.description}</span>
+                                            {model.disabled ? <span className="text-[10px] text-amber-300 mt-1">{model.unavailableReason}</span> : null}
                                         </button>
                                     ))}
                                 </div>
@@ -271,7 +277,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                             <div className="space-y-2">
                                 <label className="text-xs text-gray-400">Model</label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {I2V_MODELS.map((model) => (
+                                    {catalog.i2v.map((model) => (
                                         <button
                                             key={model.id}
                                             onClick={() => setI2vModel(model.id)}

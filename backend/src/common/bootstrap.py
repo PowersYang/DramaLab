@@ -27,10 +27,13 @@ def bootstrap_api_environment(logger: logging.Logger) -> None:
     init_database()
     logger.info("STARTUP: database initialization completed")
     # 风格预设已经迁移到数据库，启动时补种默认值，保证新环境首启即可返回预设列表。
-    from ..application.services import AuthService, SystemService
+    from ..application.services import AuthService, ModelProviderService, SystemService
 
     SystemService().ensure_default_style_presets()
     AuthService().ensure_default_roles()
+    model_provider_service = ModelProviderService()
+    model_provider_service.ensure_defaults()
+    model_provider_service.migrate_from_env()
     logger.info("STARTUP: style preset bootstrap completed")
 
     # 输出目录在分布式部署里通常会被映射到共享存储，这里显式创建并记录状态，便于排查挂载问题。
