@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-const mockState = {
+const authenticatedState = {
   authStatus: "authenticated",
   me: {
     user: {
@@ -44,6 +44,10 @@ const mockState = {
   signOut: mockSignOut,
 };
 
+const mockState = {
+  ...authenticatedState,
+};
+
 vi.mock("@/store/authStore", () => ({
   useAuthStore: (selector: any) => selector(mockState),
 }));
@@ -54,6 +58,7 @@ describe("MarketingAuthActions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSignOut.mockResolvedValue(undefined);
+    Object.assign(mockState, authenticatedState);
   });
 
   it("shows the role dropdown for authenticated users", () => {
@@ -63,7 +68,21 @@ describe("MarketingAuthActions", () => {
     expect(screen.getByText("进入工作台")).toBeInTheDocument();
   });
 
+  it("shows signin actions immediately while marketing auth is bootstrapping without a local user", () => {
+    Object.assign(mockState, {
+      authStatus: "idle",
+      me: null,
+    });
+
+    render(<MarketingAuthActions />);
+
+    expect(screen.getByText("登录")).toBeInTheDocument();
+    expect(screen.getByText("注册")).toBeInTheDocument();
+    expect(mockBootstrapAuth).toHaveBeenCalledTimes(1);
+  });
+
   it("signs out from the marketing dropdown menu", async () => {
+    Object.assign(mockState, authenticatedState);
     render(<MarketingAuthActions />);
 
     fireEvent.click(screen.getByText("导演"));
