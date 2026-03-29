@@ -76,6 +76,14 @@ class ModelCatalogEntryRepository(BaseRepository[ModelCatalogEntry]):
             record.updated_at = utc_now()
             return _to_domain(record)
 
+    def delete(self, model_id: str) -> None:
+        """删除模型目录项。"""
+        with self._with_session() as session:
+            record = session.get(ModelCatalogEntryRecord, model_id)
+            if record is None:
+                raise ValueError("Model catalog entry not found")
+            session.delete(record)
+
     def upsert(self, item: ModelCatalogEntry) -> ModelCatalogEntry:
         with self._with_session() as session:
             record = session.get(ModelCatalogEntryRecord, item.model_id)

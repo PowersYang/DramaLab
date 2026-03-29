@@ -2,9 +2,64 @@
 
 import { create } from "zustand";
 
-import { api, setAccessToken, type AuthMeResponse } from "@/lib/api";
+import { api, getAccessToken, setAccessToken, type AuthMeResponse, type VerifyEmailCodeOptions } from "@/lib/api";
 
 type AuthStatus = "idle" | "loading" | "authenticated" | "anonymous";
+
+const AUTH_SNAPSHOT_STORAGE_KEY = "dramalab-auth-snapshot-v1";
+
+interface AuthSnapshot {
+  accessToken: string | null;
+  me: AuthMeResponse | null;
+}
+
+const readAuthSnapshot = (): AuthSnapshot | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(AUTH_SNAPSHOT_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as AuthSnapshot | null;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    return {
+      accessToken: typeof parsed.accessToken === "string" ? parsed.accessToken : null,
+      me: parsed.me ?? null,
+    };
+  } catch (error) {
+    console.error("Failed to read auth snapshot:", error);
+    return null;
+  }
+};
+
+const writeAuthSnapshot = (snapshot: AuthSnapshot) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(AUTH_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.error("Failed to write auth snapshot:", error);
+  }
+};
+
+const clearAuthSnapshot = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(AUTH_SNAPSHOT_STORAGE_KEY);
+  } catch (error) {
+    console.error("Failed to clear auth snapshot:", error);
+  }
+};
 
 interface AuthState {
   authStatus: AuthStatus;
@@ -12,7 +67,7 @@ interface AuthState {
   isBootstrapping: boolean;
   bootstrapAuth: () => Promise<AuthMeResponse | null>;
   sendEmailCode: (email: string, purpose?: string) => Promise<{ status: string; email: string; purpose: string; debug_code?: string }>;
-  verifyEmailCode: (email: string, code: string, displayName?: string, purpose?: string) => Promise<AuthMeResponse>;
+  verifyEmailCode: (email: string, code: string, options?: VerifyEmailCodeOptions) => Promise<AuthMeResponse>;
   signOut: () => Promise<void>;
   switchWorkspace: (workspaceId: string) => Promise<AuthMeResponse>;
   hasCapability: (capability: string) => boolean;
@@ -20,6 +75,7 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
+  // 中文注释：首屏必须让服务端和客户端输出一致，避免在模块初始化阶段读取 sessionStorage 触发 hydration mismatch。
   authStatus: "idle",
   me: null,
   isBootstrapping: false,
@@ -28,20 +84,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (get().isBootstrapping) {
       return get().me;
     }
-    set({ isBootstrapping: true, authStatus: get().me ? "authenticated" : "loading" });
+
+    // 中文注释：缓存恢复放到挂载后的 bootstrap 流程里做，这样不会让浏览器首帧和 SSR 首帧出现不同结构。
+    const snapshot = readAuthSnapshot();
+    if (snapshot?.accessToken) {
+      setAccessToken(snapshot.accessToken);
+    }
+
+    set({
+      me: snapshot?.me ?? get().me,
+      isBootstrapping: true,
+      authStatus: "loading",
+    });
+
     try {
       try {
         const me = await api.getMe();
+        writeAuthSnapshot({ accessToken: getAccessToken(), me });
         set({ me, authStatus: "authenticated", isBootstrapping: false });
         return me;
       } catch {
         const payload = await api.refreshSession();
         setAccessToken(payload.session.access_token);
+        writeAuthSnapshot({ accessToken: payload.session.access_token, me: payload.me });
         set({ me: payload.me, authStatus: "authenticated", isBootstrapping: false });
         return payload.me;
       }
     } catch {
       setAccessToken(null);
+      clearAuthSnapshot();
       set({ me: null, authStatus: "anonymous", isBootstrapping: false });
       return null;
     }
@@ -51,9 +122,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return await api.sendEmailCode(email, purpose);
   },
 
-  verifyEmailCode: async (email, code, displayName, purpose = "signin") => {
-    const payload = await api.verifyEmailCode(email, code, displayName, purpose);
+  verifyEmailCode: async (email, code, options = {}) => {
+    const payload = await api.verifyEmailCode(email, code, options);
     setAccessToken(payload.session.access_token);
+    writeAuthSnapshot({ accessToken: payload.session.access_token, me: payload.me });
     set({ me: payload.me, authStatus: "authenticated" });
     return payload.me;
   },
@@ -61,12 +133,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     await api.logout();
     setAccessToken(null);
+    clearAuthSnapshot();
     set({ me: null, authStatus: "anonymous" });
   },
 
   switchWorkspace: async (workspaceId: string) => {
     const payload = await api.switchWorkspace(workspaceId);
     setAccessToken(payload.session.access_token);
+    writeAuthSnapshot({ accessToken: payload.session.access_token, me: payload.me });
     set({ me: payload.me, authStatus: "authenticated" });
     return payload.me;
   },

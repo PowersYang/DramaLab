@@ -75,25 +75,37 @@ export default function SettingsPage() {
   const [endpointsOpen, setEndpointsOpen] = useState(false);
 
   // ── Default Model Settings ──
-  const [modelSettings, setModelSettings] = useState<DefaultModelSettings>(() =>
-    loadFromLS(LS_KEY_MODEL, {
-      t2i_model: "wan2.5-t2i-preview",
-      i2i_model: "wan2.5-i2i-preview",
-      i2v_model: "wan2.5-i2v-preview",
-      character_aspect_ratio: "9:16",
-      scene_aspect_ratio: "16:9",
-      prop_aspect_ratio: "1:1",
-      storyboard_aspect_ratio: "16:9",
-    })
-  );
+  const [modelSettings, setModelSettings] = useState<DefaultModelSettings>({
+    t2i_model: "wan2.5-t2i-preview",
+    i2i_model: "wan2.5-i2i-preview",
+    i2v_model: "wan2.5-i2v-preview",
+    character_aspect_ratio: "9:16",
+    scene_aspect_ratio: "16:9",
+    prop_aspect_ratio: "1:1",
+    storyboard_aspect_ratio: "16:9",
+  });
 
   // ── Default Prompt Config ──
-  const [promptConfig, setPromptConfig] = useState<DefaultPromptConfig>(() =>
-    loadFromLS(LS_KEY_PROMPT, { storyboard_polish: "", video_polish: "", r2v_polish: "" })
-  );
+  const [promptConfig, setPromptConfig] = useState<DefaultPromptConfig>({ storyboard_polish: "", video_polish: "", r2v_polish: "" });
 
   useEffect(() => {
     loadConfig();
+  }, []);
+
+  useEffect(() => {
+    // 中文注释：默认设置延后到挂载后恢复，避免 localStorage 让首屏 hydration 前后不一致。
+    setModelSettings(
+      loadFromLS(LS_KEY_MODEL, {
+        t2i_model: "wan2.5-t2i-preview",
+        i2i_model: "wan2.5-i2i-preview",
+        i2v_model: "wan2.5-i2v-preview",
+        character_aspect_ratio: "9:16",
+        scene_aspect_ratio: "16:9",
+        prop_aspect_ratio: "1:1",
+        storyboard_aspect_ratio: "16:9",
+      })
+    );
+    setPromptConfig(loadFromLS(LS_KEY_PROMPT, { storyboard_polish: "", video_polish: "", r2v_polish: "" }));
   }, []);
 
   const loadConfig = async () => {

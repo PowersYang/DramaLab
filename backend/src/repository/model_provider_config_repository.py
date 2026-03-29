@@ -64,6 +64,28 @@ class ModelProviderConfigRepository(BaseRepository[ModelProviderConfig]):
                 record.updated_at = utc_now()
             return _to_domain(record)
 
+    def create(self, config: ModelProviderConfig) -> ModelProviderConfig:
+        """创建新的模型供应商配置。"""
+        with self._with_session() as session:
+            existing = session.get(ModelProviderConfigRecord, config.provider_key)
+            if existing is not None:
+                raise ValueError(f"Model provider already exists: {config.provider_key}")
+            record = ModelProviderConfigRecord(
+                provider_key=config.provider_key,
+                display_name=config.display_name,
+                description=config.description,
+                enabled=config.enabled,
+                base_url=config.base_url,
+                credentials_json=config.credentials_json,
+                settings_json=config.settings_json,
+                created_by=config.created_by,
+                updated_by=config.updated_by,
+                created_at=config.created_at,
+                updated_at=config.updated_at,
+            )
+            session.add(record)
+            return _to_domain(record)
+
     def update(self, provider_key: str, patch: dict) -> ModelProviderConfig:
         with self._with_session() as session:
             record = session.get(ModelProviderConfigRecord, provider_key)
@@ -74,6 +96,14 @@ class ModelProviderConfigRepository(BaseRepository[ModelProviderConfig]):
                     setattr(record, key, value)
             record.updated_at = utc_now()
             return _to_domain(record)
+
+    def delete(self, provider_key: str) -> None:
+        """删除模型供应商配置。"""
+        with self._with_session() as session:
+            record = session.get(ModelProviderConfigRecord, provider_key)
+            if record is None:
+                raise ValueError("Model provider not found")
+            session.delete(record)
 
     def list_map(self):
         return {item.provider_key: item for item in self.list()}

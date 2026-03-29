@@ -56,10 +56,20 @@ const writeDashboardCache = (payload: DashboardCachePayload) => {
 };
 
 export default function StudioDashboardPage() {
-  const cached = readDashboardCache();
-  const [projects, setProjects] = useState<ProjectSummary[]>(() => cached?.projects || []);
-  const [seriesList, setSeriesList] = useState<SeriesSummary[]>(() => cached?.seriesList || []);
-  const [runningTasks, setRunningTasks] = useState(() => cached?.runningTasks || 0);
+  // 中文注释：首帧不要直接读 sessionStorage，先用稳定空态完成 hydration，再在挂载后恢复缓存。
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [seriesList, setSeriesList] = useState<SeriesSummary[]>([]);
+  const [runningTasks, setRunningTasks] = useState(0);
+
+  useEffect(() => {
+    const cached = readDashboardCache();
+    if (!cached) {
+      return;
+    }
+    setProjects(cached.projects);
+    setSeriesList(cached.seriesList);
+    setRunningTasks(cached.runningTasks);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

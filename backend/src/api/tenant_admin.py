@@ -7,6 +7,7 @@ from ..auth.dependencies import require_platform_role
 from ..common import signed_response
 from ..common.log import get_logger
 from ..schemas.requests import (
+    CreateModelProviderRequest,
     CreateModelCatalogEntryRequest,
     CreateMembershipRequest,
     CreateOrganizationRequest,
@@ -343,6 +344,16 @@ async def list_model_providers():
     return signed_response(providers)
 
 
+@router.post("/model-providers")
+async def create_model_provider(request: CreateModelProviderRequest):
+    """新增模型供应商配置。"""
+    try:
+        logger.info("TENANT_ADMIN_API: create_model_provider provider_key=%s", request.provider_key)
+        return signed_response(tenant_admin_service.create_model_provider(request.model_dump()))
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
 @router.put("/model-providers/{provider_key}")
 async def update_model_provider(provider_key: str, request: UpdateModelProviderRequest):
     """更新模型供应商配置。"""
@@ -354,6 +365,16 @@ async def update_model_provider(provider_key: str, request: UpdateModelProviderR
                 payload=request.model_dump(exclude_unset=True),
             )
         )
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
+@router.delete("/model-providers/{provider_key}")
+async def delete_model_provider(provider_key: str):
+    """删除模型供应商配置。"""
+    try:
+        logger.info("TENANT_ADMIN_API: delete_model_provider provider_key=%s", provider_key)
+        return signed_response(tenant_admin_service.delete_model_provider(provider_key))
     except ValueError as exc:
         _raise_http_error(exc)
 
@@ -382,5 +403,15 @@ async def update_model_catalog_entry(model_id: str, request: UpdateModelCatalogE
     try:
         logger.info("TENANT_ADMIN_API: update_model_catalog_entry model_id=%s", model_id)
         return signed_response(tenant_admin_service.update_model_catalog_entry(model_id, request.model_dump(exclude_unset=True)))
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
+@router.delete("/model-catalog/{model_id}")
+async def delete_model_catalog_entry(model_id: str):
+    """删除模型目录项。"""
+    try:
+        logger.info("TENANT_ADMIN_API: delete_model_catalog_entry model_id=%s", model_id)
+        return signed_response(tenant_admin_service.delete_model_catalog_entry(model_id))
     except ValueError as exc:
         _raise_http_error(exc)

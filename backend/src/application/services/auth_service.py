@@ -14,6 +14,7 @@ from datetime import timedelta, timezone
 from email.message import EmailMessage
 
 from ...auth.constants import (
+    ROLE_ORG_ADMIN,
     ROLE_CAPABILITIES,
     ROLE_INDIVIDUAL_CREATOR,
     ROLE_PLATFORM_SUPER_ADMIN,
@@ -50,7 +51,8 @@ from ...utils.datetime import utc_now
 
 
 logger = get_logger(__name__)
-SUPPORTED_AUTH_PURPOSES = {"signin", "signup"}
+SUPPORTED_AUTH_PURPOSES = {"signin", "signup", "invite_accept"}
+SUPPORTED_SIGNUP_KINDS = {ROLE_INDIVIDUAL_CREATOR, ROLE_ORG_ADMIN}
 
 
 @dataclass
@@ -177,6 +179,8 @@ class AuthService:
         code: str,
         purpose: str,
         display_name: str | None = None,
+        signup_kind: str | None = None,
+        organization_name: str | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
@@ -203,9 +207,22 @@ class AuthService:
             raise ValueError("Account not found, please sign up first")
         if purpose == "signup" and user is not None:
             raise ValueError("Account already exists, please sign in")
+        if purpose == "invite_accept" and not self.invitation_repository.list_pending_by_email(normalized_email):
+            raise ValueError("Invitation not found or already accepted")
 
         if user is None:
-            user = self._create_user_with_personal_workspace(normalized_email, display_name)
+            if purpose == "signup":
+                resolved_signup_kind = signup_kind or ROLE_INDIVIDUAL_CREATOR
+                if resolved_signup_kind not in SUPPORTED_SIGNUP_KINDS:
+                    raise ValueError("Unsupported signup kind")
+                if resolved_signup_kind == ROLE_ORG_ADMIN:
+                    user = self._create_user_with_org_workspace(normalized_email, display_name, organization_name)
+                else:
+                    user = self._create_user_with_personal_workspace(normalized_email, display_name)
+            elif purpose == "invite_accept":
+                user = self._create_invited_user(normalized_email, display_name)
+            else:
+                raise ValueError("Account not found, please sign up first")
         else:
             patch = {
                 "last_login_at": utc_now(),
@@ -377,6 +394,56 @@ class AuthService:
         self.membership_repository.delete(membership_id)
 
     def _create_user_with_personal_workspace(self, email: str, display_name: str | None) -> User:
+        # 中文注释：个人注册会自动创建个人组织与默认工作区，并授予个人创作者角色。
+        return self._create_user_with_workspace(
+            email=email,
+            display_name=display_name,
+            role_code=ROLE_INDIVIDUAL_CREATOR,
+            organization_name=None,
+            workspace_name="默认工作区",
+            use_personal_prefix=True,
+        )
+
+    def _create_user_with_org_workspace(self, email: str, display_name: str | None, organization_name: str | None) -> User:
+        # 中文注释：企业管理员注册会直接创建团队组织与默认工作区，并授予组织管理员角色。
+        return self._create_user_with_workspace(
+            email=email,
+            display_name=display_name,
+            role_code=ROLE_ORG_ADMIN,
+            organization_name=organization_name,
+            workspace_name="默认工作区",
+            use_personal_prefix=False,
+        )
+
+    def _create_invited_user(self, email: str, display_name: str | None) -> User:
+        # 中文注释：受邀成员创建账号时不自动生成个人空间，只保留账号实体并等待邀请绑定工作区。
+        now = utc_now()
+        effective_name = (display_name or email.split("@")[0]).strip() or "创作者"
+        platform_role = ROLE_PLATFORM_SUPER_ADMIN if email in self._platform_super_admin_emails() else None
+        user = User(
+            id=str(uuid.uuid4()),
+            email=email,
+            display_name=effective_name,
+            auth_provider="email_otp",
+            platform_role=platform_role,
+            status="active",
+            last_login_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        self.user_repository.create(user)
+        return self.user_repository.get(user.id) or user
+
+    def _create_user_with_workspace(
+        self,
+        email: str,
+        display_name: str | None,
+        role_code: str,
+        organization_name: str | None,
+        workspace_name: str,
+        use_personal_prefix: bool,
+    ) -> User:
+        # 中文注释：统一封装公开注册时的“账号 + 组织 + 工作区 + membership”初始化，避免个人/团队两套逻辑分叉。
         now = utc_now()
         effective_name = (display_name or email.split("@")[0]).strip() or "创作者"
         platform_role = ROLE_PLATFORM_SUPER_ADMIN if email in self._platform_super_admin_emails() else None
@@ -393,10 +460,15 @@ class AuthService:
         )
         self.user_repository.create(user)
 
+        resolved_organization_name = (organization_name or "").strip()
+        if use_personal_prefix:
+            resolved_organization_name = f"个人空间 - {effective_name}"
+        elif not resolved_organization_name:
+            resolved_organization_name = f"{effective_name} 的团队"
         organization = Organization(
             id=str(uuid.uuid4()),
-            name=f"个人空间 - {effective_name}",
-            slug=_slugify(f"personal-{effective_name}-{uuid.uuid4().hex[:4]}"),
+            name=resolved_organization_name,
+            slug=_slugify(f"{resolved_organization_name}-{uuid.uuid4().hex[:4]}"),
             status="active",
             created_at=now,
             updated_at=now,
@@ -406,7 +478,7 @@ class AuthService:
         workspace = Workspace(
             id=str(uuid.uuid4()),
             organization_id=organization.id,
-            name="默认工作区",
+            name=workspace_name,
             slug="default-workspace",
             status="active",
             created_at=now,
@@ -414,16 +486,16 @@ class AuthService:
         )
         self.workspace_repository.create(workspace)
 
-        personal_role = self.role_repository.get_by_code(ROLE_INDIVIDUAL_CREATOR)
-        if personal_role is None:
-            raise ValueError("Default individual creator role is missing")
+        default_role = self.role_repository.get_by_code(role_code)
+        if default_role is None:
+            raise ValueError(f"Default role {role_code} is missing")
         self.membership_repository.create(
             Membership(
                 id=str(uuid.uuid4()),
                 organization_id=organization.id,
                 workspace_id=workspace.id,
                 user_id=user.id,
-                role_id=personal_role.id,
+                role_id=default_role.id,
                 status="active",
                 created_at=now,
                 updated_at=now,

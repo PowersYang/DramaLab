@@ -226,3 +226,49 @@ class TenantAdminApiTest(unittest.TestCase):
         self.assertGreaterEqual(len(payload["t2i"]), 1)
         self.assertGreaterEqual(len(payload["i2i"]), 1)
         self.assertFalse(any(item["model_id"] == "wan2.6-i2v" for item in payload["i2v"]))
+
+    def test_model_provider_and_catalog_full_crud(self):
+        created_provider = self.client.post(
+            "/model-providers",
+            json={
+                "provider_key": "ACME",
+                "display_name": "Acme Provider",
+                "description": "Custom provider for tests",
+                "enabled": True,
+                "base_url": "https://api.acme.test/v1",
+                "credential_fields": ["api_key"],
+                "credentials_patch": {"api_key": "sk-acme"},
+                "settings_json": {"region": "cn-hangzhou"},
+            },
+        )
+        self.assertEqual(created_provider.status_code, 200)
+        self.assertEqual(created_provider.json()["provider_key"], "ACME")
+        self.assertTrue(created_provider.json()["has_credentials"])
+        self.assertEqual(created_provider.json()["credential_fields"], ["api_key"])
+
+        created_model = self.client.post(
+            "/model-catalog",
+            json={
+                "model_id": "acme-i2v-v1",
+                "task_type": "i2v",
+                "provider_key": "ACME",
+                "display_name": "Acme I2V V1",
+                "description": "Test model",
+                "enabled": True,
+                "sort_order": 5,
+            },
+        )
+        self.assertEqual(created_model.status_code, 200)
+        self.assertEqual(created_model.json()["provider_key"], "ACME")
+
+        blocked_provider_delete = self.client.delete("/model-providers/ACME")
+        self.assertEqual(blocked_provider_delete.status_code, 400)
+        self.assertIn("dependent catalog entries", blocked_provider_delete.json()["detail"])
+
+        deleted_model = self.client.delete("/model-catalog/acme-i2v-v1")
+        self.assertEqual(deleted_model.status_code, 200)
+        self.assertEqual(deleted_model.json()["model_id"], "acme-i2v-v1")
+
+        deleted_provider = self.client.delete("/model-providers/ACME")
+        self.assertEqual(deleted_provider.status_code, 200)
+        self.assertEqual(deleted_provider.json()["provider_key"], "ACME")

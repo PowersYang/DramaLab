@@ -50,6 +50,8 @@ export const setAccessToken = (token: string | null) => {
     accessToken = token;
 };
 
+export const getAccessToken = () => accessToken;
+
 const formatAxiosError = (error: unknown, fallbackMessage: string): Error => {
     // 统一把代理层、后端状态码和 request_id 拼进错误文案，便于直接在浏览器里定位问题。
     if (!axiosLib.isAxiosError(error)) {
@@ -369,6 +371,13 @@ export interface AuthBootstrapPayload {
     me: AuthMeResponse;
 }
 
+export interface VerifyEmailCodeOptions {
+    displayName?: string;
+    purpose?: string;
+    signupKind?: "individual_creator" | "org_admin";
+    organizationName?: string;
+}
+
 export interface ModelProviderSummary {
     provider_key: string;
     display_name: string;
@@ -383,6 +392,17 @@ export interface ModelProviderSummary {
     updated_by?: string | null;
     created_at: string;
     updated_at: string;
+}
+
+export interface CreateModelProviderPayload {
+    provider_key: string;
+    display_name: string;
+    description?: string;
+    enabled?: boolean;
+    base_url?: string;
+    credential_fields?: string[];
+    credentials_patch?: Record<string, string | null>;
+    settings_json?: Record<string, any>;
 }
 
 export interface ModelCatalogEntry {
@@ -400,6 +420,19 @@ export interface ModelCatalogEntry {
     updated_by?: string | null;
     created_at: string;
     updated_at: string;
+}
+
+export interface CreateModelCatalogEntryPayload {
+    model_id: string;
+    task_type: "t2i" | "i2i" | "i2v" | string;
+    provider_key: string;
+    display_name: string;
+    description?: string;
+    enabled?: boolean;
+    sort_order?: number;
+    is_public?: boolean;
+    capabilities_json?: Record<string, any>;
+    default_settings_json?: Record<string, any>;
 }
 
 export interface AvailableModelCatalog {
@@ -475,12 +508,14 @@ export const api = {
         return res.data as { status: string; email: string; purpose: string; debug_code?: string };
     },
 
-    verifyEmailCode: async (email: string, code: string, displayName?: string, purpose: string = "signin") => {
+    verifyEmailCode: async (email: string, code: string, options: VerifyEmailCodeOptions = {}) => {
         const res = await axios.post(`${API_URL}/auth/email-code/verify`, {
             email,
             code,
-            purpose,
-            display_name: displayName,
+            purpose: options.purpose || "signin",
+            display_name: options.displayName,
+            signup_kind: options.signupKind,
+            organization_name: options.organizationName,
         });
         return res.data as AuthBootstrapPayload;
     },
@@ -1100,6 +1135,11 @@ export const api = {
         return res.data;
     },
 
+    createModelProvider: async (payload: CreateModelProviderPayload): Promise<ModelProviderSummary> => {
+        const res = await axios.post(`${API_URL}/model-providers`, payload);
+        return res.data;
+    },
+
     updateModelProvider: async (
         providerKey: string,
         payload: {
@@ -1115,8 +1155,18 @@ export const api = {
         return res.data;
     },
 
+    deleteModelProvider: async (providerKey: string): Promise<{ status: string; provider_key: string }> => {
+        const res = await axios.delete(`${API_URL}/model-providers/${providerKey}`);
+        return res.data;
+    },
+
     listModelCatalog: async (taskType?: string): Promise<ModelCatalogEntry[]> => {
         const res = await axios.get(`${API_URL}/model-catalog`, { params: taskType ? { task_type: taskType } : undefined });
+        return res.data;
+    },
+
+    createModelCatalogEntry: async (payload: CreateModelCatalogEntryPayload): Promise<ModelCatalogEntry> => {
+        const res = await axios.post(`${API_URL}/model-catalog`, payload);
         return res.data;
     },
 
@@ -1125,6 +1175,11 @@ export const api = {
         payload: Partial<Pick<ModelCatalogEntry, "task_type" | "provider_key" | "display_name" | "description" | "enabled" | "sort_order" | "is_public" | "capabilities_json" | "default_settings_json">>,
     ): Promise<ModelCatalogEntry> => {
         const res = await axios.put(`${API_URL}/model-catalog/${modelId}`, payload);
+        return res.data;
+    },
+
+    deleteModelCatalogEntry: async (modelId: string): Promise<{ status: string; model_id: string }> => {
+        const res = await axios.delete(`${API_URL}/model-catalog/${modelId}`);
         return res.data;
     },
 

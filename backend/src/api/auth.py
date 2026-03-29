@@ -73,6 +73,8 @@ async def verify_email_code(request: VerifyEmailCodeRequest, response: Response,
             code=request.code,
             purpose=request.purpose,
             display_name=request.display_name,
+            signup_kind=request.signup_kind,
+            organization_name=request.organization_name,
             ip_address=http_request.client.host if http_request.client else None,
             user_agent=http_request.headers.get("user-agent"),
         )

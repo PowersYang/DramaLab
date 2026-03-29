@@ -319,6 +319,17 @@ class UpdateRoleRequest(BaseModel):
     is_system: Optional[bool] = None
 
 
+class CreateModelProviderRequest(BaseModel):
+    provider_key: str
+    display_name: str
+    description: Optional[str] = None
+    enabled: bool = False
+    base_url: Optional[str] = None
+    credential_fields: List[str] = Field(default_factory=list)
+    credentials_patch: Dict[str, Optional[str]] = Field(default_factory=dict)
+    settings_json: Dict[str, Any] = Field(default_factory=dict)
+
+
 class UpdateModelProviderRequest(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None
@@ -379,6 +390,8 @@ class VerifyEmailCodeRequest(BaseModel):
     code: str
     purpose: str = "signin"
     display_name: Optional[str] = None
+    signup_kind: Optional[str] = None
+    organization_name: Optional[str] = None
 
 
 class SwitchWorkspaceRequest(BaseModel):

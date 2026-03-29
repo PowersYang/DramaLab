@@ -60,7 +60,7 @@ export default function StudioTeamRoutePage() {
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Invite</p>
           <h2 className="mt-4 text-2xl font-bold text-slate-950">邀请成员加入当前工作区</h2>
           <p className="mt-3 text-sm leading-7 text-slate-600">
-            被邀请成员会通过邮箱验证码完成加入。手机号登录已预留，后续会补短信验证码链路。
+            被邀请成员会使用受邀邮箱通过验证码完成加入，不需要单独注册企业成员身份。手机号登录已预留，后续会补短信验证码链路。
           </p>
 
           {canManageMembers ? (

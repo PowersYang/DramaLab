@@ -56,8 +56,15 @@ class AuthApiTest(unittest.TestCase):
         override_env_path_for_tests(None)
         self.temp_dir.cleanup()
 
-    def _login(self, email: str, display_name: str | None = None):
-        send_result = self.client.post("/auth/email-code/send", json={"email": email, "purpose": "signup"})
+    def _login(
+        self,
+        email: str,
+        display_name: str | None = None,
+        signup_kind: str | None = None,
+        organization_name: str | None = None,
+        purpose: str = "signup",
+    ):
+        send_result = self.client.post("/auth/email-code/send", json={"email": email, "purpose": purpose})
         self.assertEqual(send_result.status_code, 200)
         debug_code = send_result.json()["debug_code"]
         verify_result = self.client.post(
@@ -65,8 +72,10 @@ class AuthApiTest(unittest.TestCase):
             json={
                 "email": email,
                 "code": debug_code,
-                "purpose": "signup",
+                "purpose": purpose,
                 "display_name": display_name,
+                "signup_kind": signup_kind,
+                "organization_name": organization_name,
             },
         )
         self.assertEqual(verify_result.status_code, 200)
@@ -146,6 +155,59 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(verify_result.status_code, 400)
         self.assertEqual(verify_result.json()["detail"], "Account already exists, please sign in")
+
+    def test_org_admin_signup_creates_team_workspace(self):
+        payload = self._login(
+            "owner@example.com",
+            "Owner",
+            signup_kind="org_admin",
+            organization_name="银河短剧",
+        )
+        me = payload["me"]
+
+        self.assertEqual(me["user"]["email"], "owner@example.com")
+        self.assertEqual(me["current_role_code"], "org_admin")
+        self.assertEqual(me["workspaces"][0]["organization_name"], "银河短剧")
+        self.assertIn("workspace.manage_members", me["capabilities"])
+
+    def test_invited_member_can_activate_account_without_personal_workspace_signup(self):
+        owner_payload = self._login(
+            "owner2@example.com",
+            "Owner2",
+            signup_kind="org_admin",
+            organization_name="霓虹剧场",
+        )
+        owner_headers = {"Authorization": f"Bearer {owner_payload['session']['access_token']}"}
+
+        invite_result = self.client.post(
+            "/workspace/invitations",
+            json={"email": "maker@example.com", "role_code": "producer"},
+            headers=owner_headers,
+        )
+        self.assertEqual(invite_result.status_code, 200)
+
+        verify_code = self.client.post(
+            "/auth/email-code/send",
+            json={"email": "maker@example.com", "purpose": "invite_accept"},
+        )
+        self.assertEqual(verify_code.status_code, 200)
+        debug_code = verify_code.json()["debug_code"]
+
+        invited_client = TestClient(self.app)
+        accepted = invited_client.post(
+            "/auth/email-code/verify",
+            json={
+                "email": "maker@example.com",
+                "code": debug_code,
+                "purpose": "invite_accept",
+                "display_name": "Maker",
+            },
+        )
+        self.assertEqual(accepted.status_code, 200)
+        accepted_payload = accepted.json()
+        self.assertEqual(accepted_payload["me"]["current_role_code"], "producer")
+        self.assertEqual(len(accepted_payload["me"]["workspaces"]), 1)
+        self.assertEqual(accepted_payload["me"]["workspaces"][0]["organization_name"], "霓虹剧场")
 
 
 if __name__ == "__main__":

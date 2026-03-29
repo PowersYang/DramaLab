@@ -251,6 +251,13 @@ class TenantAdminService:
 
         return ModelProviderService().list_provider_summaries()
 
+    def create_model_provider(self, payload: dict):
+        """创建模型供应商配置。"""
+        from .model_provider_service import ModelProviderService
+
+        logger.info("TENANT_ADMIN_SERVICE: create_model_provider provider_key=%s", payload.get("provider_key"))
+        return ModelProviderService().create_provider(payload)
+
     def update_model_provider(self, provider_key: str, payload: dict):
         """更新模型供应商配置。"""
         from .model_provider_service import ModelProviderService
@@ -265,6 +272,13 @@ class TenantAdminService:
             credentials_patch=payload.get("credentials_patch"),
             settings_patch=payload.get("settings_patch"),
         )
+
+    def delete_model_provider(self, provider_key: str):
+        """删除模型供应商配置。"""
+        from .model_provider_service import ModelProviderService
+
+        logger.info("TENANT_ADMIN_SERVICE: delete_model_provider provider_key=%s", provider_key)
+        return ModelProviderService().delete_provider(provider_key)
 
     def list_model_catalog(self, task_type: str | None = None):
         """列出平台模型目录。"""
@@ -285,6 +299,13 @@ class TenantAdminService:
 
         logger.info("TENANT_ADMIN_SERVICE: update_model_catalog_entry model_id=%s fields=%s", model_id, sorted(payload.keys()))
         return ModelProviderService().update_model_catalog_entry(model_id, payload)
+
+    def delete_model_catalog_entry(self, model_id: str):
+        """删除模型目录项。"""
+        from .model_provider_service import ModelProviderService
+
+        logger.info("TENANT_ADMIN_SERVICE: delete_model_catalog_entry model_id=%s", model_id)
+        return ModelProviderService().delete_model_catalog_entry(model_id)
 
     def list_memberships(
         self,

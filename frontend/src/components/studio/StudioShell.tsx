@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { startTransition, type ReactNode, useState } from "react";
-import { CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, Users2, Workflow } from "lucide-react";
+import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, Users2, Workflow } from "lucide-react";
 
 import LumenXBranding from "@/components/layout/LumenXBranding";
 import { useAuthStore } from "@/store/authStore";
@@ -15,13 +15,22 @@ interface StudioShellProps {
   actions?: ReactNode;
 }
 
-const NAV_ITEMS = [
+interface StudioNavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  capability: string;
+  requiresPlatformSuperAdmin?: boolean;
+}
+
+const NAV_ITEMS: StudioNavItem[] = [
   { href: "/studio", label: "总览", icon: LayoutDashboard, capability: "workspace.view" },
   { href: "/studio/projects", label: "项目中心", icon: FolderKanban, capability: "workspace.view" },
   { href: "/studio/library", label: "资产库", icon: Library, capability: "workspace.view" },
   { href: "/studio/tasks", label: "任务中心", icon: Workflow, capability: "task.run" },
   { href: "/studio/team", label: "团队", icon: Users2, capability: "workspace.manage_members" },
   { href: "/studio/billing", label: "计费", icon: CreditCard, capability: "workspace.manage_billing" },
+  { href: "/studio/model-config", label: "模型配置", icon: Boxes, capability: "workspace.view", requiresPlatformSuperAdmin: true },
   { href: "/studio/settings", label: "设置", icon: Settings2, capability: "workspace.view" },
 ];
 
@@ -34,7 +43,15 @@ export default function StudioShell({ children, title, description, actions }: S
   const hasCapability = useAuthStore((state) => state.hasCapability);
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => hasCapability(item.capability));
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (!hasCapability(item.capability)) {
+      return false;
+    }
+    if (item.requiresPlatformSuperAdmin && !me?.is_platform_super_admin) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <div className="flex min-h-screen bg-[#f4f5f7] text-slate-900">

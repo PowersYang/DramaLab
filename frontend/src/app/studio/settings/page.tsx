@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
+
 import StudioShell from "@/components/studio/StudioShell";
-import PlatformModelAdmin from "@/components/studio/PlatformModelAdmin";
 import { useAuthStore } from "@/store/authStore";
 
 export default function StudioSettingsRoutePage() {
@@ -52,12 +53,20 @@ export default function StudioSettingsRoutePage() {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Admin</p>
             <h2 className="mt-4 text-2xl font-bold text-slate-950">管理员可见配置边界</h2>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600">
-              当前版本已经把普通用户与管理员的设置边界拆开。后续可以在这里承接组织资料、工作区命名、权限策略、供应商配置和审计入口，但不会把系统密钥暴露给普通成员。
+              当前版本已经把普通用户与管理员的设置边界拆开。组织资料、工作区命名、权限策略与审计入口可以继续在这里扩展，系统级模型配置则已经迁移到单独的模型配置导航页。
             </p>
+            {me?.is_platform_super_admin ? (
+              <div className="mt-5">
+                <Link
+                  href="/studio/model-config"
+                  className="inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  前往模型配置
+                </Link>
+              </div>
+            ) : null}
           </section>
         ) : null}
-
-        {me?.is_platform_super_admin ? <PlatformModelAdmin /> : null}
       </div>
     </StudioShell>
   );

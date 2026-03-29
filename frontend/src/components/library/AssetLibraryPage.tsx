@@ -108,8 +108,9 @@ export default function AssetLibraryPage() {
   const cachedProjects = useProjectStore((state) => state.projects);
   const setSeriesList = useProjectStore((state) => state.setSeriesList);
   const setProjects = useProjectStore((state) => state.setProjects);
-  const [sources, setSources] = useState<AssetSource[]>(() => readAssetLibraryCache());
-  const [loading, setLoading] = useState(() => readAssetLibraryCache().length === 0);
+  // 中文注释：资源库首屏先保持 SSR/CSR 一致，缓存恢复放到 effect 里执行。
+  const [sources, setSources] = useState<AssetSource[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<AssetTab>("characters");
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedSources, setCollapsedSources] = useState<Set<string>>(new Set());

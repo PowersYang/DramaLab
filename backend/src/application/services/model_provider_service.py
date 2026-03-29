@@ -253,6 +253,7 @@ class ModelProviderService:
             logger.info("MODEL_PROVIDER_SERVICE: migrated provider from env provider_key=%s", provider_key)
 
     def list_provider_summaries(self) -> list[ModelProviderConfigSummary]:
+        """返回脱敏后的供应商摘要列表。"""
         providers = self.provider_repository.list()
         summaries = []
         for item in providers:
@@ -277,6 +278,43 @@ class ModelProviderService:
                 )
             )
         return summaries
+
+    def create_provider(self, payload: dict, actor_id: str | None = None) -> ModelProviderConfigSummary:
+        """创建新的平台级模型供应商配置。"""
+        provider_key = str(payload["provider_key"]).strip().upper()
+        if not provider_key:
+            raise ValueError("Provider key is required")
+        if self.provider_repository.get(provider_key) is not None:
+            raise ValueError(f"Model provider already exists: {provider_key}")
+
+        declared_fields = [str(field).strip() for field in payload.get("credential_fields", []) if str(field).strip()]
+        credentials = {}
+        for key, value in (payload.get("credentials_patch") or {}).items():
+            if isinstance(value, str) and value.strip():
+                credentials[str(key).strip()] = value.strip()
+                if str(key).strip() not in declared_fields:
+                    declared_fields.append(str(key).strip())
+
+        now = utc_now()
+        created = self.provider_repository.create(
+            ModelProviderConfig(
+                provider_key=provider_key,
+                display_name=str(payload["display_name"]).strip(),
+                description=(payload.get("description") or None),
+                enabled=bool(payload.get("enabled", False)),
+                base_url=(str(payload.get("base_url") or "").strip() or None),
+                credentials_json=credentials,
+                settings_json={
+                    **dict(payload.get("settings_json") or {}),
+                    "_credential_fields": declared_fields,
+                },
+                created_by=actor_id,
+                updated_by=actor_id,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return self._to_summary(created)
 
     def update_provider(
         self,
@@ -319,9 +357,21 @@ class ModelProviderService:
         )
         return self._to_summary(updated)
 
+    def delete_provider(self, provider_key: str) -> dict[str, str]:
+        """删除模型供应商，删除前要求没有模型目录项仍引用它。"""
+        current = self.provider_repository.get(provider_key)
+        if current is None:
+            raise ValueError("Model provider not found")
+        if any(item.provider_key == provider_key for item in self.catalog_repository.list()):
+            raise ValueError("Model provider still has dependent catalog entries")
+        self.provider_repository.delete(provider_key)
+        return {"status": "deleted", "provider_key": provider_key}
+
     def _to_summary(self, item: ModelProviderConfig) -> ModelProviderConfigSummary:
+        """把完整配置对象转换成脱敏摘要。"""
         meta = PROVIDER_DEFAULTS.get(item.provider_key, {})
-        credential_fields = list(meta.get("credential_fields", []))
+        dynamic_fields = list((item.settings_json or {}).get("_credential_fields", []))
+        credential_fields = list(meta.get("credential_fields", [])) or dynamic_fields
         configured_fields = [field for field in credential_fields if (item.credentials_json or {}).get(field)]
         return ModelProviderConfigSummary(
             provider_key=item.provider_key,
@@ -340,9 +390,11 @@ class ModelProviderService:
         )
 
     def list_model_catalog(self, task_type: str | None = None) -> list[ModelCatalogEntry]:
+        """列出平台模型目录。"""
         return self.catalog_repository.list(task_type=task_type)
 
     def create_model_catalog_entry(self, payload: dict, actor_id: str | None = None) -> ModelCatalogEntry:
+        """创建新的模型目录项。"""
         if self.provider_repository.get(payload["provider_key"]) is None:
             raise ValueError("Model provider not found")
         now = utc_now()
@@ -366,12 +418,22 @@ class ModelProviderService:
         )
 
     def update_model_catalog_entry(self, model_id: str, payload: dict, actor_id: str | None = None) -> ModelCatalogEntry:
+        """更新模型目录项。"""
         if "provider_key" in payload and self.provider_repository.get(payload["provider_key"]) is None:
             raise ValueError("Model provider not found")
         payload = {**payload, "updated_by": actor_id}
         return self.catalog_repository.update(model_id, payload)
 
+    def delete_model_catalog_entry(self, model_id: str) -> dict[str, str]:
+        """删除模型目录项。"""
+        current = self.catalog_repository.get(model_id)
+        if current is None:
+            raise ValueError("Model catalog entry not found")
+        self.catalog_repository.delete(model_id)
+        return {"status": "deleted", "model_id": model_id}
+
     def list_available_models(self) -> AvailableModelCatalog:
+        """返回业务前台可见的模型目录。"""
         providers = self.provider_repository.list_map()
         grouped = {"t2i": [], "i2i": [], "i2v": []}
         for item in self.catalog_repository.list():
