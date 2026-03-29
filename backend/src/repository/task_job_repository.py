@@ -65,6 +65,7 @@ class TaskJobRepository(BaseRepository[TaskJob]):
         *,
         project_id: str | None = None,
         series_id: str | None = None,
+        workspace_id: str | None = None,
         statuses: Iterable[str] | None = None,
         limit: int | None = 200,
     ) -> list[TaskJob]:
@@ -79,6 +80,8 @@ class TaskJobRepository(BaseRepository[TaskJob]):
                 query = query.filter(TaskJobRecord.project_id == project_id)
             if series_id:
                 query = query.filter(TaskJobRecord.series_id == series_id)
+            if workspace_id:
+                query = query.filter(TaskJobRecord.workspace_id == workspace_id)
             if statuses:
                 query = query.filter(TaskJobRecord.status.in_(list(statuses)))
             query = query.order_by(TaskJobRecord.created_at.desc())

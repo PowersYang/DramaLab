@@ -127,12 +127,14 @@ export default function AuthEntryPage({ mode }: AuthEntryPageProps) {
             <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-sm font-semibold text-slate-500">
               <Link
                 href="/signin"
+                prefetch
                 className={`rounded-full px-4 py-2 transition-colors ${!isSignUp ? "bg-white text-slate-950 shadow-sm" : "hover:text-slate-950"}`}
               >
                 登录
               </Link>
               <Link
                 href="/signup"
+                prefetch
                 className={`rounded-full px-4 py-2 transition-colors ${isSignUp ? "bg-white text-slate-950 shadow-sm" : "hover:text-slate-950"}`}
               >
                 注册

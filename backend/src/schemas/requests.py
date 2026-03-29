@@ -241,6 +241,10 @@ class UpdateVoiceParamsRequest(BaseModel):
     volume: int = 50
 
 
+class PreviewVoiceRequest(BaseModel):
+    text: Optional[str] = Field(None, max_length=120)
+
+
 class GenerateLineAudioRequest(BaseModel):
     speed: float = 1.0
     pitch: float = 1.0

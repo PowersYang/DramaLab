@@ -1,20 +1,24 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Mic, Play, Pause, Wand2, Users, Volume2, Check, Settings2, AlertCircle } from "lucide-react";
+import { Mic, Play, Pause, Wand2, Headphones, Volume2, Check, Settings2, AlertCircle } from "lucide-react";
 import clsx from "clsx";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl } from "@/lib/utils";
+import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
+
+const AUDIO_SLIDER_CLASS = "w-full h-1.5 appearance-none bg-transparent cursor-pointer [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-slate-400/35 [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-slate-400/35 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:mt-[-3px] [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-0 [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary";
 
 export default function VoiceActingStudio() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const selectedAudioCharacterId = useProjectStore((state) => state.selectedAudioCharacterId);
+    const setSelectedAudioCharacterId = useProjectStore((state) => state.setSelectedAudioCharacterId);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
 
-    const [voices, setVoices] = useState<any[]>([]);
     const [playingAudio, setPlayingAudio] = useState<string | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -26,10 +30,6 @@ export default function VoiceActingStudio() {
 
     // Per-character voice params (defaults)
     const [charParams, setCharParams] = useState<Record<string, { speed: number; pitch: number; volume: number }>>({});
-
-    useEffect(() => {
-        api.getVoices().then(setVoices).catch(console.error);
-    }, []);
 
     useEffect(() => {
         if (currentProject?.characters) {
@@ -45,13 +45,32 @@ export default function VoiceActingStudio() {
         }
     }, [currentProject?.characters]);
 
-    const resolveSelectedVoiceId = (voiceId?: string | null) => {
-        if (!voiceId) return "";
-        if (voices.some((voice) => voice.id === voiceId)) {
-            return voiceId;
+    useEffect(() => {
+        const characters = currentProject?.characters || [];
+        if (characters.length === 0) {
+            if (selectedAudioCharacterId) {
+                setSelectedAudioCharacterId(null);
+            }
+            return;
         }
-        const matched = voices.find((voice) => Array.isArray(voice.aliases) && voice.aliases.includes(voiceId));
-        return matched?.id || "";
+        if (!selectedAudioCharacterId || !characters.some((char: any) => char.id === selectedAudioCharacterId)) {
+            setSelectedAudioCharacterId(characters[0].id);
+        }
+    }, [currentProject?.characters, selectedAudioCharacterId, setSelectedAudioCharacterId]);
+
+    const getDefaultLineSettings = (speakerId?: string | null) => {
+        if (!speakerId) {
+            return { speed: 1.0, pitch: 1.0, volume: 50 };
+        }
+        const params = charParams[speakerId];
+        if (!params) {
+            return { speed: 1.0, pitch: 1.0, volume: 50 };
+        }
+        return {
+            speed: params.speed ?? 1.0,
+            pitch: params.pitch ?? 1.0,
+            volume: params.volume ?? 50,
+        };
     };
 
     const handlePlay = (url: string) => {
@@ -64,16 +83,6 @@ export default function VoiceActingStudio() {
                 audioRef.current.play();
                 setPlayingAudio(url);
             }
-        }
-    };
-
-    const handleBindVoice = async (charId: string, voiceId: string, voiceName: string) => {
-        if (!currentProject) return;
-        try {
-            const updatedProject = await api.bindVoice(currentProject.id, charId, voiceId, voiceName);
-            updateProject(currentProject.id, updatedProject);
-        } catch (error) {
-            console.error("Failed to bind voice:", error);
         }
     };
 
@@ -115,11 +124,11 @@ export default function VoiceActingStudio() {
         }
     };
 
-    const handleGenerateLine = async (frameId: string) => {
+    const handleGenerateLine = async (frameId: string, speakerId?: string | null) => {
         if (!currentProject) return;
         setGeneratingLineId(frameId);
         try {
-            const settings = lineSettings[frameId] || { speed: 1.0, pitch: 1.0, volume: 50 };
+            const settings = lineSettings[frameId] || getDefaultLineSettings(speakerId);
             const receipt = await api.generateLineAudio(currentProject.id, frameId, settings.speed, settings.pitch, settings.volume);
             enqueueReceipts(currentProject.id, [receipt]);
             const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
@@ -138,20 +147,36 @@ export default function VoiceActingStudio() {
 
     return (
         <div className="flex h-full text-white">
-            <audio ref={audioRef} onEnded={() => setPlayingAudio(null)} className="hidden" />
+            <audio
+                ref={audioRef}
+                onEnded={() => {
+                    setPlayingAudio(null);
+                }}
+                className="hidden"
+            />
 
             {/* Left Sidebar: 配音角色区 */}
             <div className="w-80 border-r border-white/10 flex flex-col bg-black/20">
-                <div className="p-4 border-b border-white/10">
-                    <h3 className="font-display font-bold text-sm flex items-center gap-2">
-                        <Users size={16} className="text-primary" /> 配音角色区
+                <div className={PANEL_HEADER_CLASS}>
+                    <h3 className={PANEL_TITLE_CLASS}>
+                        <Headphones size={16} className="text-primary" /> 角色声线
                     </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {currentProject?.characters?.map((char: any) => (
-                        <div key={char.id} className="bg-white/5 rounded-lg p-3 border border-white/5 hover:border-white/10 transition-colors">
-                            <div className="flex items-center gap-3 mb-3">
-                                <div className="w-10 h-10 rounded-full bg-gray-700 overflow-hidden">
+                        <button
+                            key={char.id}
+                            type="button"
+                            onClick={() => setSelectedAudioCharacterId(char.id)}
+                            className={clsx(
+                                "w-full text-left rounded-2xl p-4 border transition-all",
+                                selectedAudioCharacterId === char.id
+                                    ? "bg-primary/12 border-primary/30 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
+                                    : "bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/[0.07]"
+                            )}
+                        >
+                            <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 rounded-2xl bg-gray-700 overflow-hidden ring-1 ring-white/10 shrink-0">
                                     {(char?.avatar_url || char?.image_url) ? (
                                         <img
                                             src={getAssetUrl(char?.avatar_url || char?.image_url)}
@@ -159,70 +184,20 @@ export default function VoiceActingStudio() {
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-xs">{char.name[0]}</div>
+                                        <div className="w-full h-full flex items-center justify-center text-base font-bold">{char.name[0]}</div>
                                     )}
                                 </div>
-                                <div>
-                                    <div className="font-bold text-sm">{char.name}</div>
-                                    <div className="text-xs text-gray-500">{char.gender}, {char.age}</div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-bold text-base text-white truncate">{char.name}</div>
+                                    <div className="text-sm text-gray-400 mt-1 truncate">
+                                        {[char.gender, char.age].filter(Boolean).join(" · ") || "角色信息待补充"}
+                                    </div>
                                 </div>
+                                {selectedAudioCharacterId === char.id && (
+                                    <div className="h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_12px_rgba(255,255,255,0.28)] shrink-0" />
+                                )}
                             </div>
-
-                            {/* Voice Selector */}
-                            <div className="space-y-1">
-                                <label className="text-[10px] uppercase text-gray-500 font-bold">已绑定音色</label>
-                                <select
-                                    className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary"
-                                    value={resolveSelectedVoiceId(char.voice_id)}
-                                    onChange={(e) => {
-                                        const voice = voices.find(v => v.id === e.target.value);
-                                        if (voice) handleBindVoice(char.id, voice.id, voice.name);
-                                    }}
-                                >
-                                    <option value="">请选择音色...</option>
-                                    {voices.map(v => (
-                                        <option key={v.id} value={v.id}>{v.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Per-Character Voice Params */}
-                            <div className="mt-3 space-y-2">
-                                <div>
-                                    <label className="flex justify-between text-[10px] text-gray-500 mb-0.5">
-                                        语速 <span>{(charParams[char.id]?.speed ?? 1.0).toFixed(1)}x</span>
-                                    </label>
-                                    <input type="range" min="0.5" max="2.0" step="0.1"
-                                        value={charParams[char.id]?.speed ?? 1.0}
-                                        onChange={(e) => handleCharParamChange(char.id, 'speed', parseFloat(e.target.value))}
-                                        onPointerUp={() => saveCharParams(char.id)}
-                                        className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="flex justify-between text-[10px] text-gray-500 mb-0.5">
-                                        音调 <span>{(charParams[char.id]?.pitch ?? 1.0).toFixed(1)}</span>
-                                    </label>
-                                    <input type="range" min="0.5" max="2.0" step="0.1"
-                                        value={charParams[char.id]?.pitch ?? 1.0}
-                                        onChange={(e) => handleCharParamChange(char.id, 'pitch', parseFloat(e.target.value))}
-                                        onPointerUp={() => saveCharParams(char.id)}
-                                        className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="flex justify-between text-[10px] text-gray-500 mb-0.5">
-                                        音量 <span>{charParams[char.id]?.volume ?? 50}</span>
-                                    </label>
-                                    <input type="range" min="0" max="100" step="1"
-                                        value={charParams[char.id]?.volume ?? 50}
-                                        onChange={(e) => handleCharParamChange(char.id, 'volume', parseInt(e.target.value))}
-                                        onPointerUp={() => saveCharParams(char.id)}
-                                        className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                        </button>
                     ))}
                 </div>
             </div>
@@ -250,7 +225,7 @@ export default function VoiceActingStudio() {
                         const speakerId = frame.character_ids?.[0];
                         const speaker = currentProject.characters.find((c: any) => c.id === speakerId);
                         const isSettingsOpen = activeSettingsId === frame.id;
-                        const settings = lineSettings[frame.id] || { speed: 1.0, pitch: 1.0, volume: 50 };
+                        const settings = lineSettings[frame.id] || getDefaultLineSettings(speakerId);
 
                         return (
                             <div key={frame.id} className="flex gap-4 group">
@@ -293,7 +268,7 @@ export default function VoiceActingStudio() {
                                                                 ...prev,
                                                                 [frame.id]: { ...settings, speed: parseFloat(e.target.value) }
                                                             }))}
-                                                            className="w-full"
+                                                            className={AUDIO_SLIDER_CLASS}
                                                         />
                                                     </div>
                                                     <div>
@@ -307,7 +282,7 @@ export default function VoiceActingStudio() {
                                                                 ...prev,
                                                                 [frame.id]: { ...settings, pitch: parseFloat(e.target.value) }
                                                             }))}
-                                                            className="w-full"
+                                                            className={AUDIO_SLIDER_CLASS}
                                                         />
                                                     </div>
                                                     <div>
@@ -321,12 +296,12 @@ export default function VoiceActingStudio() {
                                                                 ...prev,
                                                                 [frame.id]: { ...settings, volume: parseInt(e.target.value) }
                                                             }))}
-                                                            className="w-full"
+                                                            className={AUDIO_SLIDER_CLASS}
                                                         />
                                                     </div>
                                                     <button
                                                         onClick={() => {
-                                                            handleGenerateLine(frame.id);
+                                                            handleGenerateLine(frame.id, speakerId);
                                                             setActiveSettingsId(null);
                                                         }}
                                                         className="w-full bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white text-xs py-2 rounded-lg font-bold transition-all"
@@ -370,7 +345,7 @@ export default function VoiceActingStudio() {
                                                     </button>
                                                 ) : (
                                                     <button
-                                                        onClick={() => handleGenerateLine(frame.id)}
+                                                        onClick={() => handleGenerateLine(frame.id, speakerId)}
                                                         className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400"
                                                     >
                                                         <Mic size={14} />

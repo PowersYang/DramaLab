@@ -1,16 +1,23 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 
 import { useAuthStore } from "@/store/authStore";
+
+const useClientLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export default function StudioAuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const authStatus = useAuthStore((state) => state.authStatus);
   const me = useAuthStore((state) => state.me);
+  const restoreSnapshot = useAuthStore((state) => state.restoreSnapshot);
   const bootstrapAuth = useAuthStore((state) => state.bootstrapAuth);
+
+  useClientLayoutEffect(() => {
+    restoreSnapshot();
+  }, [restoreSnapshot]);
 
   useEffect(() => {
     void bootstrapAuth();
@@ -22,7 +29,7 @@ export default function StudioAuthGate({ children }: { children: React.ReactNode
     }
   }, [authStatus, pathname, router]);
 
-  if (authStatus === "idle" || authStatus === "loading") {
+  if ((authStatus === "idle" || authStatus === "loading") && !me) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f4f5f7] px-6">
         <div className="studio-panel w-full max-w-md p-8 text-center">

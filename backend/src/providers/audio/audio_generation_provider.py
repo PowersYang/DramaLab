@@ -21,6 +21,8 @@ class AudioGenerator:
     这里承接原 `src/service/audio.py` 的实现，作为第一批目录迁移结果。
     """
 
+    DEFAULT_PREVIEW_TEXT = "你好，这是一段角色声线试听，用来确认当前音色的气质和发声效果。"
+
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.output_dir = self.config.get("output_dir", "output/audio")
@@ -40,18 +42,62 @@ class AudioGenerator:
             logger.warning("TTS provider %s is not implemented yet; returning empty voice catalog", provider_key)
             return []
 
-        voices_dict = TTSProcessor.list_voices()
+        voices_dict = self._get_provider_voice_catalog(provider_key)
         return [
             {
                 "id": voice_id,
-                "name": f"{meta['name']} - CosyVoice",
+                "name": meta["name"],
                 "gender": meta.get("gender", "Unknown"),
                 "model": meta.get("model", "cosyvoice-v2"),
                 "provider_key": provider_key,
                 "aliases": meta.get("aliases", []),
+                "preview_url": meta.get("preview_url"),
             }
             for voice_id, meta in voices_dict.items()
         ]
+
+    def get_voice_preview(self, voice_id: str, text: str | None = None) -> Dict[str, str]:
+        """返回指定音色的试听音频地址，不存在时现场生成并缓存到 OSS。"""
+        provider_key = self.get_active_tts_provider_key()
+        if provider_key != "DASHSCOPE":
+            raise RuntimeError(f"TTS provider {provider_key} does not support voice preview yet.")
+
+        canonical_voice_id = TTSProcessor.resolve_voice_id(voice_id)
+        voice_catalog = self._get_provider_voice_catalog(provider_key)
+        voice_meta = voice_catalog.get(canonical_voice_id)
+        if not voice_meta:
+            raise ValueError(f"Voice '{voice_id}' is not supported by current TTS provider.")
+
+        preview_url = voice_meta.get("preview_url")
+        if preview_url:
+            return {
+                "voice_id": canonical_voice_id,
+                "provider_key": provider_key,
+                "preview_url": preview_url,
+            }
+
+        if not self.tts:
+            raise RuntimeError("TTS service not available. Check DASHSCOPE_API_KEY configuration.")
+
+        preview_text = (text or self.DEFAULT_PREVIEW_TEXT).strip() or self.DEFAULT_PREVIEW_TEXT
+        output_path = os.path.join(self.output_dir, "voice_preview", f"{provider_key.lower()}_{canonical_voice_id}.mp3")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        self.tts.synthesize(preview_text, output_path, voice=canonical_voice_id)
+        preview_url = self._persist_media(output_path, "audio/voice_preview")
+
+        updated_catalog = {
+            **voice_catalog,
+            canonical_voice_id: {
+                **voice_meta,
+                "preview_url": preview_url,
+            },
+        }
+        self.provider_service.update_provider(provider_key, settings_patch={"tts_voice_catalog": updated_catalog})
+        return {
+            "voice_id": canonical_voice_id,
+            "provider_key": provider_key,
+            "preview_url": preview_url,
+        }
 
     def generate_dialogue(self, frame: StoryboardFrame, character: Character, speed: float = 1.0, pitch: float = 1.0, volume: int = 50) -> StoryboardFrame:
         """为对白生成 TTS 音频。"""
@@ -172,3 +218,27 @@ class AudioGenerator:
         except Exception as exc:
             logger.warning("Failed to resolve active TTS provider from model provider config: %s", exc)
         return "DASHSCOPE"
+
+    def _get_provider_voice_catalog(self, provider_key: str) -> Dict[str, Dict[str, Any]]:
+        """读取并同步当前厂商的音色目录到数据库配置。"""
+        if provider_key != "DASHSCOPE":
+            return {}
+
+        provider = self.provider_service.get_provider_config(provider_key)
+        stored_catalog = (provider.settings_json or {}).get("tts_voice_catalog", {})
+        default_catalog = TTSProcessor.list_voices()
+
+        merged_catalog: Dict[str, Dict[str, Any]] = {}
+        for voice_id, meta in default_catalog.items():
+            stored = stored_catalog.get(voice_id, {}) if isinstance(stored_catalog, dict) else {}
+            merged_catalog[voice_id] = {
+                "name": meta["name"],
+                "gender": meta.get("gender", "Unknown"),
+                "model": meta.get("model", "cosyvoice-v2"),
+                "aliases": list(meta.get("aliases", [])),
+                "preview_url": stored.get("preview_url"),
+            }
+
+        if merged_catalog != stored_catalog:
+            self.provider_service.update_provider(provider_key, settings_patch={"tts_voice_catalog": merged_catalog})
+        return merged_catalog

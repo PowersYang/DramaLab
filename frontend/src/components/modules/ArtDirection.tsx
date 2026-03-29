@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Sparkles, SwatchBook, Wand2, Check, Loader2 } from "lucide-react";
 import { useProjectStore, type StyleConfig, type StylePreset } from "@/store/projectStore"; // Combined imports
 import { api } from "@/lib/api";
+import { PANEL_HEADER_CLASS, PANEL_META_TEXT_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 export default function ArtDirection() {
     const {
@@ -170,15 +171,13 @@ export default function ArtDirection() {
     return (
         <div className="flex flex-col h-full overflow-hidden">
             {/* Header */}
-            <div className="h-20 border-b border-white/10 bg-black/20 flex items-center px-8 justify-between">
+            <div className={PANEL_HEADER_CLASS}>
                 <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-white/10 border border-white/10 flex items-center justify-center">
-                        <SwatchBook className="text-gray-200" size={18} />
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-display font-bold text-white">艺术指导</h2>
-                        <p className="text-xs text-gray-400">风格定调 - 建立全局视觉标准</p>
-                    </div>
+                    <h2 className={PANEL_TITLE_CLASS}>
+                        <SwatchBook className="text-primary" size={16} />
+                        艺术指导
+                        <span className={`${PANEL_META_TEXT_CLASS} font-normal`}>风格定调 - 建立全局视觉标准</span>
+                    </h2>
                 </div>
 
                 <button

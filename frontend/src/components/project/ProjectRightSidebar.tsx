@@ -50,11 +50,11 @@ export default function ProjectRightSidebar({ activeStep }: ProjectRightSidebarP
 
     return (
         <aside className="studio-inspector w-72 h-full flex flex-col z-50">
-            <div className="flex border-b border-white/5">
+            <div className="flex h-14 border-b border-white/10 bg-black/20">
                 <button
                     type="button"
                     onClick={() => setActiveTab("properties")}
-                    className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "properties"
+                    className={`flex-1 h-full text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "properties"
                         ? "text-white border-b-2 border-primary bg-white/5"
                         : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
                         }`}
@@ -65,7 +65,7 @@ export default function ProjectRightSidebar({ activeStep }: ProjectRightSidebarP
                 <button
                     type="button"
                     onClick={() => setActiveTab("queue")}
-                    className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "queue"
+                    className={`flex-1 h-full text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "queue"
                         ? "text-white border-b-2 border-primary bg-white/5"
                         : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
                         }`}

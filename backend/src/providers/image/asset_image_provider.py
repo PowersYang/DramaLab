@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Dict
 
 from ...schemas.models import (
+    AssetUnit,
     Character,
     GenerationStatus,
     ImageAsset,
@@ -148,12 +149,19 @@ class AssetGenerator:
                             created_at=utc_now(),
                             prompt_used=generation_prompt,
                         )
+                        if not character.full_body:
+                            character.full_body = AssetUnit()
                         character.full_body_asset.variants.insert(0, variant)
+                        character.full_body.image_variants.insert(0, variant.model_copy(deep=True))
+                        character.full_body.image_prompt = base_prompt
+                        character.full_body.image_updated_at = utc_now()
                         cleanup_old_variants(character.full_body_asset)
+                        character.full_body.image_variants = [item.model_copy(deep=True) for item in character.full_body_asset.variants]
 
                         if not character.full_body_asset.selected_id or batch_size == 1:
                             character.full_body_asset.selected_id = variant_id
                             character.full_body_image_url = object_key
+                            character.full_body.selected_image_id = variant_id
 
                         successful_generations += 1
                         if index < batch_size - 1:
@@ -220,17 +228,24 @@ class AssetGenerator:
                         self.model.generate(generation_prompt, sheet_path, ref_image_path=fullbody_path, negative_prompt=sheet_negative, ref_strength=0.8, model_name=i2i_model_name)
                         if not character.three_view_asset:
                             character.three_view_asset = ImageAsset()
+                        if not character.three_views:
+                            character.three_views = AssetUnit()
                         uploader = OSSImageUploader()
                         object_key = uploader.upload_file(sheet_path, sub_path="assets/characters") if uploader.is_configured else None
                         if not object_key:
                             raise RuntimeError("Failed to upload three view variant to OSS.")
                         variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
                         character.three_view_asset.variants.insert(0, variant)
+                        character.three_views.image_variants.insert(0, variant.model_copy(deep=True))
+                        character.three_views.image_prompt = base_prompt
+                        character.three_views.image_updated_at = utc_now()
                         cleanup_old_variants(character.three_view_asset)
+                        character.three_views.image_variants = [item.model_copy(deep=True) for item in character.three_view_asset.variants]
                         if not character.three_view_asset.selected_id or batch_size == 1:
                             character.three_view_asset.selected_id = variant_id
                             character.three_view_image_url = object_key
                             character.image_url = object_key
+                            character.three_views.selected_image_id = variant_id
                         successful_generations += 1
                         if index < batch_size - 1:
                             time.sleep(1)
@@ -258,17 +273,24 @@ class AssetGenerator:
                         self.model.generate(generation_prompt, avatar_path, ref_image_path=fullbody_path, negative_prompt=negative_prompt, ref_strength=0.8, model_name=i2i_model_name)
                         if not character.headshot_asset:
                             character.headshot_asset = ImageAsset()
+                        if not character.head_shot:
+                            character.head_shot = AssetUnit()
                         uploader = OSSImageUploader()
                         object_key = uploader.upload_file(avatar_path, sub_path="assets/characters") if uploader.is_configured else None
                         if not object_key:
                             raise RuntimeError("Failed to upload headshot variant to OSS.")
                         variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
                         character.headshot_asset.variants.insert(0, variant)
+                        character.head_shot.image_variants.insert(0, variant.model_copy(deep=True))
+                        character.head_shot.image_prompt = base_prompt
+                        character.head_shot.image_updated_at = utc_now()
                         cleanup_old_variants(character.headshot_asset)
+                        character.head_shot.image_variants = [item.model_copy(deep=True) for item in character.headshot_asset.variants]
                         if not character.headshot_asset.selected_id or batch_size == 1:
                             character.headshot_asset.selected_id = variant_id
                             character.headshot_image_url = object_key
                             character.avatar_url = object_key
+                            character.head_shot.selected_image_id = variant_id
                         successful_generations += 1
                         if index < batch_size - 1:
                             time.sleep(1)

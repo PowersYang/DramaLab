@@ -4,14 +4,17 @@ import { motion } from "framer-motion";
 import { Settings, Sliders, Image as ImageIcon, Type, FileText, Users, Layout, Video, Mic, Music, Film, Palette, Wand2, Sparkles } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
+import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 interface PropertiesPanelProps {
     activeStep: string;
     embedded?: boolean;
 }
+
+const AUDIO_SLIDER_CLASS = "w-full h-1.5 appearance-none bg-transparent cursor-pointer [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-slate-400/35 [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-slate-400/35 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:mt-[-3px] [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-0 [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary";
 
 export default function PropertiesPanel({ activeStep, embedded = false }: PropertiesPanelProps) {
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -30,7 +33,7 @@ export default function PropertiesPanel({ activeStep, embedded = false }: Proper
             case "motion":
                 return <MotionInspector />;
             case "audio":
-                return <AudioInspector project={currentProject} />;
+                return <AudioInspector />;
             case "mix":
                 return <MixInspector />;
             case "export":
@@ -54,8 +57,8 @@ export default function PropertiesPanel({ activeStep, embedded = false }: Proper
             animate={{ x: 0, opacity: 1 }}
             className="studio-inspector w-72 h-full flex flex-col z-50"
         >
-            <div className="p-4 border-b border-glass-border flex items-center justify-between">
-                <h2 className="font-display font-bold text-white">属性面板</h2>
+            <div className={PANEL_HEADER_CLASS}>
+                <h2 className={PANEL_TITLE_CLASS}>属性面板</h2>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -826,29 +829,256 @@ function MotionInspector() {
     );
 }
 
-function AudioInspector({ project }: { project: any }) {
-    const assignedCount = project?.characters?.filter((c: any) => c.voice_id).length || 0;
-    const totalCount = project?.characters?.length || 0;
+function AudioInspector() {
+    const currentProject = useProjectStore((state) => state.currentProject);
+    const updateProject = useProjectStore((state) => state.updateProject);
+    const selectedAudioCharacterId = useProjectStore((state) => state.selectedAudioCharacterId);
+    const setSelectedAudioCharacterId = useProjectStore((state) => state.setSelectedAudioCharacterId);
+    const [voices, setVoices] = useState<any[]>([]);
+    const [charParams, setCharParams] = useState<Record<string, { speed: number; pitch: number; volume: number }>>({});
+    const [bindingVoiceCharId, setBindingVoiceCharId] = useState<string | null>(null);
+    const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+    const [loadingPreviewVoiceId, setLoadingPreviewVoiceId] = useState<string | null>(null);
+    const [previewUrlsByVoiceId, setPreviewUrlsByVoiceId] = useState<Record<string, string>>({});
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        api.getVoices().then(setVoices).catch(console.error);
+    }, []);
+
+    useEffect(() => {
+        setPreviewUrlsByVoiceId(
+            Object.fromEntries(
+                voices
+                    .filter((voice) => typeof voice.preview_url === "string" && voice.preview_url)
+                    .map((voice) => [voice.id, voice.preview_url])
+            )
+        );
+    }, [voices]);
+
+    useEffect(() => {
+        if (!currentProject?.characters) return;
+        const nextParams: Record<string, { speed: number; pitch: number; volume: number }> = {};
+        currentProject.characters.forEach((char: any) => {
+            nextParams[char.id] = {
+                speed: char.voice_speed ?? 1.0,
+                pitch: char.voice_pitch ?? 1.0,
+                volume: char.voice_volume ?? 50,
+            };
+        });
+        setCharParams(nextParams);
+    }, [currentProject?.characters]);
+
+    useEffect(() => {
+        const characters = currentProject?.characters || [];
+        if (characters.length === 0) {
+            if (selectedAudioCharacterId) {
+                setSelectedAudioCharacterId(null);
+            }
+            return;
+        }
+        if (!selectedAudioCharacterId || !characters.some((char: any) => char.id === selectedAudioCharacterId)) {
+            setSelectedAudioCharacterId(characters[0].id);
+        }
+    }, [currentProject?.characters, selectedAudioCharacterId, setSelectedAudioCharacterId]);
+
+    const resolveSelectedVoiceId = (voiceId?: string | null) => {
+        if (!voiceId) return "";
+        if (voices.some((voice) => voice.id === voiceId)) {
+            return voiceId;
+        }
+        const matched = voices.find((voice) => Array.isArray(voice.aliases) && voice.aliases.includes(voiceId));
+        return matched?.id || "";
+    };
+
+    const selectedCharacter = currentProject?.characters?.find((char: any) => char.id === selectedAudioCharacterId);
+
+    const handlePlayPreview = (voiceId: string, url: string) => {
+        if (!audioRef.current) return;
+        if (previewingVoiceId === voiceId && audioRef.current.src === getAssetUrl(url)) {
+            audioRef.current.pause();
+            setPreviewingVoiceId(null);
+            return;
+        }
+        audioRef.current.src = getAssetUrl(url);
+        void audioRef.current.play();
+        setPreviewingVoiceId(voiceId);
+    };
+
+    const handlePreviewVoice = async (voiceId: string) => {
+        const existingUrl = previewUrlsByVoiceId[voiceId];
+        if (existingUrl) {
+            handlePlayPreview(voiceId, existingUrl);
+            return;
+        }
+        setLoadingPreviewVoiceId(voiceId);
+        try {
+            const payload = await api.previewVoice(voiceId);
+            const previewUrl = payload.preview_url;
+            setPreviewUrlsByVoiceId((prev) => ({ ...prev, [voiceId]: previewUrl }));
+            setVoices((prev) => prev.map((voice) => voice.id === voiceId ? { ...voice, preview_url: previewUrl } : voice));
+            handlePlayPreview(voiceId, previewUrl);
+        } catch (error) {
+            console.error("Failed to preview voice:", error);
+            alert((error as Error)?.message || "试听音色失败");
+        } finally {
+            setLoadingPreviewVoiceId(null);
+        }
+    };
+
+    const handleBindVoice = async (charId: string, voiceId: string, voiceName: string) => {
+        if (!currentProject) return;
+        const nextCharacters = (currentProject.characters || []).map((char: any) =>
+            char.id === charId ? { ...char, voice_id: voiceId, voice_name: voiceName } : char
+        );
+        updateProject(currentProject.id, { characters: nextCharacters });
+        setBindingVoiceCharId(charId);
+        try {
+            const updatedProject = await api.bindVoice(currentProject.id, charId, voiceId, voiceName);
+            updateProject(currentProject.id, updatedProject);
+        } catch (error) {
+            console.error("Failed to bind voice:", error);
+            const refreshedProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, refreshedProject);
+        } finally {
+            setBindingVoiceCharId(null);
+        }
+    };
+
+    const handleCharParamChange = (charId: string, param: "speed" | "pitch" | "volume", value: number) => {
+        setCharParams((prev) => ({
+            ...prev,
+            [charId]: { ...prev[charId], [param]: value },
+        }));
+    };
+
+    const saveCharParams = async (charId: string) => {
+        const params = charParams[charId];
+        if (!currentProject || !params) return;
+        try {
+            const updated = await api.updateVoiceParams(currentProject.id, charId, params.speed, params.pitch, params.volume);
+            updateProject(currentProject.id, updated);
+        } catch (error) {
+            console.error("Failed to save voice params:", error);
+        }
+    };
 
     return (
         <div className="space-y-6">
-            <div className="space-y-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Mic size={14} /> Casting Status
-                </h3>
-                <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-green-500 transition-all duration-500"
-                            style={{ width: `${(assignedCount / totalCount) * 100}%` }}
-                        />
-                    </div>
-                    <span className="text-xs font-mono text-gray-400">{assignedCount}/{totalCount}</span>
+            <audio
+                ref={audioRef}
+                onEnded={() => setPreviewingVoiceId(null)}
+                className="hidden"
+            />
+            {!selectedCharacter ? (
+                <div className="p-4 bg-white/5 rounded-lg border border-white/10 text-center text-gray-500 text-xs">
+                    请选择左侧角色以编辑音色和配音参数。
                 </div>
-                <p className="text-xs text-gray-500">
-                    {assignedCount === totalCount ? "All characters casted." : "Some characters need voices."}
-                </p>
-            </div>
+            ) : (
+                <div className="space-y-4">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_12px_30px_rgba(0,0,0,0.12)]">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            <Mic size={14} /> 角色声线设置
+                        </h3>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                            为 {selectedCharacter.name} 选择音色并调整默认配音参数。
+                        </p>
+                        <div className="space-y-2 mt-4">
+                            <label className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.18em]">音色</label>
+                            <div className="flex items-center gap-2">
+                                <select
+                                    className="flex-1 bg-black/25 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-gray-200 focus:outline-none focus:border-primary"
+                                    value={resolveSelectedVoiceId(selectedCharacter.voice_id)}
+                                    onChange={(e) => {
+                                        const voice = voices.find((item) => item.id === e.target.value);
+                                        if (voice) {
+                                            void handleBindVoice(selectedCharacter.id, voice.id, voice.name);
+                                        }
+                                    }}
+                                >
+                                    <option value="">请选择音色...</option>
+                                    {voices.map((voice) => (
+                                        <option key={voice.id} value={voice.id}>{voice.name}</option>
+                                    ))}
+                                </select>
+                                <button
+                                    type="button"
+                                    disabled={!resolveSelectedVoiceId(selectedCharacter.voice_id) || loadingPreviewVoiceId === resolveSelectedVoiceId(selectedCharacter.voice_id)}
+                                    onClick={() => {
+                                        const voiceId = resolveSelectedVoiceId(selectedCharacter.voice_id);
+                                        if (voiceId) {
+                                            void handlePreviewVoice(voiceId);
+                                        }
+                                    }}
+                                    className={`h-10 w-10 rounded-xl flex items-center justify-center transition-all ${
+                                        previewingVoiceId === resolveSelectedVoiceId(selectedCharacter.voice_id)
+                                            ? "bg-primary/15 text-primary shadow-[0_0_20px_rgba(255,255,255,0.08)]"
+                                            : "bg-black/25 text-gray-300 hover:bg-white/10"
+                                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                    title="试听音色"
+                                >
+                                    {loadingPreviewVoiceId === resolveSelectedVoiceId(selectedCharacter.voice_id)
+                                        ? <Wand2 size={14} className="animate-spin" />
+                                        : <Mic size={14} />}
+                                </button>
+                            </div>
+                            {bindingVoiceCharId === selectedCharacter.id && (
+                                <p className="text-[10px] text-primary">正在同步音色配置...</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4 space-y-4">
+                        <div>
+                            <label className="flex justify-between text-xs text-gray-300 mb-1.5">
+                                语速 <span className="text-primary">{(charParams[selectedCharacter.id]?.speed ?? 1.0).toFixed(1)}x</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0.5"
+                                max="2.0"
+                                step="0.1"
+                                value={charParams[selectedCharacter.id]?.speed ?? 1.0}
+                                onChange={(e) => handleCharParamChange(selectedCharacter.id, "speed", parseFloat(e.target.value))}
+                                onPointerUp={() => void saveCharParams(selectedCharacter.id)}
+                                className={AUDIO_SLIDER_CLASS}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="flex justify-between text-xs text-gray-300 mb-1.5">
+                                音调 <span className="text-primary">{(charParams[selectedCharacter.id]?.pitch ?? 1.0).toFixed(1)}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0.5"
+                                max="2.0"
+                                step="0.1"
+                                value={charParams[selectedCharacter.id]?.pitch ?? 1.0}
+                                onChange={(e) => handleCharParamChange(selectedCharacter.id, "pitch", parseFloat(e.target.value))}
+                                onPointerUp={() => void saveCharParams(selectedCharacter.id)}
+                                className={AUDIO_SLIDER_CLASS}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="flex justify-between text-xs text-gray-300 mb-1.5">
+                                音量 <span className="text-primary">{charParams[selectedCharacter.id]?.volume ?? 50}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={charParams[selectedCharacter.id]?.volume ?? 50}
+                                onChange={(e) => handleCharParamChange(selectedCharacter.id, "volume", parseInt(e.target.value))}
+                                onPointerUp={() => void saveCharParams(selectedCharacter.id)}
+                                className={AUDIO_SLIDER_CLASS}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

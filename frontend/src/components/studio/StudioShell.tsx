@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, Users2, Workflow } from "lucide-react";
 
 import DramaLabBranding from "@/components/layout/DramaLabBranding";
@@ -52,6 +52,15 @@ export default function StudioShell({ children, title, description, actions }: S
     }
     return true;
   });
+
+  useEffect(() => {
+    // 中文注释：用户进入 Studio 后，后台预取可见导航页，避免第一次点击左侧导航时再临时加载路由资源。
+    visibleNavItems.forEach((item) => {
+      if (item.href !== pathname) {
+        router.prefetch(item.href);
+      }
+    });
+  }, [pathname, router, visibleNavItems]);
 
   return (
     <div className="flex min-h-screen bg-[#f4f5f7] text-slate-900">

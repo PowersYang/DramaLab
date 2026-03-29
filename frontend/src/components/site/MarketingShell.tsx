@@ -1,11 +1,9 @@
-"use client";
-
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
 
 import DramaLabBranding from "@/components/layout/DramaLabBranding";
-import { useAuthStore } from "@/store/authStore";
+import MarketingAuthActions from "@/components/site/MarketingAuthActions";
+import MarketingFooterLinks from "@/components/site/MarketingFooterLinks";
 
 interface MarketingShellProps {
   children: ReactNode;
@@ -18,17 +16,6 @@ const NAV_ITEMS = [
 ];
 
 export default function MarketingShell({ children, ctaMode = "default" }: MarketingShellProps) {
-  const authStatus = useAuthStore((state) => state.authStatus);
-  const me = useAuthStore((state) => state.me);
-  const bootstrapAuth = useAuthStore((state) => state.bootstrapAuth);
-  const currentWorkspace = me?.workspaces.find((item) => item.workspace_id === me.current_workspace_id);
-
-  useEffect(() => {
-    if (authStatus === "idle") {
-      void bootstrapAuth();
-    }
-  }, [authStatus, bootstrapAuth]);
-
   return (
     <div className="min-h-screen bg-transparent text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl">
@@ -38,44 +25,12 @@ export default function MarketingShell({ children, ctaMode = "default" }: Market
           </Link>
           <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
             {NAV_ITEMS.map((item) => (
-              <Link key={item.href} href={item.href} className="transition-colors hover:text-slate-950">
+              <Link key={item.href} href={item.href} prefetch className="transition-colors hover:text-slate-950">
                 {item.label}
               </Link>
             ))}
           </nav>
-          <div className="flex items-center gap-3">
-            {authStatus === "authenticated" && me ? (
-              <>
-                <div className="hidden rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 md:block">
-                  <span className="font-semibold text-slate-900">{me.user.display_name || me.user.email || "已登录用户"}</span>
-                  {currentWorkspace?.workspace_name ? <span className="ml-2 text-slate-400">· {currentWorkspace.workspace_name}</span> : null}
-                </div>
-                <Link href="/studio" className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.01] hover:bg-secondary">
-                  进入工作台
-                </Link>
-              </>
-            ) : authStatus === "loading" || authStatus === "idle" ? (
-              <div className="h-10 w-28 rounded-full bg-slate-100" />
-            ) : ctaMode === "auth" ? (
-              <>
-                <Link href="/signin" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
-                  登录
-                </Link>
-                <Link href="/signup" className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.01] hover:bg-slate-800">
-                  注册
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link href="/signin" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
-                  登录
-                </Link>
-                <Link href="/signup" className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950">
-                  注册
-                </Link>
-              </>
-            )}
-          </div>
+          <MarketingAuthActions ctaMode={ctaMode} />
         </div>
       </header>
 
@@ -90,11 +45,7 @@ export default function MarketingShell({ children, ctaMode = "default" }: Market
               Standardize creative production, preserve reusable assets, and move from script to delivery in one system.
             </p>
           </div>
-          <div className="flex gap-8 text-sm text-slate-500">
-            <Link href="/solutions" className="hover:text-slate-900">解决方案</Link>
-            <Link href="/pricing" className="hover:text-slate-900">套餐定价</Link>
-            {authStatus === "authenticated" ? <Link href="/studio" className="hover:text-slate-900">工作台</Link> : null}
-          </div>
+          <MarketingFooterLinks />
         </div>
       </footer>
     </div>

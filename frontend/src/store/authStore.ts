@@ -65,6 +65,7 @@ interface AuthState {
   authStatus: AuthStatus;
   me: AuthMeResponse | null;
   isBootstrapping: boolean;
+  restoreSnapshot: () => void;
   bootstrapAuth: () => Promise<AuthMeResponse | null>;
   sendEmailCode: (email: string, purpose?: string) => Promise<{ status: string; email: string; purpose: string; debug_code?: string }>;
   verifyEmailCode: (email: string, code: string, options?: VerifyEmailCodeOptions) => Promise<AuthMeResponse>;
@@ -80,6 +81,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   me: null,
   isBootstrapping: false,
 
+  restoreSnapshot: () => {
+    const snapshot = readAuthSnapshot();
+    if (!snapshot?.me) {
+      return;
+    }
+
+    if (snapshot.accessToken) {
+      setAccessToken(snapshot.accessToken);
+    }
+
+    // 中文注释：先用本地快照秒开工作台壳层，再在后台静默校验会话，避免首进工作台时整页被鉴权恢复阻塞。
+    set({
+      me: snapshot.me,
+      authStatus: "authenticated",
+    });
+  },
+
   bootstrapAuth: async () => {
     if (get().isBootstrapping) {
       return get().me;
@@ -94,7 +112,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       me: snapshot?.me ?? get().me,
       isBootstrapping: true,
-      authStatus: "loading",
+      authStatus: snapshot?.me ?? get().me ? "authenticated" : "loading",
     });
 
     try {

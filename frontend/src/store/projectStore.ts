@@ -59,6 +59,9 @@ export interface Character {
 
     voice_id?: string;
     voice_name?: string;
+    voice_speed?: number;
+    voice_pitch?: number;
+    voice_volume?: number;
     locked?: boolean;
     status?: string;
     is_consistent?: boolean;
@@ -377,6 +380,71 @@ const sortVideoTasks = <T extends { created_at?: string | number; id?: string }>
     return sortByCreatedAt(items);
 };
 
+const mergeVariantLists = <T extends { id: string; created_at?: string | number }>(current: T[] | undefined, incoming: T[] | undefined): T[] => {
+    const currentList = Array.isArray(current) ? current : [];
+    const incomingList = Array.isArray(incoming) ? incoming : [];
+    const source = incomingList.length > 0 ? [...incomingList, ...currentList] : currentList;
+    const byId = new Map<string, T>();
+
+    source.forEach((item) => {
+        if (item?.id && !byId.has(item.id)) {
+            byId.set(item.id, item);
+        }
+    });
+
+    return sortByCreatedAt(Array.from(byId.values()));
+};
+
+const mergeImageAssetState = (currentAsset: any, incomingAsset: any) => {
+    if (!currentAsset && !incomingAsset) return incomingAsset;
+    return {
+        ...(currentAsset || {}),
+        ...(incomingAsset || {}),
+        variants: mergeVariantLists(currentAsset?.variants, incomingAsset?.variants),
+        selected_id: incomingAsset?.selected_id || currentAsset?.selected_id || null,
+    };
+};
+
+const mergeAssetUnitState = (currentUnit: any, incomingUnit: any) => {
+    if (!currentUnit && !incomingUnit) return incomingUnit;
+    return {
+        ...(currentUnit || {}),
+        ...(incomingUnit || {}),
+        image_variants: mergeVariantLists(currentUnit?.image_variants, incomingUnit?.image_variants),
+        video_variants: mergeVariantLists(currentUnit?.video_variants, incomingUnit?.video_variants),
+        selected_image_id: incomingUnit?.selected_image_id || currentUnit?.selected_image_id || null,
+        selected_video_id: incomingUnit?.selected_video_id || currentUnit?.selected_video_id || null,
+    };
+};
+
+const mergeCharacterState = (currentItem: any, incomingItem: any) => ({
+    ...(currentItem || {}),
+    ...(incomingItem || {}),
+    full_body_asset: mergeImageAssetState(currentItem?.full_body_asset, incomingItem?.full_body_asset),
+    three_view_asset: mergeImageAssetState(currentItem?.three_view_asset, incomingItem?.three_view_asset),
+    headshot_asset: mergeImageAssetState(currentItem?.headshot_asset, incomingItem?.headshot_asset),
+    full_body: mergeAssetUnitState(currentItem?.full_body, incomingItem?.full_body),
+    three_views: mergeAssetUnitState(currentItem?.three_views, incomingItem?.three_views),
+    head_shot: mergeAssetUnitState(currentItem?.head_shot, incomingItem?.head_shot),
+    video_assets: Array.isArray(incomingItem?.video_assets) ? sortVideoTasks(incomingItem.video_assets) : (currentItem?.video_assets || []),
+});
+
+const mergeSimpleAssetState = (currentItem: any, incomingItem: any) => ({
+    ...(currentItem || {}),
+    ...(incomingItem || {}),
+    image_asset: mergeImageAssetState(currentItem?.image_asset, incomingItem?.image_asset),
+    video_assets: Array.isArray(incomingItem?.video_assets) ? sortVideoTasks(incomingItem.video_assets) : (currentItem?.video_assets || []),
+});
+
+const mergeAssetCollection = (currentItems: any[] | undefined, incomingItems: any[] | undefined, mergeItem: (currentItem: any, incomingItem: any) => any) => {
+    if (!Array.isArray(incomingItems)) {
+        return currentItems;
+    }
+
+    const currentMap = new Map((currentItems || []).map((item: any) => [item.id, item]));
+    return incomingItems.map((item: any) => mergeItem(currentMap.get(item.id), item));
+};
+
 const normalizeProject = (project: any): any => {
     if (!project) {
         return project;
@@ -413,6 +481,21 @@ const mergeProjectDrafts = (incomingProject: any, existingProject?: any): any =>
     };
 };
 
+const mergeProjectAssetState = (currentProject: any, incomingProject: any): any => {
+    if (!currentProject) return incomingProject;
+    if (!incomingProject) return incomingProject;
+
+    return {
+        ...currentProject,
+        ...incomingProject,
+        characters: mergeAssetCollection(currentProject.characters, incomingProject.characters, mergeCharacterState),
+        scenes: mergeAssetCollection(currentProject.scenes, incomingProject.scenes, mergeSimpleAssetState),
+        props: mergeAssetCollection(currentProject.props, incomingProject.props, mergeSimpleAssetState),
+        frames: Array.isArray(incomingProject.frames) ? incomingProject.frames : currentProject.frames,
+        video_tasks: Array.isArray(incomingProject.video_tasks) ? incomingProject.video_tasks : currentProject.video_tasks,
+    };
+};
+
 interface ProjectStore {
     projects: Project[];
     currentProject: Project | null;
@@ -425,6 +508,7 @@ interface ProjectStore {
 
     // Global Selection State
     selectedFrameId: string | null;
+    selectedAudioCharacterId: string | null;
 
     // Actions
     setHasHydrated: (value: boolean) => void;
@@ -443,6 +527,7 @@ interface ProjectStore {
     // Selection Actions
     // Selection Actions
     setSelectedFrameId: (id: string | null) => void;
+    setSelectedAudioCharacterId: (id: string | null) => void;
 
     // Asset Generation State
     generatingTasks: { assetId: string; generationType: string; batchSize: number }[];
@@ -478,6 +563,7 @@ export const useProjectStore = create<ProjectStore>()(
             isLoading: false,
             isAnalyzing: false,
             selectedFrameId: null,
+            selectedAudioCharacterId: null,
 
             setHasHydrated: (value: boolean) => set({ hasHydrated: value }),
 
@@ -553,10 +639,10 @@ export const useProjectStore = create<ProjectStore>()(
                     if (response.ok) {
                         const rawData = await response.json();
                         // Transform data to match frontend model (snake_case -> camelCase for specific fields)
-                        const latestProject = normalizeProject(mergeProjectDrafts({
+                        const latestProject = normalizeProject(mergeProjectAssetState(cachedProject, mergeProjectDrafts({
                             ...rawData,
                             originalText: rawData.original_text
-                        }, cachedProject));
+                        }, cachedProject)));
 
                         // Update both currentProject and projects array with latest data
                         set((state) => ({
@@ -576,11 +662,11 @@ export const useProjectStore = create<ProjectStore>()(
                 const normalizedData = normalizeProject(data);
                 set((state) => ({
                     projects: state.projects.map((p) =>
-                        p.id === id ? normalizeProject({ ...p, ...normalizedData, updatedAt: new Date().toISOString() }) : p
+                        p.id === id ? normalizeProject(mergeProjectAssetState(p, { ...normalizedData, updatedAt: new Date().toISOString() })) : p
                     ),
                     currentProject:
                         state.currentProject?.id === id
-                            ? normalizeProject({ ...state.currentProject, ...normalizedData, updatedAt: new Date().toISOString() })
+                            ? normalizeProject(mergeProjectAssetState(state.currentProject, { ...normalizedData, updatedAt: new Date().toISOString() }))
                             : state.currentProject,
                 }));
             },
@@ -646,6 +732,7 @@ export const useProjectStore = create<ProjectStore>()(
 
 
             setSelectedFrameId: (id) => set({ selectedFrameId: id }),
+            setSelectedAudioCharacterId: (id) => set({ selectedAudioCharacterId: id }),
 
             // Asset Generation State
             generatingTasks: [],

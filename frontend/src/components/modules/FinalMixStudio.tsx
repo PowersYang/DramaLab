@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { getAssetUrl } from "@/lib/utils";
+import { PANEL_HEADER_CLASS, PANEL_META_TEXT_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 type EditableClip = {
     id: string;
@@ -537,14 +538,16 @@ export default function FinalMixStudio() {
                 </div>
 
                 <div className="w-96 bg-black/20 border-l border-white/10 flex flex-col">
-                    <div className="p-4 border-b border-white/10">
-                        <h3 className="font-display font-bold text-sm flex items-center gap-2">
-                            <Scissors size={16} className="text-primary" /> 片段编辑
-                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium ml-2">预览草稿</span>
-                        </h3>
-                        <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
-                            当前可进行片段重排和入出点裁切，供预览检查使用；导出链路暂未接入这些编辑参数。
-                        </p>
+                    <div className={PANEL_HEADER_CLASS}>
+                        <div>
+                            <h3 className={PANEL_TITLE_CLASS}>
+                                <Scissors size={16} className="text-primary" /> 片段编辑
+                                <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium ml-2">预览草稿</span>
+                            </h3>
+                            <p className={`${PANEL_META_TEXT_CLASS} mt-1 leading-relaxed`}>
+                                当前可进行片段重排和入出点裁切，供预览检查使用；导出链路暂未接入这些编辑参数。
+                            </p>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">

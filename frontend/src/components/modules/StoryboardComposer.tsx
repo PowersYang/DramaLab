@@ -12,6 +12,7 @@ import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
+import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
 
@@ -360,8 +361,8 @@ export default function StoryboardComposer() {
     return (
         <div className="flex flex-col h-full text-white overflow-hidden">
             {/* Top Toolbar */}
-            <div className="flex-shrink-0 p-4 border-b border-white/10 flex items-center justify-between bg-black/20">
-                <h3 className="font-bold text-sm flex items-center gap-2">
+            <div className={`flex-shrink-0 ${PANEL_HEADER_CLASS}`}>
+                <h3 className={PANEL_TITLE_CLASS}>
                     <Layout size={16} className="text-primary" /> 分镜列表
                 </h3>
                 <div className="flex items-center gap-3">

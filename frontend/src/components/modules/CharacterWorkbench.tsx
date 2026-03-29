@@ -81,6 +81,9 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     const [threeViewPrompt, setThreeViewPrompt] = useState(getInitialPrompt("three_view", asset.three_view_prompt));
     const [headshotPrompt, setHeadshotPrompt] = useState(getInitialPrompt("headshot", asset.headshot_prompt));
     const [videoPrompt, setVideoPrompt] = useState(asset.video_prompt || "");
+    const [fullBodyBatchSize, setFullBodyBatchSize] = useState(1);
+    const [threeViewBatchSize, setThreeViewBatchSize] = useState(1);
+    const [headshotBatchSize, setHeadshotBatchSize] = useState(1);
 
     // New State for Style Control
     const [applyStyle, setApplyStyle] = useState(true);
@@ -358,13 +361,74 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         }
     };
 
+    const activeBatchSize = activePanel === "full_body"
+        ? fullBodyBatchSize
+        : activePanel === "three_view"
+            ? threeViewBatchSize
+            : headshotBatchSize;
+
+    const setActiveBatchSize = (size: number) => {
+        if (activePanel === "full_body") setFullBodyBatchSize(size);
+        else if (activePanel === "three_view") setThreeViewBatchSize(size);
+        else setHeadshotBatchSize(size);
+    };
+
+    const handleToolbarGenerate = () => {
+        if (activePanel === "full_body") handleGenerateClick("full_body", fullBodyBatchSize);
+        else if (activePanel === "three_view") handleGenerateClick("three_view", threeViewBatchSize);
+        else handleGenerateClick("headshot", headshotBatchSize);
+    };
+
+    const resolvePanelAsset = (legacyAsset: any, unitAsset: any) => {
+        const legacyVariants = Array.isArray(legacyAsset?.variants) ? legacyAsset.variants : [];
+        const unitVariants = Array.isArray(unitAsset?.image_variants) ? unitAsset.image_variants : [];
+        const mergedVariantsById = new Map<string, any>();
+
+        [...legacyVariants, ...unitVariants].forEach((variant) => {
+            if (!variant?.id) return;
+            if (!mergedVariantsById.has(variant.id)) {
+                mergedVariantsById.set(variant.id, variant);
+            }
+        });
+
+        const mergedVariants = Array.from(mergedVariantsById.values()).sort((a: any, b: any) => {
+            const timeA = a?.created_at ? new Date(a.created_at).getTime() : 0;
+            const timeB = b?.created_at ? new Date(b.created_at).getTime() : 0;
+            return timeB - timeA;
+        });
+
+        return {
+            selected_id: legacyAsset?.selected_id || unitAsset?.selected_image_id || mergedVariants[0]?.id || null,
+            variants: mergedVariants,
+        };
+    };
+
+    const fullBodyPanelAsset = resolvePanelAsset(asset.full_body_asset, asset.full_body);
+    const threeViewPanelAsset = resolvePanelAsset(asset.three_view_asset, asset.three_views);
+    const headshotPanelAsset = resolvePanelAsset(asset.headshot_asset, asset.head_shot);
+
+    const getPanelSelectedUrl = (panelKey: "full_body" | "three_view" | "headshot") => {
+        if (panelKey === "full_body") {
+            const selected = fullBodyPanelAsset.variants?.find((variant: any) => variant.id === fullBodyPanelAsset.selected_id);
+            return getAssetUrl(selected?.url || asset.full_body_image_url);
+        }
+        if (panelKey === "three_view") {
+            const selected = threeViewPanelAsset.variants?.find((variant: any) => variant.id === threeViewPanelAsset.selected_id);
+            return getAssetUrl(selected?.url || asset.three_view_image_url);
+        }
+        const selected = headshotPanelAsset.variants?.find((variant: any) => variant.id === headshotPanelAsset.selected_id);
+        return getAssetUrl(selected?.url || asset.headshot_image_url || asset.avatar_url);
+    };
+
+    const activeSelectedImageUrl = getPanelSelectedUrl(activePanel);
+
     return (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8">
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="asset-surface-strong border border-white/10 rounded-2xl w-full max-w-[1500px] h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+                className="asset-surface-strong asset-workbench-shell border border-white/10 rounded-2xl w-full max-w-[1500px] h-[90vh] flex flex-col overflow-hidden shadow-2xl"
             >
                 <div className="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-black/20">
                     <div className="flex items-center gap-4">
@@ -384,115 +448,125 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                     </button>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
-                    <aside className="border-r border-white/10 bg-black/25 overflow-hidden">
-                        <div className="grid grid-cols-1 gap-3 p-4">
-                            {panelConfigs.map((panel, index) => {
-                                const Icon = panel.icon;
-                                const isActive = panel.key === activePanel;
-                                const hasPreview = !!panel.previewUrl || panel.variantsCount > 0;
-                                const previewUrl = hasPreview ? getAssetUrl(panel.previewUrl) : null;
+                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] overflow-hidden">
+                    <aside className="asset-workbench-sidebar border-r border-white/10 overflow-hidden">
+                        <div className="flex h-full flex-col gap-4 p-4">
+                            <div className="grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 min-w-0">
+                                {panelConfigs.map((panel, index) => {
+                                    const isActive = panel.key === activePanel;
+                                    return (
+                                        <button
+                                            key={panel.key}
+                                            type="button"
+                                            onClick={() => setActivePanel(panel.key)}
+                                            className={`asset-workbench-tab flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 transition-colors ${isActive
+                                                ? 'asset-workbench-toggle-active text-white'
+                                                : 'text-gray-400 hover:text-white'
+                                                }`}
+                                        >
+                                            <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-extrabold ${isActive ? 'bg-white text-black' : 'bg-white/10 text-white'}`}>{index + 1}</span>
+                                            <span className="truncate text-[13px] font-bold">{panel.title}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                                return (
-                                    <button
-                                        key={panel.key}
-                                        type="button"
-                                        onClick={() => setActivePanel(panel.key)}
-                                        className={`w-full text-left rounded-2xl border p-4 transition-all ${isActive
-                                            ? 'border-primary/40 bg-white/[0.06] shadow-lg shadow-primary/10'
-                                            : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.04]'
-                                            }`}
-                                    >
-                                        <div className="flex items-start gap-3">
-                                            <div className="relative shrink-0">
-                                                <div className={`flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${panel.accent} border border-white/10`}>
-                                                    {previewUrl ? (
-                                                        <img
-                                                            src={previewUrl}
-                                                            alt={panel.title}
-                                                            className="h-full w-full object-cover"
-                                                        />
-                                                    ) : (
-                                                        <Icon size={20} className={isActive ? "text-white" : "text-gray-300"} />
-                                                    )}
-                                                </div>
-                                                <div className="absolute -bottom-1 -right-1 rounded-full border border-black/30 bg-black/70 px-1.5 py-0.5 text-[10px] text-gray-300">
-                                                    {index + 1}
-                                                </div>
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div>
-                                                        <div className="text-[11px] tracking-[0.2em] text-gray-500">步骤 {index + 1}</div>
-                                                        <div className={`text-sm font-semibold ${isActive ? 'text-white' : 'text-gray-200'}`}>{panel.title}</div>
-                                                    </div>
-                                                    {panel.isGenerating ? (
-                                                        <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-[11px] text-sky-300">生成中</span>
-                                                    ) : panel.isLocked ? (
-                                                        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-gray-500">待解锁</span>
-                                                    ) : hasPreview ? (
-                                                        <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] text-emerald-300">已产出</span>
-                                                    ) : (
-                                                        <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] text-amber-300">待制作</span>
-                                                    )}
-                                                </div>
-
-                                                <p className="mt-2 text-xs text-gray-400 leading-5">{panel.subtitle}</p>
-
-                                                <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
-                                                    <span>{panel.variantsCount} 个候选</span>
-                                                    <span>{panel.motionEnabled ? "支持静态/动态" : "静态板块"}</span>
-                                                </div>
-
-                                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
-                                                    <div
-                                                        className={`h-full rounded-full transition-all ${hasPreview ? 'bg-gradient-to-r from-emerald-400 to-cyan-400' : panel.isLocked ? 'bg-white/10' : 'bg-gradient-to-r from-amber-400 to-orange-400'}`}
-                                                        style={{ width: `${hasPreview ? 100 : panel.isLocked ? 20 : 45}%` }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </button>
-                                );
-                            })}
+                            <div className="relative flex-1 overflow-hidden rounded-[1.85rem] bg-white/[0.03] p-4">
+                                {activeSelectedImageUrl ? (
+                                    <img
+                                        src={activeSelectedImageUrl}
+                                        alt="当前绑定图片"
+                                        className="h-full w-full object-contain"
+                                    />
+                                ) : (
+                                    <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-gray-500">
+                                        <PhotoIcon size={28} className="opacity-50" />
+                                        <span className="text-sm">暂未绑定图片</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </aside>
 
-                    <div className="overflow-hidden flex flex-col bg-gradient-to-br from-white/[0.02] via-transparent to-black/10">
-                        <div className="border-b border-white/10 px-6 py-4 bg-black/10">
-                            <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-1 w-fit">
-                                <button
-                                    type="button"
-                                    onClick={() => handleActiveModeChange("static")}
-                                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm transition-colors ${activeMode === "static"
-                                        ? "bg-white text-black"
-                                        : "text-gray-400 hover:text-white"
-                                        }`}
-                                >
-                                    <PhotoIcon size={14} />
-                                    静态
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => supportsActiveMotion && handleActiveModeChange("motion")}
-                                    disabled={!supportsActiveMotion}
-                                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm transition-colors ${activeMode === "motion"
-                                        ? "bg-white text-black"
-                                        : supportsActiveMotion
-                                            ? "text-gray-400 hover:text-white"
-                                            : "text-gray-600 cursor-not-allowed"
-                                        }`}
-                                >
-                                    <Video size={14} />
-                                    动态
-                                </button>
+                    <div className="overflow-hidden flex flex-col">
+                        <div className="asset-workbench-toolbar px-6 pt-2 pb-2">
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="asset-workbench-toggle flex items-center gap-1 rounded-2xl border p-1 w-fit">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleActiveModeChange("static")}
+                                        className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] transition-colors ${activeMode === "static"
+                                            ? "asset-workbench-toggle-active"
+                                            : "text-gray-400 hover:text-white"
+                                            }`}
+                                    >
+                                        <PhotoIcon size={12} />
+                                        静态
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => supportsActiveMotion && handleActiveModeChange("motion")}
+                                        disabled={!supportsActiveMotion}
+                                        className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] transition-colors ${activeMode === "motion"
+                                            ? "asset-workbench-toggle-active"
+                                            : supportsActiveMotion
+                                                ? "text-gray-400 hover:text-white"
+                                                : "text-gray-600 cursor-not-allowed"
+                                            }`}
+                                    >
+                                        <Video size={12} />
+                                        动态
+                                    </button>
+                                </div>
+
+                                {activeMode === "static" && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="variant-selector-batch flex items-center gap-1 rounded-xl p-1 bg-black/20">
+                                            {[1, 2, 3, 4].map((size) => {
+                                                return (
+                                                    <button
+                                                        key={size}
+                                                        type="button"
+                                                        onClick={() => setActiveBatchSize(size)}
+                                                        className={`px-3 py-1.5 text-[11px] rounded-lg transition-colors ${activeBatchSize === size
+                                                            ? "bg-blue-600 text-white"
+                                                            : "text-gray-400 hover:text-white hover:bg-white/5"
+                                                            }`}
+                                                    >
+                                                        x{size}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleToolbarGenerate}
+                                            disabled={activePanel === "full_body"
+                                                ? getGeneratingInfo("full_body").isGenerating
+                                                : activePanel === "three_view"
+                                                    ? getGeneratingInfo("three_view").isGenerating
+                                                    : getGeneratingInfo("headshot").isGenerating}
+                                            className={`variant-selector-generate flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-medium transition-all ${(activePanel === "full_body"
+                                                ? getGeneratingInfo("full_body").isGenerating
+                                                : activePanel === "three_view"
+                                                    ? getGeneratingInfo("three_view").isGenerating
+                                                    : getGeneratingInfo("headshot").isGenerating)
+                                                ? "bg-white/5 text-gray-400 cursor-not-allowed"
+                                                : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20"
+                                                }`}
+                                        >
+                                            <PhotoIcon size={11} />
+                                            生成图片
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         <div className="flex-1 overflow-hidden">
                             {activePanel === "full_body" && (
                                 <WorkbenchPanel
-                                    asset={asset.full_body_asset}
+                                    asset={fullBodyPanelAsset}
                                     currentImageUrl={asset.full_body_image_url}
                                     onSelect={(id: string) => handleSelectVariant("full_body", id)}
                                     onDelete={(id: string) => handleDeleteVariant("full_body", id)}
@@ -524,7 +598,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                             {activePanel === "three_view" && (
                                 <WorkbenchPanel
-                                    asset={asset.three_view_asset}
+                                    asset={threeViewPanelAsset}
                                     currentImageUrl={asset.three_view_image_url}
                                     onSelect={(id: string) => handleSelectVariant("three_view", id)}
                                     onDelete={(id: string) => handleDeleteVariant("three_view", id)}
@@ -541,7 +615,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                             {activePanel === "headshot" && (
                                 <WorkbenchPanel
-                                    asset={asset.headshot_asset}
+                                    asset={headshotPanelAsset}
                                     currentImageUrl={asset.headshot_image_url || asset.avatar_url}
                                     onSelect={(id: string) => handleSelectVariant("headshot", id)}
                                     onDelete={(id: string) => handleDeleteVariant("headshot", id)}
@@ -618,8 +692,8 @@ function WorkbenchPanel({
 }: any) {
     return (
         <div className="h-full overflow-y-auto">
-            <div className="grid h-full min-w-0 grid-cols-1 gap-6 p-6 xl:grid-cols-[minmax(0,1.2fr)_360px]">
-                <div className="relative min-h-[520px] rounded-3xl border border-white/10 bg-black/20 p-5 overflow-hidden">
+            <div className="grid h-full min-w-0 grid-cols-1 grid-rows-[6fr_4fr] gap-4 p-4">
+                <div className="asset-workbench-stage relative min-h-0 overflow-hidden rounded-3xl">
                         {isLocked && (
                             <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center text-center p-6">
                                 <div className="text-gray-500 flex flex-col items-center gap-2">
@@ -654,9 +728,9 @@ function WorkbenchPanel({
 
                     <div className="h-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-700">
                         {mode === 'motion' && supportsMotion ? (
-                            <div className="flex flex-col gap-4 p-4">
-                                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                                    <div className={`relative w-full ${aspectRatio === '9:16' ? 'aspect-[9/16] max-h-[40vh]' : aspectRatio === '1:1' ? 'aspect-square max-h-[35vh]' : 'aspect-video'} bg-gradient-to-br from-gray-900/80 to-black rounded-xl overflow-hidden border border-white/5 shadow-xl backdrop-blur-sm`}>
+                            <div className="flex h-full flex-col gap-4">
+                                <div className="h-full rounded-2xl bg-black/20 p-3">
+                                    <div className={`relative w-full ${aspectRatio === '9:16' ? 'aspect-[9/16] max-h-[40vh]' : aspectRatio === '1:1' ? 'aspect-square max-h-[35vh]' : 'aspect-video'} rounded-xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-black shadow-xl backdrop-blur-sm`}>
                                         {isGeneratingMotion ? (
                                             <div className="absolute inset-0 z-10 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center gap-4">
                                                 <div className="relative">
@@ -713,22 +787,25 @@ function WorkbenchPanel({
                                 onSelect={onSelect}
                                 onDelete={onDelete}
                                 onFavorite={onFavorite}
-                                onGenerate={onGenerate}
-                                isGenerating={isGenerating}
+                                    onGenerate={onGenerate}
+                                    isGenerating={isGenerating}
                                 generatingBatchSize={generatingBatchSize}
                                 aspectRatio={aspectRatio}
                                 className="h-full"
+                                showGenerateControls={false}
+                                showMainViewer={false}
+                                showFilmstripArrows={false}
                             />
                         )}
                     </div>
                 </div>
 
-                <aside className="min-h-0 rounded-3xl border border-white/10 bg-black/20 overflow-hidden">
-                    <div className="h-full overflow-y-auto p-5 space-y-4">
+                <aside className="asset-workbench-inspector min-h-0 rounded-3xl overflow-hidden">
+                    <div className="flex h-full flex-col gap-3 overflow-y-auto p-4">
                         {mode === "motion" && supportsMotion && (
-                            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="rounded-2xl bg-black/20 p-3">
                                 <label className="text-xs font-semibold text-gray-300 mb-2 block">音频文件</label>
-                                <label className={`flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-dashed cursor-pointer transition-all ${audioUrl
+                                <label className={`asset-workbench-upload flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-dashed cursor-pointer transition-all ${audioUrl
                                     ? 'border-green-500/50 bg-green-500/10 text-green-400'
                                     : 'border-white/15 hover:border-white/25 text-gray-400'
                                     }`}>
@@ -762,7 +839,7 @@ function WorkbenchPanel({
                             </div>
                         )}
 
-                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                        <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-black/20 p-3">
                             <div className="mb-2 flex items-center justify-between">
                                 <span className="text-xs font-semibold text-gray-300">{mode === "motion" ? "动态视频提示词" : "生成图片提示词"}</span>
                                 {mode === "motion" && (
@@ -780,7 +857,7 @@ function WorkbenchPanel({
                                 value={mode === "motion" ? motionPrompt : prompt}
                                 onChange={(e) => mode === "motion" ? setMotionPrompt?.(e.target.value) : setPrompt(e.target.value)}
                                 disabled={isLocked}
-                                className="h-[320px] w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
+                                className="asset-workbench-textarea min-h-0 flex-1 w-full rounded-none border-0 bg-transparent p-0 text-xs resize-none focus:outline-none font-mono leading-relaxed shadow-none"
                                 placeholder={mode === "motion" ? "请输入动态视频提示词..." : "请输入图片生成提示词..."}
                             />
                         </div>

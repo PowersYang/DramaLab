@@ -201,6 +201,7 @@ class TaskService:
         *,
         project_id: str | None = None,
         series_id: str | None = None,
+        workspace_id: str | None = None,
         statuses: list[str] | None = None,
         limit: int = 200,
     ) -> list[TaskJob]:
@@ -208,6 +209,7 @@ class TaskService:
         return self.task_job_repository.list_jobs(
             project_id=project_id,
             series_id=series_id,
+            workspace_id=workspace_id,
             statuses=statuses,
             limit=limit,
         )
@@ -224,6 +226,7 @@ class TaskService:
         stale_before = now - timedelta(seconds=stale_after_seconds)
         recovered: list[TaskJob] = []
         candidates = self.task_job_repository.list_jobs(
+            workspace_id=None,
             statuses=[TaskStatus.CLAIMED.value, TaskStatus.RUNNING.value],
             limit=None,
         )

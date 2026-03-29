@@ -643,6 +643,9 @@ export const api = {
             const res = await axios.get(`${API_URL}/projects/summaries`);
             return res.data;
         } catch (error) {
+            if (axiosLib.isAxiosError(error) && [401, 403].includes(error.response?.status || 0)) {
+                throw error;
+            }
             console.warn(LOG_PREFIX, "fallback:getProjectSummaries", {
                 detail: error instanceof Error ? error.message : String(error),
             });
@@ -1134,6 +1137,14 @@ export const api = {
         return fetchJson(`${API_URL}/voices`);
     },
 
+    previewVoice: async (voiceId: string, text?: string) => {
+        return fetchJson(`${API_URL}/voices/${voiceId}/preview`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+        });
+    },
+
     bindVoice: async (scriptId: string, charId: string, voiceId: string, voiceName: string) => {
         return fetchJson(`${API_URL}/projects/${scriptId}/characters/${charId}/voice`, {
             method: "POST",
@@ -1285,6 +1296,9 @@ export const api = {
             const response = await axios.get(`${API_URL}/series/summaries`);
             return response.data;
         } catch (error) {
+            if (axiosLib.isAxiosError(error) && [401, 403].includes(error.response?.status || 0)) {
+                throw error;
+            }
             console.warn(LOG_PREFIX, "fallback:listSeriesSummaries", {
                 detail: error instanceof Error ? error.message : String(error),
             });

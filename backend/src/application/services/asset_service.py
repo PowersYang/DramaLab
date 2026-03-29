@@ -75,25 +75,29 @@ class AssetService:
             if generation_type == "full_body":
                 variant = self._select_in_image_asset(asset.full_body_asset, variant_id)
                 if variant:
+                    self._select_in_asset_unit(asset.full_body, variant_id)
                     asset.full_body_image_url = variant.url
                     asset.image_url = variant.url
             elif generation_type == "three_view":
                 variant = self._select_in_image_asset(asset.three_view_asset, variant_id)
                 if variant:
+                    self._select_in_asset_unit(asset.three_views, variant_id)
                     asset.three_view_image_url = variant.url
             elif generation_type == "headshot":
                 variant = self._select_in_image_asset(asset.headshot_asset, variant_id)
                 if variant:
+                    self._select_in_asset_unit(asset.head_shot, variant_id)
                     asset.headshot_image_url = variant.url
                     asset.avatar_url = variant.url
             else:
-                for image_asset, setter in (
-                    (asset.full_body_asset, lambda v: (setattr(asset, "full_body_image_url", v.url), setattr(asset, "image_url", v.url))),
-                    (asset.three_view_asset, lambda v: setattr(asset, "three_view_image_url", v.url)),
-                    (asset.headshot_asset, lambda v: (setattr(asset, "headshot_image_url", v.url), setattr(asset, "avatar_url", v.url))),
+                for image_asset, asset_unit, setter in (
+                    (asset.full_body_asset, asset.full_body, lambda v: (setattr(asset, "full_body_image_url", v.url), setattr(asset, "image_url", v.url))),
+                    (asset.three_view_asset, asset.three_views, lambda v: setattr(asset, "three_view_image_url", v.url)),
+                    (asset.headshot_asset, asset.head_shot, lambda v: (setattr(asset, "headshot_image_url", v.url), setattr(asset, "avatar_url", v.url))),
                 ):
                     variant = self._select_in_image_asset(image_asset, variant_id)
                     if variant:
+                        self._select_in_asset_unit(asset_unit, variant_id)
                         setter(variant)
                         break
         elif asset_type in {"scene", "prop"}:
@@ -120,11 +124,14 @@ class AssetService:
 
         if asset_type == "character":
             if self._delete_in_image_asset(asset.full_body_asset, variant_id):
+                self._delete_in_asset_unit(asset.full_body, variant_id)
                 self._sync_selected_url(asset.full_body_asset, "full_body_image_url", asset)
                 asset.image_url = asset.full_body_image_url
             elif self._delete_in_image_asset(asset.three_view_asset, variant_id):
+                self._delete_in_asset_unit(asset.three_views, variant_id)
                 self._sync_selected_url(asset.three_view_asset, "three_view_image_url", asset)
             elif self._delete_in_image_asset(asset.headshot_asset, variant_id):
+                self._delete_in_asset_unit(asset.head_shot, variant_id)
                 self._sync_selected_url(asset.headshot_asset, "headshot_image_url", asset)
                 asset.avatar_url = asset.headshot_image_url
         elif asset_type in {"scene", "prop"}:
@@ -153,12 +160,16 @@ class AssetService:
         if asset_type == "character":
             if generation_type == "full_body":
                 found = self._set_favorite(asset.full_body_asset, variant_id, is_favorited)
+                found = self._set_favorite_asset_unit(asset.full_body, variant_id, is_favorited) or found
             elif generation_type == "three_view":
                 found = self._set_favorite(asset.three_view_asset, variant_id, is_favorited)
+                found = self._set_favorite_asset_unit(asset.three_views, variant_id, is_favorited) or found
             elif generation_type == "headshot":
                 found = self._set_favorite(asset.headshot_asset, variant_id, is_favorited)
+                found = self._set_favorite_asset_unit(asset.head_shot, variant_id, is_favorited) or found
             else:
                 found = self._set_favorite(asset.full_body_asset, variant_id, is_favorited) or self._set_favorite(asset.three_view_asset, variant_id, is_favorited) or self._set_favorite(asset.headshot_asset, variant_id, is_favorited)
+                found = self._set_favorite_asset_unit(asset.full_body, variant_id, is_favorited) or self._set_favorite_asset_unit(asset.three_views, variant_id, is_favorited) or self._set_favorite_asset_unit(asset.head_shot, variant_id, is_favorited) or found
         elif asset_type in {"scene", "prop"}:
             found = self._set_favorite(asset.image_asset, variant_id, is_favorited)
         elif asset_type == "storyboard_frame":
@@ -325,6 +336,16 @@ class AssetService:
                 return variant
         return None
 
+    def _select_in_asset_unit(self, asset_unit: AssetUnit | None, variant_id: str):
+        """在新版 AssetUnit 容器中同步当前选中候选图。"""
+        if not asset_unit or not asset_unit.image_variants:
+            return None
+        for variant in asset_unit.image_variants:
+            if variant.id == variant_id:
+                asset_unit.selected_image_id = variant_id
+                return variant
+        return None
+
     def _delete_in_image_asset(self, image_asset: ImageAsset | None, variant_id: str):
         if not image_asset or not image_asset.variants:
             return False
@@ -334,10 +355,28 @@ class AssetService:
             image_asset.selected_id = image_asset.variants[0].id if image_asset.variants else None
         return len(image_asset.variants) != before
 
+    def _delete_in_asset_unit(self, asset_unit: AssetUnit | None, variant_id: str):
+        if not asset_unit or not asset_unit.image_variants:
+            return False
+        before = len(asset_unit.image_variants)
+        asset_unit.image_variants = [variant for variant in asset_unit.image_variants if variant.id != variant_id]
+        if asset_unit.selected_image_id == variant_id:
+            asset_unit.selected_image_id = asset_unit.image_variants[0].id if asset_unit.image_variants else None
+        return len(asset_unit.image_variants) != before
+
     def _set_favorite(self, image_asset: ImageAsset | None, variant_id: str, is_favorited: bool):
         if not image_asset or not image_asset.variants:
             return False
         for variant in image_asset.variants:
+            if variant.id == variant_id:
+                variant.is_favorited = is_favorited
+                return True
+        return False
+
+    def _set_favorite_asset_unit(self, asset_unit: AssetUnit | None, variant_id: str, is_favorited: bool):
+        if not asset_unit or not asset_unit.image_variants:
+            return False
+        for variant in asset_unit.image_variants:
             if variant.id == variant_id:
                 variant.is_favorited = is_favorited
                 return True

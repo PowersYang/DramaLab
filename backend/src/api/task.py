@@ -43,10 +43,10 @@ async def list_tasks(
     jobs = task_service.list_jobs(
         project_id=project_id,
         series_id=series_id,
+        workspace_id=context.current_workspace_id,
         statuses=parsed_statuses,
         limit=limit,
     )
-    jobs = [job for job in jobs if job.workspace_id == context.current_workspace_id]
     logger.info(
         "TASK_API: list_tasks project_id=%s series_id=%s statuses=%s limit=%s count=%s duration_ms=%.2f",
         project_id,

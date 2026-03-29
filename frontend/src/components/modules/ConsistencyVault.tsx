@@ -11,6 +11,7 @@ import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
 import UploadAssetModal from "../modals/UploadAssetModal";
+import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 function getAssetTypeLabel(type: "character" | "scene" | "prop" | string) {
     if (type === "character") return "角色";
@@ -319,41 +320,48 @@ export default function ConsistencyVault() {
     return (
         <div className="flex flex-col h-full text-white">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10 bg-black/20">
-                <div className="flex shrink-0 gap-2 bg-black/40 p-1 rounded-xl border border-white/5">
-                    <TabButton
-                        active={activeTab === "character"}
-                        onClick={() => setActiveTab("character")}
-                        icon={<User size={18} />}
-                        label="角色"
-                        count={currentProject?.characters?.length || 0}
-                    />
-                    <TabButton
-                        active={activeTab === "scene"}
-                        onClick={() => setActiveTab("scene")}
-                        icon={<MapPin size={18} />}
-                        label="场景"
-                        count={currentProject?.scenes?.length || 0}
-                    />
-                    <TabButton
-                        active={activeTab === "prop"}
-                        onClick={() => setActiveTab("prop")}
-                        icon={<Box size={18} />}
-                        label="道具"
-                        count={currentProject?.props?.length || 0}
-                    />
+            <div className="border-b border-white/10 bg-black/20">
+                <div className={PANEL_HEADER_CLASS}>
+                    <h2 className={PANEL_TITLE_CLASS}>
+                        <Box size={16} className="text-primary" />
+                        资产制作
+                    </h2>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleSyncDescriptions}
+                            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+                            title="同步 Script 页面中的描述到所有素材"
+                        >
+                            <RefreshCw size={16} className="text-blue-400" />
+                            <span className="text-sm font-bold">同步描述</span>
+                        </button>
+                    </div>
                 </div>
 
-                <div className="flex gap-2">
-                    <button
-                        onClick={handleSyncDescriptions}
-                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
-                        title="同步 Script 页面中的描述到所有素材"
-                    >
-                        <RefreshCw size={16} className="text-blue-400" />
-                        <span className="text-sm font-bold">同步描述</span>
-                    </button>
-
+                <div className="p-4 pt-3">
+                    <div className="flex shrink-0 gap-2 bg-black/40 p-1 rounded-xl border border-white/5 w-fit">
+                        <TabButton
+                            active={activeTab === "character"}
+                            onClick={() => setActiveTab("character")}
+                            icon={<User size={18} />}
+                            label="角色"
+                            count={currentProject?.characters?.length || 0}
+                        />
+                        <TabButton
+                            active={activeTab === "scene"}
+                            onClick={() => setActiveTab("scene")}
+                            icon={<MapPin size={18} />}
+                            label="场景"
+                            count={currentProject?.scenes?.length || 0}
+                        />
+                        <TabButton
+                            active={activeTab === "prop"}
+                            onClick={() => setActiveTab("prop")}
+                            icon={<Box size={18} />}
+                            label="道具"
+                            count={currentProject?.props?.length || 0}
+                        />
+                    </div>
                 </div>
             </div>
 

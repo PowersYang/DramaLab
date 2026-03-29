@@ -20,6 +20,7 @@ from ..schemas.requests import (
     ExportRequest,
     GenerateLineAudioRequest,
     MergeVideosRequest,
+    PreviewVoiceRequest,
     UpdateVoiceParamsRequest,
 )
 from ..schemas.task_models import TaskReceipt
@@ -183,6 +184,20 @@ async def get_voices():
     """返回当前可用语音列表。"""
     logger.info("MEDIA_API: get_voices")
     return media_workflow.get_available_voices()
+
+
+@router.post("/voices/{voice_id}/preview")
+async def preview_voice(voice_id: str, request: PreviewVoiceRequest):
+    """返回指定音色的试听音频地址；若缓存不存在则即时生成并上传 OSS。"""
+    try:
+        logger.info("MEDIA_API: preview_voice voice_id=%s", voice_id)
+        return signed_response(media_workflow.audio_provider.get_voice_preview(voice_id, request.text))
+    except ValueError as exc:
+        logger.warning("MEDIA_API: preview_voice invalid_request voice_id=%s detail=%s", voice_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("MEDIA_API: preview_voice unexpected_error voice_id=%s", voice_id)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/projects/{script_id}/frames/{frame_id}/audio", response_model=TaskReceipt)

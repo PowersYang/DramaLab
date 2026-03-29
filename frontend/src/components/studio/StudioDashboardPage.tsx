@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { api, type ProjectSummary, type SeriesSummary } from "@/lib/api";
+import { useAuthStore } from "@/store/authStore";
 
 const DASHBOARD_CACHE_KEY = "dramalab-studio-dashboard-cache-v1";
 
@@ -21,6 +22,22 @@ interface DashboardCachePayload {
   runningTasks: number;
   updatedAt: number;
 }
+
+const scheduleDeferredRefresh = (task: () => void) => {
+  if (typeof window === "undefined") {
+    task();
+    return () => undefined;
+  }
+
+  // 中文注释：总览页任务统计不是首屏阻塞信息，放到空闲时段再拉，优先把导航切换和主内容响应让出来。
+  if ("requestIdleCallback" in window) {
+    const idleId = window.requestIdleCallback(() => task(), { timeout: 1200 });
+    return () => window.cancelIdleCallback(idleId);
+  }
+
+  const timeoutId = window.setTimeout(task, 180);
+  return () => window.clearTimeout(timeoutId);
+};
 
 const readDashboardCache = (): DashboardCachePayload | null => {
   if (typeof window === "undefined") {
@@ -56,10 +73,13 @@ const writeDashboardCache = (payload: DashboardCachePayload) => {
 };
 
 export default function StudioDashboardPage() {
+  const authStatus = useAuthStore((state) => state.authStatus);
+  const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
   // 中文注释：首帧不要直接读 sessionStorage，先用稳定空态完成 hydration，再在挂载后恢复缓存。
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [seriesList, setSeriesList] = useState<SeriesSummary[]>([]);
   const [runningTasks, setRunningTasks] = useState(0);
+  const [hasWarmData, setHasWarmData] = useState(false);
 
   useEffect(() => {
     const cached = readDashboardCache();
@@ -69,30 +89,38 @@ export default function StudioDashboardPage() {
     setProjects(cached.projects);
     setSeriesList(cached.seriesList);
     setRunningTasks(cached.runningTasks);
+    setHasWarmData(true);
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    if (authStatus !== "authenticated" || isBootstrapping) {
+      return;
+    }
 
-    const load = async () => {
+    let cancelled = false;
+    let latestProjects: ProjectSummary[] = [];
+    let latestSeries: SeriesSummary[] = [];
+
+    const loadPrimary = async () => {
       try {
-        // 总览页只需要轻量统计和最近条目，避免首次进入时拉完整项目并按项目数做 N+1 任务查询。
-        const [projectsData, seriesData, taskList] = await Promise.all([
+        // 总览页先拉项目和系列卡片，保证页面和左侧导航切换优先稳定下来。
+        const [projectsData, seriesData] = await Promise.all([
           api.getProjectSummaries(),
           api.listSeriesSummaries(),
-          api.listTasks(undefined, ["queued", "claimed", "running", "retry_waiting"], { limit: 200 }),
         ]);
         if (cancelled) {
           return;
         }
 
+        latestProjects = projectsData;
+        latestSeries = seriesData;
         setProjects(projectsData);
         setSeriesList(seriesData);
-        setRunningTasks(taskList.length);
+        setHasWarmData(true);
         writeDashboardCache({
           projects: projectsData,
           seriesList: seriesData,
-          runningTasks: taskList.length,
+          runningTasks,
           updatedAt: Date.now(),
         });
       } catch (error) {
@@ -102,11 +130,45 @@ export default function StudioDashboardPage() {
       }
     };
 
-    void load();
+    const loadTaskCount = async () => {
+      try {
+        const taskList = await api.listTasks(undefined, ["queued", "claimed", "running", "retry_waiting"], { limit: 100 });
+        if (cancelled) {
+          return;
+        }
+        setRunningTasks(taskList.length);
+        writeDashboardCache({
+          projects: latestProjects,
+          seriesList: latestSeries,
+          runningTasks: taskList.length,
+          updatedAt: Date.now(),
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load dashboard task count:", error);
+        }
+      }
+    };
+
+    const cancelDeferredPrimaryLoad = scheduleDeferredRefresh(() => {
+      if (!cancelled) {
+        void loadPrimary();
+      }
+    });
+    const cancelDeferredTaskLoad = scheduleDeferredRefresh(() => {
+      if (!cancelled) {
+        void loadTaskCount();
+      }
+    });
+
     return () => {
       cancelled = true;
+      cancelDeferredPrimaryLoad();
+      cancelDeferredTaskLoad();
     };
-  }, []);
+  // 中文注释：这里只在首次进入总览页时做渐进加载，避免因为任务计数变化反复占用首屏请求通道。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authStatus, isBootstrapping]);
 
   const recentProjects = useMemo(
     () => [...projects].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 4),
@@ -143,7 +205,11 @@ export default function StudioDashboardPage() {
             <Link href="/studio/projects" className="text-sm font-semibold text-primary">查看全部</Link>
           </div>
           <div className="space-y-3">
-            {recentProjects.length === 0 ? (
+            {!hasWarmData && recentProjects.length === 0 ? (
+              [1, 2, 3].map((item) => (
+                <div key={item} className="h-[74px] rounded-[1.5rem] border border-slate-200 bg-slate-50 animate-pulse" />
+              ))
+            ) : recentProjects.length === 0 ? (
               <div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center text-sm text-slate-500">
                 暂无项目，先从创建系列或导入剧本开始。
               </div>
@@ -167,7 +233,11 @@ export default function StudioDashboardPage() {
             <Link href="/studio/projects" className="text-sm font-semibold text-primary">进入系列管理</Link>
           </div>
           <div className="space-y-3">
-            {recentSeries.length === 0 ? (
+            {!hasWarmData && recentSeries.length === 0 ? (
+              [1, 2].map((item) => (
+                <div key={item} className="h-[74px] rounded-[1.5rem] border border-slate-200 bg-slate-50 animate-pulse" />
+              ))
+            ) : recentSeries.length === 0 ? (
               <p className="rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-sm text-slate-500">暂无系列，适合多集内容的项目会显示在这里。</p>
             ) : (
               recentSeries.map((series) => (

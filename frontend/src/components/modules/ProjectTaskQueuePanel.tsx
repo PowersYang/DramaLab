@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, Loader2, Tag } from "lucide-react";
 import { TaskJob } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
+import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 type QueueFilter = "all" | "processing" | "completed" | "failed";
 type QueueStep = "assets" | "storyboard" | "audio";
@@ -178,38 +179,35 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
 
     return (
         <div className="h-full flex flex-col bg-black/10">
-            <div className="p-4 border-b border-white/5">
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 className="font-display font-bold text-white">任务队列</h3>
-                        <p className="text-[11px] text-gray-500 mt-1">
-                            展示当前页面对应的生成与处理任务状态
-                        </p>
-                    </div>
+            <div className="border-b border-white/10">
+                <div className={PANEL_HEADER_CLASS}>
+                    <h3 className={PANEL_TITLE_CLASS}>任务队列</h3>
                     <div className="text-xs font-mono text-gray-500 flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${processingCount > 0 ? "bg-green-500 animate-pulse" : "bg-gray-600"}`} />
                         {processingCount > 0 ? `${processingCount} 个进行中` : "空闲"}
                     </div>
                 </div>
 
-                <div className="flex bg-white/5 rounded-lg p-1 gap-1">
-                    {[
-                        { id: "all", label: "全部" },
-                        { id: "processing", label: "进行中" },
-                        { id: "completed", label: "已完成" },
-                        { id: "failed", label: "失败" },
-                    ].map((tab) => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setFilter(tab.id as QueueFilter)}
-                            className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${filter === tab.id
-                                ? "bg-white/10 text-white font-medium shadow-sm"
-                                : "text-gray-500 hover:text-gray-300"
-                                }`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
+                <div className="p-4 pt-3">
+                    <div className="flex bg-white/5 rounded-lg p-1 gap-1">
+                        {[
+                            { id: "all", label: "全部" },
+                            { id: "processing", label: "进行中" },
+                            { id: "completed", label: "已完成" },
+                            { id: "failed", label: "失败" },
+                        ].map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setFilter(tab.id as QueueFilter)}
+                                className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${filter === tab.id
+                                    ? "bg-white/10 text-white font-medium shadow-sm"
+                                    : "text-gray-500 hover:text-gray-300"
+                                    }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -259,7 +257,9 @@ function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; p
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                             <p className="text-sm font-semibold text-white leading-5">{displayInfo.title}</p>
-                            <p className="text-xs text-gray-400 mt-1">{displayInfo.subtitle}</p>
+                            {displayInfo.subtitle && (
+                                <p className="text-xs text-gray-400 mt-1">{displayInfo.subtitle}</p>
+                            )}
                         </div>
                         <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${getStatusClassName(job.status)}`}>
                             {statusLabel}
@@ -439,8 +439,8 @@ function buildAudioJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayIn
     if (job.task_type === "audio.generate.project") {
         return {
             title: TASK_TYPE_LABELS[job.task_type] || "配音任务",
-            subtitle: "作用于当前项目全部对白",
-            badges: ["项目级任务", "TTS"],
+            subtitle: "",
+            badges: [],
             detail: typeof job.result_json?.audio_frame_count === "number"
                 ? `已生成 ${job.result_json.audio_frame_count} 条对白音频`
                 : "按角色默认音色与语音参数批量生成所有对白",
@@ -455,11 +455,6 @@ function buildAudioJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayIn
     const speaker = Array.isArray(frame?.character_ids)
         ? (project?.characters || []).find((item: any) => item.id === frame.character_ids[0])
         : null;
-    const badges = [frameLabel, "TTS"];
-    if (speaker?.name) {
-        badges.push(`角色：${speaker.name}`);
-    }
-
     const tuningParts = [
         typeof job.payload_json?.speed === "number" ? `语速 ${job.payload_json.speed}x` : null,
         typeof job.payload_json?.pitch === "number" ? `音调 ${job.payload_json.pitch}` : null,
@@ -468,8 +463,8 @@ function buildAudioJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayIn
 
     return {
         title: `${frameLabel} · ${speaker?.name || "未绑定角色"}对白生成`,
-        subtitle: `${TASK_TYPE_LABELS[job.task_type] || "配音任务"} · ${frameLabel}`,
-        badges,
+        subtitle: "",
+        badges: [],
         detail: frame?.dialogue || (tuningParts.length > 0 ? tuningParts.join(" · ") : null),
         accentClassName: "bg-amber-400",
     };

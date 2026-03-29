@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { PROJECT_REFRESH_PATH_STORAGE_KEY, isPageReloadNavigation } from "@/components/project/projectNavigation";
 import StudioShell from "@/components/studio/StudioShell";
 
 interface StudioWorkspaceFrameProps {
@@ -47,6 +49,19 @@ const STUDIO_SHELL_META: Record<string, { title: string; description: string }> 
 export default function StudioWorkspaceFrame({ children }: StudioWorkspaceFrameProps) {
   const pathname = usePathname();
   const shellMeta = STUDIO_SHELL_META[pathname];
+
+  useEffect(() => {
+    const refreshedProjectPath = window.sessionStorage.getItem(PROJECT_REFRESH_PATH_STORAGE_KEY);
+    if (!refreshedProjectPath) {
+      return;
+    }
+
+    // 中文注释：刷新后的同一路径允许继续保留标记，避免开发态双挂载把恢复信息提前清掉。
+    // 一旦当前文档内跳转到其他 Studio 页面，就清理掉旧标记，防止后续重新打开项目时误恢复。
+    if (!isPageReloadNavigation() || refreshedProjectPath !== pathname) {
+      window.sessionStorage.removeItem(PROJECT_REFRESH_PATH_STORAGE_KEY);
+    }
+  }, [pathname]);
 
   // 中文注释：让 Studio 壳层在 layout 里常驻，切换左侧导航时只替换右侧内容区，避免整页重挂载。
   if (!shellMeta) {

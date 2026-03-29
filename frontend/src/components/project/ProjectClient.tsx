@@ -16,7 +16,8 @@ import VoiceActingStudio from "@/components/modules/VoiceActingStudio";
 import FinalMixStudio from "@/components/modules/FinalMixStudio";
 import ExportStudio from "@/components/modules/ExportStudio";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { PROJECT_REFRESH_PATH_STORAGE_KEY, isPageReloadNavigation } from "@/components/project/projectNavigation";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
@@ -40,6 +41,7 @@ const PROJECT_STEP_IDS = [
 
 export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/studio/projects" }: { id: string; breadcrumbSegments?: BreadcrumbSegment[]; homeHref?: string }) {
     const router = useRouter();
+    const pathname = usePathname();
     const [activeStep, setActiveStep] = useState("script");
     const [theme, setTheme] = useState<StudioTheme>("light");
     const [hasRestoredStep, setHasRestoredStep] = useState(false);
@@ -90,15 +92,31 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
             return;
         }
 
-        // 按项目记住用户离开前所在的生产阶段，刷新后继续留在原页面。
-        const savedStep = window.localStorage.getItem(projectStepStorageKey) ?? window.localStorage.getItem(legacyProjectStepStorageKey);
+        // 中文注释：只有“真实页面刷新”且“刷新前离开的就是当前项目页”时，才恢复上次停留阶段。
+        const refreshedProjectPath = window.sessionStorage.getItem(PROJECT_REFRESH_PATH_STORAGE_KEY);
+        const savedStep = isPageReloadNavigation() && refreshedProjectPath === pathname
+            ? window.localStorage.getItem(projectStepStorageKey) ?? window.localStorage.getItem(legacyProjectStepStorageKey)
+            : null;
+
         if (savedStep && PROJECT_STEP_IDS.includes(savedStep)) {
             setActiveStep(savedStep);
         } else {
             setActiveStep("script");
         }
         setHasRestoredStep(true);
-    }, [hasHydrated, legacyProjectStepStorageKey, projectStepStorageKey]);
+    }, [hasHydrated, legacyProjectStepStorageKey, pathname, projectStepStorageKey]);
+
+    useEffect(() => {
+        const markRefreshPath = () => {
+            // 中文注释：仅浏览器真正卸载当前文档时才会触发，用它标记“刷新前所在项目页”。
+            window.sessionStorage.setItem(PROJECT_REFRESH_PATH_STORAGE_KEY, pathname);
+        };
+
+        window.addEventListener("beforeunload", markRefreshPath);
+        return () => {
+            window.removeEventListener("beforeunload", markRefreshPath);
+        };
+    }, [pathname]);
 
     useEffect(() => {
         // 持久化主题偏好，避免每次重新打开项目都回到默认状态。

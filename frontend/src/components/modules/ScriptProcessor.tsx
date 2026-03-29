@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Wand2, User, MapPin, Box, ChevronRight, ChevronLeft, Save, Sparkles, Plus, Trash2, X } from "lucide-react";
 import { api, crudApi } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
+import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 interface ScriptNode {
     type: "character" | "scene" | "prop";
@@ -130,8 +131,8 @@ export default function ScriptProcessor() {
         <div className="flex h-full w-full overflow-hidden">
             {/* Left: Script Editor */}
             <div className={`flex-1 flex flex-col transition-all duration-300 ${showPanel ? 'mr-0' : 'mr-0'}`}>
-                <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20">
-                    <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                <div className={PANEL_HEADER_CLASS}>
+                    <h2 className={PANEL_TITLE_CLASS}>
                         <Sparkles className="text-primary" size={18} />
                         剧本编辑器
                     </h2>
@@ -179,11 +180,8 @@ export default function ScriptProcessor() {
                         exit={{ width: 0, opacity: 0 }}
                         className="border-l border-white/10 bg-black/40 backdrop-blur-md flex flex-col h-full"
                     >
-                        <div className="p-4 border-b border-white/10 flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold text-white">实体识别面板</h3>
-                                <p className="text-xs text-gray-500">已识别 {nodes.length} 个关键要素</p>
-                            </div>
+                        <div className={PANEL_HEADER_CLASS}>
+                            <h3 className={PANEL_TITLE_CLASS}>实体识别面板</h3>
                             <button
                                 onClick={() => setIsCreateDialogOpen(true)}
                                 className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-colors"
@@ -191,6 +189,10 @@ export default function ScriptProcessor() {
                             >
                                 <Plus size={16} />
                             </button>
+                        </div>
+
+                        <div className="px-4 py-2 border-b border-white/10 bg-black/10">
+                            <p className="text-[11px] text-gray-500">已识别 {nodes.length} 个关键要素</p>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
