@@ -53,25 +53,25 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="studio-panel overflow-hidden border-slate-800 bg-slate-950 p-8 text-white shadow-[0_18px_44px_rgba(15,23,42,0.28)]">
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-300">生产流程</p>
-            <h2 className="mt-4 max-w-md font-display text-3xl leading-tight text-white md:text-[2rem]">
+          <div className="studio-panel overflow-hidden border border-slate-200 bg-white p-8 text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.12)]">
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-600">生产流程</p>
+            <h2 className="mt-4 max-w-md font-display text-3xl leading-tight text-slate-950 md:text-[2rem]">
               把剧本拆解、资产生成与视频交付放进同一条生产链。
             </h2>
-            <p className="mt-4 max-w-lg text-base leading-7 text-slate-300">
-              首页右侧这组流程卡片用于强调 Studio 的完整生产节奏，所以这里统一提升了文字对比度和阅读层次。
+            <p className="mt-4 max-w-lg text-base leading-7 text-slate-700">
+              这组流程卡片强调 Studio 的完整生产节奏，从剧本解析到交付导出都放在同一个协同工作台里。
             </p>
             <div className="mt-8 space-y-4">
-              {/* 用更明确的数字标签和正文层级，避免深色面板里的信息发灰难读。 */}
+              {/* 中文注释：官网首页这里固定使用深色正文和浅色卡片，避免白底场景里步骤文案对比度不足。 */}
               {workflow.map((item, index) => (
                 <div
                   key={item}
-                  className="flex items-center gap-4 rounded-[1.5rem] border border-white/12 bg-white/8 px-5 py-4 backdrop-blur-sm"
+                  className="flex items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4"
                 >
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-300/12 text-base font-semibold text-cyan-100">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-base font-semibold text-primary">
                     {index + 1}
                   </div>
-                  <p className="text-base font-semibold leading-7 text-slate-50">{item}</p>
+                  <p className="text-base font-semibold leading-7 text-slate-900">{item}</p>
                 </div>
               ))}
             </div>
