@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { startTransition, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, Users2, Workflow } from "lucide-react";
 
-import LumenXBranding from "@/components/layout/LumenXBranding";
+import DramaLabBranding from "@/components/layout/DramaLabBranding";
 import { useAuthStore } from "@/store/authStore";
 
 interface StudioShellProps {
@@ -57,7 +57,7 @@ export default function StudioShell({ children, title, description, actions }: S
     <div className="flex min-h-screen bg-[#f4f5f7] text-slate-900">
       <aside className="hidden w-[208px] flex-col border-r border-slate-200 bg-[#f8f6f2] px-3 py-6 lg:flex">
         <Link href="/studio" className="block">
-          <LumenXBranding size="sm" showSlogan={false} />
+          <DramaLabBranding size="sm" showSlogan={false} />
         </Link>
 
         <nav className="mt-4 space-y-2">
@@ -68,17 +68,6 @@ export default function StudioShell({ children, title, description, actions }: S
               <Link
                 key={item.href}
                 href={item.href}
-                prefetch={false}
-                onClick={(event) => {
-                  if (item.href === pathname) {
-                    event.preventDefault();
-                    return;
-                  }
-                  event.preventDefault();
-                  startTransition(() => {
-                    router.push(item.href);
-                  });
-                }}
                 className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-colors ${
                   isActive
                     ? "bg-slate-950 text-white shadow-sm"
@@ -131,7 +120,7 @@ export default function StudioShell({ children, title, description, actions }: S
 
               {me ? (
                 <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
-                  <span className="font-semibold text-slate-900">{me.user.display_name || me.user.email || "LumenX 用户"}</span>
+                  <span className="font-semibold text-slate-900">{me.user.display_name || me.user.email || "DramaLab 用户"}</span>
                   <span className="ml-2 text-slate-400">{me.current_role_name || "成员"}</span>
                 </div>
               ) : null}

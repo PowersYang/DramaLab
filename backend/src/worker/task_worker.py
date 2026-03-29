@@ -53,7 +53,7 @@ class TaskWorker:
                 self._run_job(job.id)
         logger.info("TASK_WORKER: stopped worker_id=%s", self.worker_id)
 
-    def start_in_thread(self, name: str = "lumenx-task-worker"):
+    def start_in_thread(self, name: str = "dramalab-task-worker"):
         if self._thread and self._thread.is_alive():
             logger.info("TASK_WORKER: thread already running worker_id=%s", self.worker_id)
             return self._thread
@@ -122,7 +122,7 @@ class TaskWorker:
 
         thread = threading.Thread(
             target=_heartbeat,
-            name=f"lumenx-task-heartbeat-{job_id}",
+            name=f"dramalab-task-heartbeat-{job_id}",
             daemon=True,
         )
         thread.start()

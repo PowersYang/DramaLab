@@ -266,13 +266,13 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                     <div>
                       <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
                         <span>OSS Base Path</span>
-                        <span className="text-gray-600 font-normal text-xs">e.g. lumenx</span>
+                        <span className="text-gray-600 font-normal text-xs">e.g. dramalab</span>
                       </label>
                       <input
                         type="text"
                         value={config.OSS_BASE_PATH}
                         onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)}
-                        placeholder="lumenx"
+                        placeholder="dramalab"
                         className={inputClass}
                       />
                     </div>

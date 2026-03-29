@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from ...schemas.models import Character, GenerationStatus, StoryboardFrame
 
 from ...audio.tts import TTSProcessor
+from ...application.services.model_provider_service import ModelProviderService
 from ...utils import get_logger
 from ...utils.oss_utils import OSSImageUploader
 
@@ -23,6 +24,7 @@ class AudioGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.output_dir = self.config.get("output_dir", "output/audio")
+        self.provider_service = ModelProviderService()
 
         try:
             self.tts = TTSProcessor()
@@ -32,23 +34,23 @@ class AudioGenerator:
             self.tts = None
 
     def get_available_voices(self) -> List[Dict[str, str]]:
-        """返回当前可用语音列表。"""
-        if self.tts:
-            voices_dict = TTSProcessor.list_voices()
-            return [
-                {
-                    "id": key,
-                    "name": f"{meta['name']} - CosyVoice",
-                    "gender": meta.get("gender", "Unknown"),
-                    "model": meta.get("model", "cosyvoice-v2"),
-                }
-                for key, meta in voices_dict.items()
-            ]
+        """返回当前 TTS 厂商支持的语音列表。"""
+        provider_key = self.get_active_tts_provider_key()
+        if provider_key != "DASHSCOPE":
+            logger.warning("TTS provider %s is not implemented yet; returning empty voice catalog", provider_key)
+            return []
+
+        voices_dict = TTSProcessor.list_voices()
         return [
-            {"id": "longxiaochun", "name": "龙小淳 (知性女) - CosyVoice", "gender": "Female"},
-            {"id": "longyue", "name": "龙悦 (温柔女) - CosyVoice", "gender": "Female"},
-            {"id": "longcheng", "name": "龙诚 (睿智青年) - CosyVoice", "gender": "Male"},
-            {"id": "longshu", "name": "龙书 (播报男) - CosyVoice", "gender": "Male"},
+            {
+                "id": voice_id,
+                "name": f"{meta['name']} - CosyVoice",
+                "gender": meta.get("gender", "Unknown"),
+                "model": meta.get("model", "cosyvoice-v2"),
+                "provider_key": provider_key,
+                "aliases": meta.get("aliases", []),
+            }
+            for voice_id, meta in voices_dict.items()
         ]
 
     def generate_dialogue(self, frame: StoryboardFrame, character: Character, speed: float = 1.0, pitch: float = 1.0, volume: int = 50) -> StoryboardFrame:
@@ -77,6 +79,12 @@ class AudioGenerator:
             frame.status = GenerationStatus.FAILED
             frame.audio_error = f"No voice assigned to character '{character.name}'. Please assign a voice first."
             logger.warning("No voice_id for character %s, cannot generate audio", character.name)
+            return frame
+
+        if not TTSProcessor.is_supported_voice(character.voice_id):
+            frame.status = GenerationStatus.FAILED
+            frame.audio_error = f"Voice '{character.voice_id}' is not supported by current TTS provider."
+            logger.warning("Unsupported voice_id=%s for character %s", character.voice_id, character.name)
             return frame
 
         return self._real_generate_dialogue(frame, character, text, speed, pitch, volume)
@@ -151,3 +159,16 @@ class AudioGenerator:
         except Exception as exc:
             logger.error("Failed to upload media %s to OSS: %s", output_path, exc)
         raise RuntimeError(f"Failed to upload media {output_path} to OSS.")
+
+    def get_active_tts_provider_key(self) -> str:
+        """解析当前可用于配音的厂商。
+
+        现阶段仅真正接入阿里云百炼，因此返回值用于约束音色列表与厂商能力保持一致。
+        """
+        try:
+            provider = self.provider_service.get_provider_config("DASHSCOPE")
+            if provider.enabled:
+                return "DASHSCOPE"
+        except Exception as exc:
+            logger.warning("Failed to resolve active TTS provider from model provider config: %s", exc)
+        return "DASHSCOPE"

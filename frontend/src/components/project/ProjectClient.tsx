@@ -22,8 +22,10 @@ const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"
 
 type StudioTheme = "light" | "dark";
 
-const STUDIO_THEME_STORAGE_KEY = "lumenx-studio-theme";
-const PROJECT_STEP_STORAGE_KEY_PREFIX = "lumenx-project-active-step";
+const STUDIO_THEME_STORAGE_KEY = "dramalab-studio-theme";
+const LEGACY_STUDIO_THEME_STORAGE_KEY = "lumenx-studio-theme";
+const PROJECT_STEP_STORAGE_KEY_PREFIX = "dramalab-project-active-step";
+const LEGACY_PROJECT_STEP_STORAGE_KEY_PREFIX = "lumenx-project-active-step";
 const PROJECT_STEP_IDS = [
     "script",
     "art_direction",
@@ -62,6 +64,7 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
         { id: "export", label: "导出成片", icon: Share2 },
     ];
     const projectStepStorageKey = `${PROJECT_STEP_STORAGE_KEY_PREFIX}:${id}`;
+    const legacyProjectStepStorageKey = `${LEGACY_PROJECT_STEP_STORAGE_KEY_PREFIX}:${id}`;
 
     useEffect(() => {
         setHasRestoredStep(false);
@@ -76,7 +79,7 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
 
     useEffect(() => {
         // 读取本地主题偏好，让项目制作页和工作台的视觉习惯保持连续。
-        const savedTheme = window.localStorage.getItem(STUDIO_THEME_STORAGE_KEY);
+        const savedTheme = window.localStorage.getItem(STUDIO_THEME_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STUDIO_THEME_STORAGE_KEY);
         if (savedTheme === "light" || savedTheme === "dark") {
             setTheme(savedTheme);
         }
@@ -88,18 +91,19 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
         }
 
         // 按项目记住用户离开前所在的生产阶段，刷新后继续留在原页面。
-        const savedStep = window.localStorage.getItem(projectStepStorageKey);
+        const savedStep = window.localStorage.getItem(projectStepStorageKey) ?? window.localStorage.getItem(legacyProjectStepStorageKey);
         if (savedStep && PROJECT_STEP_IDS.includes(savedStep)) {
             setActiveStep(savedStep);
         } else {
             setActiveStep("script");
         }
         setHasRestoredStep(true);
-    }, [hasHydrated, projectStepStorageKey]);
+    }, [hasHydrated, legacyProjectStepStorageKey, projectStepStorageKey]);
 
     useEffect(() => {
         // 持久化主题偏好，避免每次重新打开项目都回到默认状态。
         window.localStorage.setItem(STUDIO_THEME_STORAGE_KEY, theme);
+        window.localStorage.removeItem(LEGACY_STUDIO_THEME_STORAGE_KEY);
     }, [theme]);
 
     useEffect(() => {
@@ -109,7 +113,8 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
 
         // 当前步骤单独存储，避免刷新时总是落回默认的剧本处理页。
         window.localStorage.setItem(projectStepStorageKey, activeStep);
-    }, [activeStep, hasHydrated, hasRestoredStep, projectStepStorageKey]);
+        window.localStorage.removeItem(legacyProjectStepStorageKey);
+    }, [activeStep, hasHydrated, hasRestoredStep, legacyProjectStepStorageKey, projectStepStorageKey]);
 
     if (!hasHydrated) {
         return (

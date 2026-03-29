@@ -17,6 +17,7 @@ class AuthApiTest(unittest.TestCase):
                     f"DATABASE_URL=sqlite:///{db_path}",
                     "AUTH_JWT_SECRET=test-secret",
                     "AUTH_EXPOSE_TEST_CODE=true",
+                    "AUTH_PLATFORM_SUPER_ADMIN_EMAILS=admin@example.com",
                 ]
             )
             + "\n",
@@ -90,7 +91,7 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(len(me["workspaces"]), 1)
         self.assertEqual(me["workspaces"][0]["workspace_name"], "默认工作区")
         self.assertIn("project.create", me["capabilities"])
-        self.assertIn("lumenx_refresh_token", self.client.cookies)
+        self.assertIn("dramalab_refresh_token", self.client.cookies)
 
     def test_authenticated_project_routes_are_scoped_to_current_workspace(self):
         login_payload = self._login("alice@example.com", "Alice")
@@ -146,15 +147,16 @@ class AuthApiTest(unittest.TestCase):
     def test_signup_rejects_existing_account(self):
         self._login("existing@example.com", "Existing")
         send_result = self.client.post("/auth/email-code/send", json={"email": "existing@example.com", "purpose": "signup"})
-        self.assertEqual(send_result.status_code, 200)
-        debug_code = send_result.json()["debug_code"]
+        self.assertEqual(send_result.status_code, 400)
+        self.assertEqual(send_result.json()["detail"], "Account already exists, please sign in")
 
-        verify_result = self.client.post(
-            "/auth/email-code/verify",
-            json={"email": "existing@example.com", "code": debug_code, "purpose": "signup", "display_name": "Another Name"},
+    def test_signup_rejects_reserved_platform_admin_email_before_sending_code(self):
+        send_result = self.client.post("/auth/email-code/send", json={"email": "admin@example.com", "purpose": "signup"})
+        self.assertEqual(send_result.status_code, 400)
+        self.assertEqual(
+            send_result.json()["detail"],
+            "This email is reserved for platform administration and cannot use public sign up",
         )
-        self.assertEqual(verify_result.status_code, 400)
-        self.assertEqual(verify_result.json()["detail"], "Account already exists, please sign in")
 
     def test_org_admin_signup_creates_team_workspace(self):
         payload = self._login(
@@ -208,6 +210,52 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(accepted_payload["me"]["current_role_code"], "producer")
         self.assertEqual(len(accepted_payload["me"]["workspaces"]), 1)
         self.assertEqual(accepted_payload["me"]["workspaces"][0]["organization_name"], "霓虹剧场")
+
+    def test_invitation_preview_endpoint_returns_workspace_context(self):
+        owner_payload = self._login(
+            "owner3@example.com",
+            "Owner3",
+            signup_kind="org_admin",
+            organization_name="曙光影业",
+        )
+        owner_headers = {"Authorization": f"Bearer {owner_payload['session']['access_token']}"}
+        invite_result = self.client.post(
+            "/workspace/invitations",
+            json={"email": "preview@example.com", "role_code": "producer"},
+            headers=owner_headers,
+        )
+        self.assertEqual(invite_result.status_code, 200)
+        invitation_id = invite_result.json()["id"]
+
+        preview_result = self.client.get(f"/auth/invitations/{invitation_id}")
+        self.assertEqual(preview_result.status_code, 200)
+        preview = preview_result.json()
+        self.assertEqual(preview["organization_name"], "曙光影业")
+        self.assertEqual(preview["role_code"], "producer")
+        self.assertFalse(preview["is_expired"])
+
+    def test_org_and_workspace_settings_can_be_updated(self):
+        owner_payload = self._login(
+            "owner4@example.com",
+            "Owner4",
+            signup_kind="org_admin",
+            organization_name="旧团队名",
+        )
+        owner_headers = {"Authorization": f"Bearer {owner_payload['session']['access_token']}"}
+
+        update_org = self.client.patch("/organization/current", json={"name": "新团队名"}, headers=owner_headers)
+        self.assertEqual(update_org.status_code, 200)
+        self.assertEqual(update_org.json()["name"], "新团队名")
+
+        update_workspace = self.client.patch("/workspace/current", json={"name": "创作一组"}, headers=owner_headers)
+        self.assertEqual(update_workspace.status_code, 200)
+        self.assertEqual(update_workspace.json()["name"], "创作一组")
+
+        refreshed = self.client.get("/auth/me", headers=owner_headers)
+        self.assertEqual(refreshed.status_code, 200)
+        refreshed_payload = refreshed.json()
+        self.assertEqual(refreshed_payload["workspaces"][0]["organization_name"], "新团队名")
+        self.assertEqual(refreshed_payload["workspaces"][0]["workspace_name"], "创作一组")
 
 
 if __name__ == "__main__":

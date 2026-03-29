@@ -10,7 +10,7 @@ from src.settings.env_settings import get_env
 logger = get_logger(__name__)
 
 # OSS 相关默认配置
-DEFAULT_OSS_BASE_PATH = "lumenx"
+DEFAULT_OSS_BASE_PATH = "dramalab"
 SIGN_URL_EXPIRES_DISPLAY = 7200  # 前端展示用，默认 2 小时
 SIGN_URL_EXPIRES_API = 1800      # AI 接口调用用，默认 30 分钟
 
@@ -70,7 +70,7 @@ def is_object_key(value: str) -> bool:
     # 根路径做一次清洗，避免用户配置里混入引号和多余斜杠
     base_path = get_oss_base_path().strip("'\"/")
     
-    # 对象键必须以 OSS 根路径开头，例如 `lumenx/...`
+    # 对象键必须以 OSS 根路径开头，例如 `dramalab/...`
     # 这里不要再加“模糊兜底”，否则很容易误判本地路径
     return value.startswith(f"{base_path}/")
 

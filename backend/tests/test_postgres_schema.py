@@ -11,13 +11,13 @@ class PostgresStorageConfigurationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             env_path = Path(temp_dir) / ".env"
             env_path.write_text(
-                "DATABASE_URL=postgresql+psycopg://tester:secret@localhost:5432/lumenx\n",
+                "DATABASE_URL=postgresql+psycopg://tester:secret@localhost:5432/dramalab\n",
                 encoding="utf-8",
             )
             override_env_path_for_tests(env_path)
             self.assertEqual(
                 _get_database_url(),
-                "postgresql+psycopg://tester:secret@localhost:5432/lumenx",
+                "postgresql+psycopg://tester:secret@localhost:5432/dramalab",
             )
             override_env_path_for_tests(None)
 
@@ -31,7 +31,7 @@ class PostgresStorageConfigurationTest(unittest.TestCase):
                 "\n".join([
                     "POSTGRES_HOST=db.internal",
                     "POSTGRES_PORT=5433",
-                    "POSTGRES_DB=lumenx",
+                    "POSTGRES_DB=dramalab",
                     "POSTGRES_USER=app",
                     "POSTGRES_PASSWORD=pwd",
                     "",
@@ -41,7 +41,7 @@ class PostgresStorageConfigurationTest(unittest.TestCase):
             override_env_path_for_tests(env_path)
             self.assertEqual(
                 _get_database_url(),
-                "postgresql+psycopg://app:pwd@db.internal:5433/lumenx",
+                "postgresql+psycopg://app:pwd@db.internal:5433/dramalab",
             )
             override_env_path_for_tests(None)
 

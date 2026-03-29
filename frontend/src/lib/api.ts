@@ -37,7 +37,7 @@ const getApiUrl = (): string => {
 
 export const API_URL = getApiUrl();
 
-const LOG_PREFIX = "[lumenx-api]";
+const LOG_PREFIX = "[dramalab-api]";
 const SENSITIVE_KEYWORDS = ["password", "secret", "token", "key", "authorization", "cookie"];
 
 const axios = axiosLib.create();
@@ -376,6 +376,54 @@ export interface VerifyEmailCodeOptions {
     purpose?: string;
     signupKind?: "individual_creator" | "org_admin";
     organizationName?: string;
+    invitationId?: string;
+}
+
+export interface InvitationPreview {
+    id: string;
+    email: string;
+    role_code: string;
+    role_name?: string | null;
+    organization_id: string;
+    organization_name?: string | null;
+    workspace_id: string;
+    workspace_name?: string | null;
+    expires_at: string;
+    accepted_at?: string | null;
+    is_expired: boolean;
+}
+
+export interface OrganizationSummary {
+    id: string;
+    name: string;
+    slug?: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface WorkspaceSummary {
+    id: string;
+    organization_id?: string | null;
+    name: string;
+    slug?: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface InvitationCreateResponse {
+    id: string;
+    organization_id: string;
+    workspace_id: string;
+    email: string;
+    role_code: string;
+    invited_by?: string | null;
+    expires_at: string;
+    accepted_at?: string | null;
+    created_at: string;
+    updated_at: string;
+    invite_url: string;
 }
 
 export interface ModelProviderSummary {
@@ -516,6 +564,7 @@ export const api = {
             display_name: options.displayName,
             signup_kind: options.signupKind,
             organization_name: options.organizationName,
+            invitation_id: options.invitationId,
         });
         return res.data as AuthBootstrapPayload;
     },
@@ -543,7 +592,7 @@ export const api = {
         return res.data;
     },
 
-    inviteWorkspaceMember: async (email: string, roleCode: string) => {
+    inviteWorkspaceMember: async (email: string, roleCode: string): Promise<InvitationCreateResponse> => {
         const res = await axios.post(`${API_URL}/workspace/invitations`, { email, role_code: roleCode });
         return res.data;
     },
@@ -555,6 +604,21 @@ export const api = {
 
     deleteWorkspaceMember: async (membershipId: string) => {
         const res = await axios.delete(`${API_URL}/workspace/members/${membershipId}`);
+        return res.data;
+    },
+
+    getInvitationPreview: async (invitationId: string): Promise<InvitationPreview> => {
+        const res = await axios.get(`${API_URL}/auth/invitations/${invitationId}`);
+        return res.data;
+    },
+
+    updateCurrentOrganization: async (name: string): Promise<OrganizationSummary> => {
+        const res = await axios.patch(`${API_URL}/organization/current`, { name });
+        return res.data;
+    },
+
+    updateCurrentWorkspace: async (name: string): Promise<WorkspaceSummary> => {
+        const res = await axios.patch(`${API_URL}/workspace/current`, { name });
         return res.data;
     },
 

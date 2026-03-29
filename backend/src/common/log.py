@@ -10,7 +10,7 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 def get_user_data_dir() -> str:
     """返回应用的用户数据目录。"""
-    return os.path.join(os.path.expanduser("~"), ".lumen-x")
+    return os.path.join(os.path.expanduser("~"), ".dramalab")
 
 
 def get_log_dir() -> str:

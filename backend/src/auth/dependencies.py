@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastapi import Cookie, Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 
 from ..application.services.auth_service import AuthService
-from ..auth.constants import ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, ROLE_PLATFORM_SUPER_ADMIN
+from ..auth.constants import (
+    ACCESS_TOKEN_COOKIE,
+    LEGACY_ACCESS_TOKEN_COOKIE,
+    LEGACY_REFRESH_TOKEN_COOKIE,
+    REFRESH_TOKEN_COOKIE,
+    ROLE_PLATFORM_SUPER_ADMIN,
+)
 from ..schemas.models import User
 
 
@@ -33,10 +39,16 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
     return None
 
 
+def _read_auth_cookie(request: Request, primary_key: str, legacy_key: str) -> str | None:
+    """优先读取新 cookie 名，缺失时回退旧品牌 cookie，保证会话迁移平滑。"""
+    return request.cookies.get(primary_key) or request.cookies.get(legacy_key)
+
+
 def get_current_user(
+    request: Request,
     authorization: str | None = Header(default=None, alias="Authorization"),
-    access_token_cookie: str | None = Cookie(default=None, alias=ACCESS_TOKEN_COOKIE),
 ) -> User:
+    access_token_cookie = _read_auth_cookie(request, ACCESS_TOKEN_COOKIE, LEGACY_ACCESS_TOKEN_COOKIE)
     token = _extract_bearer_token(authorization) or access_token_cookie
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -51,11 +63,12 @@ def get_current_user(
 
 
 def get_request_context(
+    request: Request,
     user: User = Depends(get_current_user),
     authorization: str | None = Header(default=None, alias="Authorization"),
-    access_token_cookie: str | None = Cookie(default=None, alias=ACCESS_TOKEN_COOKIE),
-    refresh_token: str | None = Cookie(default=None, alias=REFRESH_TOKEN_COOKIE),
 ) -> RequestContext:
+    access_token_cookie = _read_auth_cookie(request, ACCESS_TOKEN_COOKIE, LEGACY_ACCESS_TOKEN_COOKIE)
+    refresh_token = _read_auth_cookie(request, REFRESH_TOKEN_COOKIE, LEGACY_REFRESH_TOKEN_COOKIE)
     token = _extract_bearer_token(authorization) or access_token_cookie
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")

@@ -129,6 +129,7 @@ class EnvConfig(BaseModel):
     AUTH_EMAIL_CODE_TTL_MINUTES: Optional[str] = None
     AUTH_EXPOSE_TEST_CODE: Optional[str] = None
     AUTH_PLATFORM_SUPER_ADMIN_EMAILS: Optional[str] = None
+    AUTH_APP_BASE_URL: Optional[str] = None
     endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -392,6 +393,7 @@ class VerifyEmailCodeRequest(BaseModel):
     display_name: Optional[str] = None
     signup_kind: Optional[str] = None
     organization_name: Optional[str] = None
+    invitation_id: Optional[str] = None
 
 
 class SwitchWorkspaceRequest(BaseModel):
@@ -405,6 +407,14 @@ class InviteWorkspaceMemberRequest(BaseModel):
 
 class UpdateWorkspaceMemberRoleRequest(BaseModel):
     role_code: str
+
+
+class UpdateCurrentOrganizationRequest(BaseModel):
+    name: str
+
+
+class UpdateCurrentWorkspaceRequest(BaseModel):
+    name: str
 
 
 class CopyFrameRequest(BaseModel):

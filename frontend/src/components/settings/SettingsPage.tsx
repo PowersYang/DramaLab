@@ -26,8 +26,10 @@ const ENDPOINT_PROVIDERS = [
   { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
 ];
 
-const LS_KEY_MODEL = "lumenx_default_model_settings";
-const LS_KEY_PROMPT = "lumenx_default_prompt_config";
+const LS_KEY_MODEL = "dramalab_default_model_settings";
+const LEGACY_LS_KEY_MODEL = "lumenx_default_model_settings";
+const LS_KEY_PROMPT = "dramalab_default_prompt_config";
+const LEGACY_LS_KEY_PROMPT = "lumenx_default_prompt_config";
 
 interface DefaultModelSettings {
   t2i_model: string;
@@ -45,11 +47,16 @@ interface DefaultPromptConfig {
   r2v_polish: string;
 }
 
-function loadFromLS<T>(key: string, fallback: T): T {
+function loadFromLS<T>(keys: string[], fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    for (const key of keys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        return JSON.parse(raw) as T;
+      }
+    }
+    return fallback;
   } catch {
     return fallback;
   }
@@ -95,7 +102,7 @@ export default function SettingsPage() {
   useEffect(() => {
     // 中文注释：默认设置延后到挂载后恢复，避免 localStorage 让首屏 hydration 前后不一致。
     setModelSettings(
-      loadFromLS(LS_KEY_MODEL, {
+      loadFromLS([LS_KEY_MODEL, LEGACY_LS_KEY_MODEL], {
         t2i_model: "wan2.5-t2i-preview",
         i2i_model: "wan2.5-i2i-preview",
         i2v_model: "wan2.5-i2v-preview",
@@ -105,7 +112,7 @@ export default function SettingsPage() {
         storyboard_aspect_ratio: "16:9",
       })
     );
-    setPromptConfig(loadFromLS(LS_KEY_PROMPT, { storyboard_polish: "", video_polish: "", r2v_polish: "" }));
+    setPromptConfig(loadFromLS([LS_KEY_PROMPT, LEGACY_LS_KEY_PROMPT], { storyboard_polish: "", video_polish: "", r2v_polish: "" }));
   }, []);
 
   const loadConfig = async () => {
@@ -145,12 +152,16 @@ export default function SettingsPage() {
   };
 
   const handleSaveModelDefaults = () => {
+    // 中文注释：统一写入新品牌键名，并清掉旧键，避免后续读取来源分叉。
     localStorage.setItem(LS_KEY_MODEL, JSON.stringify(modelSettings));
+    localStorage.removeItem(LEGACY_LS_KEY_MODEL);
     alert("Default model settings saved!");
   };
 
   const handleSavePromptDefaults = () => {
+    // 中文注释：提示词默认值沿用同一套迁移策略，保证旧浏览器缓存平滑切换。
     localStorage.setItem(LS_KEY_PROMPT, JSON.stringify(promptConfig));
+    localStorage.removeItem(LEGACY_LS_KEY_PROMPT);
     alert("Default prompt configuration saved!");
   };
 
@@ -221,7 +232,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">OSS Base Path</label>
-                  <input type="text" value={config.OSS_BASE_PATH} onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)} placeholder="lumenx" className={inputClass} />
+                  <input type="text" value={config.OSS_BASE_PATH} onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)} placeholder="dramalab" className={inputClass} />
                 </div>
               </div>
             </div>

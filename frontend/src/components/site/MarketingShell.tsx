@@ -1,7 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 
-import LumenXBranding from "@/components/layout/LumenXBranding";
+import DramaLabBranding from "@/components/layout/DramaLabBranding";
+import { useAuthStore } from "@/store/authStore";
 
 interface MarketingShellProps {
   children: ReactNode;
@@ -11,16 +15,26 @@ interface MarketingShellProps {
 const NAV_ITEMS = [
   { href: "/solutions", label: "解决方案" },
   { href: "/pricing", label: "套餐定价" },
-  { href: "/studio", label: "工作台" },
 ];
 
 export default function MarketingShell({ children, ctaMode = "default" }: MarketingShellProps) {
+  const authStatus = useAuthStore((state) => state.authStatus);
+  const me = useAuthStore((state) => state.me);
+  const bootstrapAuth = useAuthStore((state) => state.bootstrapAuth);
+  const currentWorkspace = me?.workspaces.find((item) => item.workspace_id === me.current_workspace_id);
+
+  useEffect(() => {
+    if (authStatus === "idle") {
+      void bootstrapAuth();
+    }
+  }, [authStatus, bootstrapAuth]);
+
   return (
     <div className="min-h-screen bg-transparent text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-10">
           <Link href="/" className="w-[210px]">
-            <LumenXBranding size="sm" showSlogan={false} />
+            <DramaLabBranding size="sm" showSlogan={false} />
           </Link>
           <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
             {NAV_ITEMS.map((item) => (
@@ -30,7 +44,19 @@ export default function MarketingShell({ children, ctaMode = "default" }: Market
             ))}
           </nav>
           <div className="flex items-center gap-3">
-            {ctaMode === "auth" ? (
+            {authStatus === "authenticated" && me ? (
+              <>
+                <div className="hidden rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 md:block">
+                  <span className="font-semibold text-slate-900">{me.user.display_name || me.user.email || "已登录用户"}</span>
+                  {currentWorkspace?.workspace_name ? <span className="ml-2 text-slate-400">· {currentWorkspace.workspace_name}</span> : null}
+                </div>
+                <Link href="/studio" className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.01] hover:bg-secondary">
+                  进入工作台
+                </Link>
+              </>
+            ) : authStatus === "loading" || authStatus === "idle" ? (
+              <div className="h-10 w-28 rounded-full bg-slate-100" />
+            ) : ctaMode === "auth" ? (
               <>
                 <Link href="/signin" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
                   登录
@@ -46,9 +72,6 @@ export default function MarketingShell({ children, ctaMode = "default" }: Market
                 </Link>
                 <Link href="/signup" className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950">
                   注册
-                </Link>
-                <Link href="/studio" className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.01] hover:bg-secondary">
-                  进入工作台
                 </Link>
               </>
             )}
@@ -70,7 +93,7 @@ export default function MarketingShell({ children, ctaMode = "default" }: Market
           <div className="flex gap-8 text-sm text-slate-500">
             <Link href="/solutions" className="hover:text-slate-900">解决方案</Link>
             <Link href="/pricing" className="hover:text-slate-900">套餐定价</Link>
-            <Link href="/studio" className="hover:text-slate-900">工作台</Link>
+            {authStatus === "authenticated" ? <Link href="/studio" className="hover:text-slate-900">工作台</Link> : null}
           </div>
         </div>
       </footer>

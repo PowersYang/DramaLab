@@ -1,7 +1,9 @@
 """认证与权限常量。"""
 
-ACCESS_TOKEN_COOKIE = "lumenx_access_token"
-REFRESH_TOKEN_COOKIE = "lumenx_refresh_token"
+ACCESS_TOKEN_COOKIE = "dramalab_access_token"
+LEGACY_ACCESS_TOKEN_COOKIE = "lumenx_access_token"
+REFRESH_TOKEN_COOKIE = "dramalab_refresh_token"
+LEGACY_REFRESH_TOKEN_COOKIE = "lumenx_refresh_token"
 
 ROLE_PLATFORM_SUPER_ADMIN = "platform_super_admin"
 ROLE_INDIVIDUAL_CREATOR = "individual_creator"

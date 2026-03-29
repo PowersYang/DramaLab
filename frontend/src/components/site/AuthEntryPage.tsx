@@ -1,5 +1,6 @@
 "use client";
 
+import axios from "axios";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -14,7 +15,7 @@ interface AuthEntryPageProps {
 const AUTH_COPY = {
   signin: {
     eyebrow: "Sign In",
-    title: "邮箱验证码登录到 LumenX Studio",
+    title: "邮箱验证码登录到 DramaLab",
     description: "已有账号直接输入邮箱登录即可。超级管理员、团队成员和受邀用户都不需要再次填写显示名称。",
     codeAction: "发送登录验证码",
     verifyAction: "验证并进入工作台",
@@ -27,7 +28,7 @@ const AUTH_COPY = {
   },
   signup: {
     eyebrow: "Sign Up",
-    title: "注册你的 LumenX Studio 账号",
+    title: "注册你的 DramaLab 账号",
     description: "首次注册会创建你的个人空间。显示名称只在注册时填写，用于默认个人空间名称和团队内展示。",
     codeAction: "发送注册验证码",
     verifyAction: "验证并创建账号",
@@ -39,6 +40,30 @@ const AUTH_COPY = {
     notice: "注册即表示你同意接收与账号、安全验证和工作区邀请相关的通知邮件。",
   },
 } as const;
+
+const normalizeAuthError = (error: unknown, isSignUp: boolean) => {
+  const detail =
+    axios.isAxiosError(error)
+      ? typeof error.response?.data?.detail === "string"
+        ? error.response?.data?.detail
+        : error.message
+      : error instanceof Error
+        ? error.message
+        : String(error || "");
+  const message = detail || "";
+
+  if (message.includes("Account already exists")) {
+    return "该账号已经注册，请直接前往登录。";
+  }
+  if (message.includes("reserved for platform administration")) {
+    return "该邮箱属于系统管理保留账号，不能通过公开入口注册。";
+  }
+  if (message.includes("Account not found")) {
+    return "该账号尚未注册，请先完成注册或确认邮箱是否填写正确。";
+  }
+
+  return isSignUp ? "注册失败，请稍后重试。" : "登录失败，请稍后重试。";
+};
 
 export default function AuthEntryPage({ mode }: AuthEntryPageProps) {
   const searchParams = useSearchParams();
@@ -69,7 +94,7 @@ export default function AuthEntryPage({ mode }: AuthEntryPageProps) {
       setDebugCode(result.debug_code || null);
       setStep("verify");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "验证码发送失败");
+      setError(normalizeAuthError(err, isSignUp));
     } finally {
       setSubmitting(false);
     }
@@ -88,7 +113,7 @@ export default function AuthEntryPage({ mode }: AuthEntryPageProps) {
       });
       window.location.assign(nextPath);
     } catch (err) {
-      setError(err instanceof Error ? err.message : isSignUp ? "注册失败" : "登录失败");
+      setError(normalizeAuthError(err, isSignUp));
     } finally {
       setSubmitting(false);
     }

@@ -45,6 +45,15 @@ export default function VoiceActingStudio() {
         }
     }, [currentProject?.characters]);
 
+    const resolveSelectedVoiceId = (voiceId?: string | null) => {
+        if (!voiceId) return "";
+        if (voices.some((voice) => voice.id === voiceId)) {
+            return voiceId;
+        }
+        const matched = voices.find((voice) => Array.isArray(voice.aliases) && voice.aliases.includes(voiceId));
+        return matched?.id || "";
+    };
+
     const handlePlay = (url: string) => {
         if (playingAudio === url) {
             audioRef.current?.pause();
@@ -164,7 +173,7 @@ export default function VoiceActingStudio() {
                                 <label className="text-[10px] uppercase text-gray-500 font-bold">已绑定音色</label>
                                 <select
                                     className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary"
-                                    value={char.voice_id || ""}
+                                    value={resolveSelectedVoiceId(char.voice_id)}
                                     onChange={(e) => {
                                         const voice = voices.find(v => v.id === e.target.value);
                                         if (voice) handleBindVoice(char.id, voice.id, voice.name);

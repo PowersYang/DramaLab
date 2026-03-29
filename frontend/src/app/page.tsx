@@ -43,12 +43,12 @@ export default function HomePage() {
               用统一工作台承接剧本分析、风格定调、资产沉淀、分镜生成、任务追踪和成片导出，让内容团队拥有真正可复用、可扩展、可运营的生产系统。
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
-              <Link href="/studio" className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-sm">
-                进入工作台
+              <Link href="/solutions" className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-sm">
+                查看解决方案
                 <ArrowRight size={16} />
               </Link>
-              <Link href="/solutions" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700">
-                查看解决方案
+              <Link href="/signup" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700">
+                注册账号
               </Link>
             </div>
           </div>
@@ -144,9 +144,9 @@ export default function HomePage() {
               <p className="mt-3 text-sm leading-7 text-slate-300">进入 DramaLab Studio，查看新的商业化首页、项目中心、任务中心与资源库布局。</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/studio" className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950">
+              <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950">
                 <PlayCircle size={16} />
-                打开工作台
+                创建账号
               </Link>
               <Link href="/pricing" className="inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-white">
                 查看套餐

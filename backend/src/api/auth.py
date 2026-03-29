@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ..application.services import AuthService
 from ..auth.constants import (
     ACCESS_TOKEN_COOKIE,
     CAP_WORKSPACE_MANAGE_MEMBERS,
+    CAP_ORG_MANAGE,
+    LEGACY_ACCESS_TOKEN_COOKIE,
+    LEGACY_REFRESH_TOKEN_COOKIE,
     REFRESH_TOKEN_COOKIE,
+    ROLE_INDIVIDUAL_CREATOR,
 )
 from ..auth.dependencies import RequestContext, get_request_context
 from ..common import signed_response
@@ -17,6 +21,8 @@ from ..schemas.requests import (
     InviteWorkspaceMemberRequest,
     SendEmailCodeRequest,
     SwitchWorkspaceRequest,
+    UpdateCurrentOrganizationRequest,
+    UpdateCurrentWorkspaceRequest,
     UpdateWorkspaceMemberRoleRequest,
     VerifyEmailCodeRequest,
 )
@@ -54,6 +60,8 @@ def _set_access_cookie(response, access_token: str, expires_in: int) -> None:
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(REFRESH_TOKEN_COOKIE, path="/")
     response.delete_cookie(ACCESS_TOKEN_COOKIE, path="/")
+    response.delete_cookie(LEGACY_REFRESH_TOKEN_COOKIE, path="/")
+    response.delete_cookie(LEGACY_ACCESS_TOKEN_COOKIE, path="/")
 
 
 @router.post("/auth/email-code/send")
@@ -75,6 +83,7 @@ async def verify_email_code(request: VerifyEmailCodeRequest, response: Response,
             display_name=request.display_name,
             signup_kind=request.signup_kind,
             organization_name=request.organization_name,
+            invitation_id=request.invitation_id,
             ip_address=http_request.client.host if http_request.client else None,
             user_agent=http_request.headers.get("user-agent"),
         )
@@ -92,8 +101,9 @@ async def verify_email_code(request: VerifyEmailCodeRequest, response: Response,
 
 @router.post("/auth/refresh")
 async def refresh_auth_session(
-    refresh_token: str | None = Cookie(default=None, alias=REFRESH_TOKEN_COOKIE),
+    request: Request,
 ):
+    refresh_token = request.cookies.get(REFRESH_TOKEN_COOKIE) or request.cookies.get(LEGACY_REFRESH_TOKEN_COOKIE)
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token is missing")
     try:
@@ -106,7 +116,8 @@ async def refresh_auth_session(
 
 
 @router.post("/auth/logout")
-async def logout(response: Response, refresh_token: str | None = Cookie(default=None, alias=REFRESH_TOKEN_COOKIE)):
+async def logout(response: Response, request: Request):
+    refresh_token = request.cookies.get(REFRESH_TOKEN_COOKIE) or request.cookies.get(LEGACY_REFRESH_TOKEN_COOKIE)
     if refresh_token:
         auth_service.logout(refresh_token)
     http_response = signed_response({"status": "logged_out"})
@@ -135,6 +146,14 @@ async def switch_workspace(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.get("/auth/invitations/{invitation_id}")
+async def get_invitation_preview(invitation_id: str):
+    try:
+        return signed_response(auth_service.get_invitation_preview(invitation_id).model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.get("/workspace/members")
 async def list_workspace_members(context: RequestContext = Depends(get_request_context)):
     if not context.current_workspace_id:
@@ -161,7 +180,41 @@ async def invite_workspace_member(
             role_code=request.role_code,
             invited_by=context.user.id,
         )
-        return signed_response(invitation)
+        payload = invitation.model_dump()
+        payload["invite_url"] = auth_service.build_invitation_url_for_client(invitation.id)
+        return signed_response(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/workspace/current")
+async def update_current_workspace(
+    request: UpdateCurrentWorkspaceRequest,
+    context: RequestContext = Depends(get_request_context),
+):
+    if not context.current_workspace_id:
+        raise HTTPException(status_code=400, detail="Current workspace is missing")
+    if CAP_ORG_MANAGE not in context.capabilities and context.current_role_code != ROLE_INDIVIDUAL_CREATOR:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    try:
+        workspace = auth_service.update_current_workspace(context.current_workspace_id, request.name)
+        return signed_response(workspace.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/organization/current")
+async def update_current_organization(
+    request: UpdateCurrentOrganizationRequest,
+    context: RequestContext = Depends(get_request_context),
+):
+    if not context.current_organization_id:
+        raise HTTPException(status_code=400, detail="Current organization is missing")
+    if CAP_ORG_MANAGE not in context.capabilities and context.current_role_code != ROLE_INDIVIDUAL_CREATOR:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    try:
+        organization = auth_service.update_current_organization(context.current_organization_id, request.name)
+        return signed_response(organization.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

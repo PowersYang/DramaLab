@@ -36,6 +36,7 @@ from ...schemas.models import (
     AuthMeResponse,
     AuthSessionPayload,
     Invitation,
+    InvitationPreview,
     Membership,
     MembershipWithRole,
     Organization,
@@ -148,6 +149,12 @@ class AuthService:
         # 中文注释：登录/注册入口已经拆分，只允许显式支持的认证用途继续向下执行。
         if purpose not in SUPPORTED_AUTH_PURPOSES:
             raise ValueError("Unsupported auth purpose")
+        if purpose == "signup":
+            # 中文注释：公开注册在发码前就拦截已有账号和保留的系统邮箱，避免前端误以为这些身份仍可注册。
+            if self.user_repository.get_by_email(normalized_email) is not None:
+                raise ValueError("Account already exists, please sign in")
+            if normalized_email in self._platform_super_admin_emails():
+                raise ValueError("This email is reserved for platform administration and cannot use public sign up")
         code = f"{secrets.randbelow(1_000_000):06d}"
         now = utc_now()
         verification = VerificationCode(
@@ -181,6 +188,7 @@ class AuthService:
         display_name: str | None = None,
         signup_kind: str | None = None,
         organization_name: str | None = None,
+        invitation_id: str | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
@@ -207,8 +215,10 @@ class AuthService:
             raise ValueError("Account not found, please sign up first")
         if purpose == "signup" and user is not None:
             raise ValueError("Account already exists, please sign in")
-        if purpose == "invite_accept" and not self.invitation_repository.list_pending_by_email(normalized_email):
-            raise ValueError("Invitation not found or already accepted")
+        if purpose == "invite_accept":
+            invitation = self._resolve_pending_invitation(normalized_email, invitation_id)
+            if invitation is None:
+                raise ValueError("Invitation not found or already accepted")
 
         if user is None:
             if purpose == "signup":
@@ -378,8 +388,46 @@ class AuthService:
             updated_at=now,
         )
         self.invitation_repository.create(invitation)
-        self.send_email_code(normalized_email, "invite_accept")
+        self._send_invitation_email(invitation)
         return invitation
+
+    def get_invitation_preview(self, invitation_id: str) -> InvitationPreview:
+        invitation = self.invitation_repository.get(invitation_id)
+        if invitation is None:
+            raise ValueError("Invitation not found")
+        organization = self.organization_repository.get(invitation.organization_id)
+        workspace = self.workspace_repository.get(invitation.workspace_id)
+        role = self.role_repository.get_by_code(invitation.role_code)
+        return InvitationPreview(
+            id=invitation.id,
+            email=invitation.email,
+            role_code=invitation.role_code,
+            role_name=role.name if role else None,
+            organization_id=invitation.organization_id,
+            organization_name=organization.name if organization else None,
+            workspace_id=invitation.workspace_id,
+            workspace_name=workspace.name if workspace else None,
+            expires_at=invitation.expires_at,
+            accepted_at=invitation.accepted_at,
+            is_expired=_coerce_utc(invitation.expires_at) < utc_now(),
+        )
+
+    def build_invitation_url_for_client(self, invitation_id: str) -> str:
+        return self._build_invitation_url(invitation_id)
+
+    def update_current_organization(self, organization_id: str, name: str) -> Organization:
+        # 中文注释：当前组织设置只允许更新展示名称，避免公开设置页误改更敏感的租户字段。
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Organization name is required")
+        return self.organization_repository.update(organization_id, {"name": normalized_name})
+
+    def update_current_workspace(self, workspace_id: str, name: str) -> Workspace:
+        # 中文注释：工作区设置与组织设置分开落库，减少误把两者混成一个实体。
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Workspace name is required")
+        return self.workspace_repository.update(workspace_id, {"name": normalized_name})
 
     def update_workspace_member_role(self, membership_id: str, role_code: str) -> Membership:
         membership = self.membership_repository.get(membership_id)
@@ -527,6 +575,12 @@ class AuthService:
                 )
             self.invitation_repository.mark_accepted(invitation.id)
 
+    def _resolve_pending_invitation(self, email: str, invitation_id: str | None) -> Invitation | None:
+        pending = self.invitation_repository.list_pending_by_email(email)
+        if invitation_id:
+            return next((item for item in pending if item.id == invitation_id and _coerce_utc(item.expires_at) >= utc_now()), None)
+        return next((item for item in pending if _coerce_utc(item.expires_at) >= utc_now()), None)
+
     def _pick_default_workspace(self, user: User) -> WorkspaceOption | None:
         workspaces = self._list_workspace_options(user)
         return workspaces[0] if workspaces else None
@@ -646,12 +700,61 @@ class AuthService:
                 server.login(smtp_user, smtp_password)
             server.send_message(message)
 
+    def _send_invitation_email(self, invitation: Invitation) -> None:
+        if not self._email_delivery_is_configured():
+            return
+
+        organization = self.organization_repository.get(invitation.organization_id)
+        workspace = self.workspace_repository.get(invitation.workspace_id)
+        role = self.role_repository.get_by_code(invitation.role_code)
+        invite_url = self._build_invitation_url(invitation.id)
+        expires_at_text = _coerce_utc(invitation.expires_at).strftime("%Y-%m-%d %H:%M UTC")
+
+        smtp_host = get_env("AUTH_EMAIL_SMTP_HOST")
+        smtp_port = int(get_env("AUTH_EMAIL_SMTP_PORT", "587") or "587")
+        smtp_user = get_env("AUTH_EMAIL_SMTP_USER")
+        smtp_password = get_env("AUTH_EMAIL_SMTP_PASSWORD")
+        smtp_from = get_env("AUTH_EMAIL_FROM")
+        use_ssl = get_env_bool("AUTH_EMAIL_SMTP_SSL", False)
+        use_tls = get_env_bool("AUTH_EMAIL_SMTP_TLS", True)
+
+        message = EmailMessage()
+        message["From"] = smtp_from
+        message["To"] = invitation.email
+        message["Subject"] = f"加入 {organization.name if organization else 'DramaLab 团队'} 的工作邀请"
+        message.set_content(
+            "你好，\n\n"
+            "你收到了一个 DramaLab 团队协作邀请。接受后，你可以使用当前邮箱进入对应工作区并参与短剧创作流程。\n\n"
+            f"组织：{organization.name if organization else invitation.organization_id}\n"
+            f"工作区：{workspace.name if workspace else invitation.workspace_id}\n"
+            f"角色：{role.name if role else invitation.role_code}\n\n"
+            "加入步骤：\n"
+            "1. 打开下面的邀请链接\n"
+            "2. 确认组织、工作区和角色信息\n"
+            "3. 使用本邮箱接收验证码并完成加入\n\n"
+            f"邀请链接：\n{invite_url}\n\n"
+            f"有效期至：{expires_at_text}\n\n"
+            "如果你不需要加入该团队，可以忽略这封邮件。"
+        )
+
+        smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+        with smtp_cls(smtp_host, smtp_port, timeout=20) as server:
+            if not use_ssl and use_tls:
+                server.starttls()
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(message)
+
+    def _build_invitation_url(self, invitation_id: str) -> str:
+        base_url = (get_env("AUTH_APP_BASE_URL", "http://localhost:3000") or "http://localhost:3000").strip().rstrip("/")
+        return f"{base_url}/invite/{invitation_id}"
+
     def _encode_jwt(self, payload: dict) -> str:
         header = {"alg": "HS256", "typ": "JWT"}
         header_segment = _b64url_encode(json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8"))
         payload_segment = _b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
         signing_input = f"{header_segment}.{payload_segment}"
-        secret = (get_env("AUTH_JWT_SECRET", "lumenx-dev-secret") or "lumenx-dev-secret").encode("utf-8")
+        secret = (get_env("AUTH_JWT_SECRET", "dramalab-dev-secret") or "dramalab-dev-secret").encode("utf-8")
         signature = hmac.new(secret, signing_input.encode("utf-8"), hashlib.sha256).digest()
         return f"{signing_input}.{_b64url_encode(signature)}"
 
@@ -661,7 +764,7 @@ class AuthService:
             raise ValueError("Invalid token format")
         header_segment, payload_segment, signature_segment = parts
         signing_input = f"{header_segment}.{payload_segment}"
-        secret = (get_env("AUTH_JWT_SECRET", "lumenx-dev-secret") or "lumenx-dev-secret").encode("utf-8")
+        secret = (get_env("AUTH_JWT_SECRET", "dramalab-dev-secret") or "dramalab-dev-secret").encode("utf-8")
         expected_signature = _b64url_encode(hmac.new(secret, signing_input.encode("utf-8"), hashlib.sha256).digest())
         if not hmac.compare_digest(expected_signature, signature_segment):
             raise ValueError("Invalid token signature")

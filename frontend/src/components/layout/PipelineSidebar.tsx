@@ -8,7 +8,7 @@ import {
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import type { ComponentType, ReactNode } from "react";
-import LumenXBranding from "./LumenXBranding";
+import DramaLabBranding from "./DramaLabBranding";
 import type { BreadcrumbSegment } from "./BreadcrumbBar";
 
 interface Step {
@@ -95,7 +95,7 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                         )}
                     </div>
                 ) : (
-                    <LumenXBranding size="sm" />
+                    <DramaLabBranding size="sm" />
                 )}
             </div>
 

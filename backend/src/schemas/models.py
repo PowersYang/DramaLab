@@ -519,6 +519,20 @@ class Invitation(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class InvitationPreview(BaseModel):
+    id: str
+    email: str
+    role_code: str
+    role_name: Optional[str] = None
+    organization_id: str
+    organization_name: Optional[str] = None
+    workspace_id: str
+    workspace_name: Optional[str] = None
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    is_expired: bool = False
+
+
 class MembershipWithRole(BaseModel):
     membership_id: str
     organization_id: Optional[str] = None

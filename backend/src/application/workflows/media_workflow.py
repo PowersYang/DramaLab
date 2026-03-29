@@ -155,7 +155,7 @@ class MediaWorkflow:
             raise ValueError("No videos selected to merge. Please select videos for each frame first.")
         logger.info("MEDIA_WORKFLOW: merge_videos selected_clip_count=%s script_id=%s", len(clip_specs), script_id)
 
-        with tempfile.TemporaryDirectory(prefix="lumenx-merge-") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix="dramalab-merge-") as temp_dir:
             list_path = os.path.join(temp_dir, f"merge_list_{script_id}.txt")
             abs_video_paths = []
             with open(list_path, "w") as file_obj:
@@ -364,7 +364,7 @@ class MediaWorkflow:
         if not url:
             return None
         if is_object_key(url) or url.startswith("http"):
-            with tempfile.NamedTemporaryFile(prefix="lumenx-input-", suffix=os.path.splitext(url)[1] or ".png", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(prefix="dramalab-input-", suffix=os.path.splitext(url)[1] or ".png", delete=False) as tmp:
                 tmp_path = tmp.name
             if self._download_to_local(url, tmp_path):
                 return tmp_path

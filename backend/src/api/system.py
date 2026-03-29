@@ -50,7 +50,7 @@ async def debug_config():
     return {
         "oss_configured": uploader.is_configured,
         "oss_bucket_initialized": uploader.bucket is not None,
-        "oss_base_path": get_env("OSS_BASE_PATH", "lumenx"),
+        "oss_base_path": get_env("OSS_BASE_PATH", "dramalab"),
         "oss_public_base_url": get_env("OSS_PUBLIC_BASE_URL", ""),
         "output_dir_exists": os.path.exists("output"),
         "output_contents": os.listdir("output") if os.path.exists("output") else [],

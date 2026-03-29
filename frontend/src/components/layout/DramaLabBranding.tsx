@@ -1,11 +1,11 @@
 "use client";
 
-interface LumenXBrandingProps {
+interface DramaLabBrandingProps {
   size?: "sm" | "md";
   showSlogan?: boolean;
 }
 
-export default function LumenXBranding({ size = "md", showSlogan = true }: LumenXBrandingProps) {
+export default function DramaLabBranding({ size = "md", showSlogan = true }: DramaLabBrandingProps) {
   // 商业化品牌区改为纯文字字标，避免图形符号带来的冗余感。
   const wordSize = size === "sm" ? "text-[1.6rem]" : "text-[2.2rem]";
   const sloganSize = size === "sm" ? "text-[9px]" : "text-[10px]";

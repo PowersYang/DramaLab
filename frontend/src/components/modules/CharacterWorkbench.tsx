@@ -696,7 +696,8 @@ function WorkbenchPanel({
                                         )}
                                     </div>
                                 </div>
-                            ) : isVideo ? (
+                            </div>
+                        ) : isVideo ? (
                             <VideoVariantSelector
                                 videos={videos}
                                 onDelete={onDeleteVideo}
