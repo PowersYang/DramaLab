@@ -37,6 +37,7 @@ const TASK_TYPE_LABELS: Record<string, string> = {
     "audio.generate.line": "单句对白生成",
 };
 
+
 interface ProjectTaskQueuePanelProps {
     step: QueueStep;
 }
