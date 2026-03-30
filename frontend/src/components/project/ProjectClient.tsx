@@ -19,7 +19,7 @@ import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { PROJECT_REFRESH_PATH_STORAGE_KEY, isPageReloadNavigation } from "@/components/project/projectNavigation";
 
-const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
+import CreativeCanvas from "@/components/canvas/CreativeCanvas";
 
 type StudioTheme = "light" | "dark";
 

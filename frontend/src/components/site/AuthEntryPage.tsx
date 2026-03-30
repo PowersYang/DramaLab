@@ -61,6 +61,9 @@ const normalizeAuthError = (error: unknown, isSignUp: boolean) => {
   if (message.includes("Account not found")) {
     return "该账号尚未注册，请先完成注册或确认邮箱是否填写正确。";
   }
+  if (message.includes("Email delivery is not configured")) {
+    return "当前环境还没有配置验证码邮件发送，请先补齐 SMTP 配置后再登录。";
+  }
 
   return isSignUp ? "注册失败，请稍后重试。" : "登录失败，请稍后重试。";
 };

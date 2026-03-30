@@ -17,23 +17,34 @@ def build_worker_id() -> str:
 
 
 class TaskWorker:
-    def __init__(self, queues: list[str], poll_interval: float = 2.0, heartbeat_interval: float = 10.0, stale_after_seconds: int = 60):
+    def __init__(
+        self,
+        queues: list[str],
+        poll_interval: float = 2.0,
+        heartbeat_interval: float = 10.0,
+        stale_after_seconds: int = 60,
+        recovery_check_interval: float = 30.0,
+    ):
         self.queues = queues
         self.poll_interval = poll_interval
         self.heartbeat_interval = heartbeat_interval
         self.stale_after_seconds = stale_after_seconds
+        self.recovery_check_interval = recovery_check_interval
         self.worker_id = build_worker_id()
         self.task_service = TaskService()
         self.registry = TaskExecutorRegistry()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_recovery_check = 0.0
 
     def run_forever(self):
         logger.info("TASK_WORKER: start worker_id=%s queues=%s poll_interval=%s", self.worker_id, self.queues, self.poll_interval)
         recovered = self.task_service.recover_stale_jobs(stale_after_seconds=self.stale_after_seconds)
         if recovered:
             logger.warning("TASK_WORKER: recovered_stale_jobs worker_id=%s count=%s", self.worker_id, len(recovered))
+        self._last_recovery_check = time.monotonic()
         while not self._stop_event.is_set():
+            self._recover_stale_jobs_if_needed()
             try:
                 jobs = self.task_service.task_job_repository.claim_next_jobs(
                     queue_names=self.queues,
@@ -68,6 +79,23 @@ class TaskWorker:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=timeout)
         logger.info("TASK_WORKER: stop_requested worker_id=%s", self.worker_id)
+
+    def _recover_stale_jobs_if_needed(self):
+        """定期回收已停止心跳的任务，避免长时间卡在 running。"""
+        if self.recovery_check_interval <= 0:
+            return
+
+        now = time.monotonic()
+        if (now - self._last_recovery_check) < self.recovery_check_interval:
+            return
+
+        self._last_recovery_check = now
+        try:
+            recovered = self.task_service.recover_stale_jobs(stale_after_seconds=self.stale_after_seconds)
+            if recovered:
+                logger.warning("TASK_WORKER: recovered_stale_jobs worker_id=%s count=%s", self.worker_id, len(recovered))
+        except Exception:
+            logger.exception("TASK_WORKER: recover_stale_jobs_failed worker_id=%s", self.worker_id)
 
     def _run_job(self, job_id: str):
         job = self.task_service.get_job(job_id)

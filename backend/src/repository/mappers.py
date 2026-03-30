@@ -41,6 +41,11 @@ from ..utils.datetime import utc_now
 
 
 CHARACTER_UNIT_TYPES = ("full_body", "three_views", "head_shot")
+CHARACTER_LEGACY_ASSET_TO_UNIT = {
+    "full_body_asset": "full_body",
+    "three_view_asset": "three_views",
+    "headshot_asset": "head_shot",
+}
 
 
 def _now() -> datetime:
@@ -123,6 +128,17 @@ def _video_variant_record(owner_type: str, owner_id: str, variant_group: str, va
 
 def _build_image_asset(selected_id: str | None, variants: list[ImageVariant]) -> ImageAsset:
     return ImageAsset(selected_id=selected_id, variants=sorted(variants, key=lambda item: item.created_at))
+
+
+def _legacy_character_asset(character: Character, group_name: str) -> ImageAsset:
+    """优先读取角色 legacy 容器，缺失时再回退到对应的新 AssetUnit。"""
+    legacy_asset = getattr(character, group_name, None) or ImageAsset()
+    if legacy_asset.variants:
+        return legacy_asset
+
+    unit_type = CHARACTER_LEGACY_ASSET_TO_UNIT[group_name]
+    unit = getattr(character, unit_type, None) or AssetUnit()
+    return _build_image_asset(unit.selected_image_id, list(unit.image_variants))
 
 
 def _group_image_variants(records: Iterable[ImageVariantRecord]):
@@ -968,11 +984,15 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
     # 先把角色主记录刷入数据库，避免 PostgreSQL 在写角色素材单元时触发外键约束失败。
     session.flush()
 
-    for group_name, image_asset in (
-        ("full_body_asset", character.full_body_asset or ImageAsset()),
-        ("three_view_asset", character.three_view_asset or ImageAsset()),
-        ("headshot_asset", character.headshot_asset or ImageAsset()),
-    ):
+    for group_name in ("full_body_asset", "three_view_asset", "headshot_asset"):
+        image_asset = _legacy_character_asset(character, group_name)
+        unit_type = CHARACTER_LEGACY_ASSET_TO_UNIT[group_name]
+        unit = getattr(character, unit_type, None) or AssetUnit()
+        # 新结构和 legacy 容器会在运行时共享同一批 ImageVariant；如果两边都入库，
+        # PostgreSQL 会因为 image_variants.id 是全局主键而产生重复键冲突。
+        # 因此当对应 AssetUnit 已经承载图片时，只持久化 unit 这一份记录。
+        if unit.image_variants:
+            continue
         for variant in image_asset.variants:
             session.merge(_image_variant_record("character", character.id, group_name, variant, tenant))
 

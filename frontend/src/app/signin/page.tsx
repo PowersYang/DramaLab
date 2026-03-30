@@ -1,5 +1,5 @@
-import AuthEntryPage from "@/components/site/AuthEntryPage";
+import AuthEntryPageWrapper from "@/components/site/AuthEntryPageWrapper";
 
 export default function SignInPage() {
-  return <AuthEntryPage mode="signin" />;
+  return <AuthEntryPageWrapper mode="signin" />;
 }

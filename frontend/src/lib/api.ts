@@ -16,8 +16,10 @@ const getApiUrl = (): string => {
             // 开发态默认直连后端，避免 Next dev 代理在长耗时接口（如 reparse）上提前断开连接。
             // 这里优先跟随当前页面主机名，避免前端从 localhost 打开、后端却固定请求 127.0.0.1，
             // 导致验证码登录成功后 cookie 因站点不一致无法在 /auth/me 阶段带回去。
-            // 如果确实需要继续走代理，可显式设置 NEXT_PUBLIC_USE_DEV_PROXY=true。
-            if (process.env.NEXT_PUBLIC_USE_DEV_PROXY === "true") {
+            // 但如果当前页面本身不是直接跑在 3000/3001，而是通过反向代理暴露（例如测试服 :15678 -> Next dev :3000），
+            // 浏览器通常无法直接访问 :17177，此时必须退回 Next dev 自带的 /api-proxy 转发。
+            // 如果确实需要继续强制走代理，也可显式设置 NEXT_PUBLIC_USE_DEV_PROXY=true。
+            if (process.env.NEXT_PUBLIC_USE_DEV_PROXY === "true" || (port !== "3000" && port !== "3001")) {
                 return "/api-proxy";
             }
             return `${protocol}//${hostname}:17177`;

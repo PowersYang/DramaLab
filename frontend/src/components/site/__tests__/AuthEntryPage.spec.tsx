@@ -62,4 +62,24 @@ describe("AuthEntryPage", () => {
       });
     });
   });
+
+  it("shows a clear SMTP configuration error when email delivery is unavailable", async () => {
+    mockSendEmailCode.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        data: {
+          detail: "Email delivery is not configured. Set SMTP config or enable AUTH_EXPOSE_TEST_CODE for testing.",
+        },
+      },
+    });
+
+    render(<AuthEntryPage mode="signin" />);
+
+    fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "577790911@qq.com" } });
+    fireEvent.click(screen.getByText("发送登录验证码"));
+
+    await waitFor(() => {
+      expect(screen.getByText("当前环境还没有配置验证码邮件发送，请先补齐 SMTP 配置后再登录。")).toBeInTheDocument();
+    });
+  });
 });

@@ -66,11 +66,6 @@ class ProjectService:
             logger.warning("PROJECT_SERVICE: reparse_project target missing script_id=%s", script_id)
             raise ValueError("Script not found")
 
-        if (existing.original_text or "") == (text or ""):
-            # 文本未变化时直接复用现有聚合，避免重复触发远程 LLM 提取造成长时间阻塞。
-            logger.info("PROJECT_SERVICE: reparse_project skipped script_id=%s reason=text_unchanged", script_id)
-            return existing
-
         reparsed = self.text_provider.parse_novel(existing.title, text)
         # 重新解析时只替换结构化内容，保留标识、租户占位字段和用户已编辑配置。
         reparsed.id = existing.id

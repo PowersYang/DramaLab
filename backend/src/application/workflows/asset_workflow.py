@@ -544,16 +544,10 @@ class AssetWorkflow:
         generated_videos = []
 
         if asset_type in ["full_body", "head_shot"]:
-            # 角色动作参考挂在 AssetUnit 的视频候选上，这样能和普通资产视频分开选择。
-            asset_unit = getattr(asset, asset_type, None)
-            if asset_unit and asset_unit.selected_image_id:
-                source_image = next(
-                    (item for item in asset_unit.image_variants if item.id == asset_unit.selected_image_id),
-                    None,
-                )
-                source_image_url = source_image.url if source_image else None
-            else:
-                source_image_url = asset.full_body_image_url if asset_type == "full_body" else asset.headshot_image_url
+            # 角色动作参考优先复用 AssetUnit 选中的静态图；
+            # 如果历史数据只有 legacy URL/selected_id，没有对应 image_variants 记录，
+            # 这里要回退到 legacy 字段，否则前端明明已有主图也会被误判为“无源图”。
+            source_image_url = self._resolve_character_motion_source_image(asset, asset_type)
 
             if not prompt:
                 prompt = f"{asset_type.replace('_', ' ').title()} character reference video. {asset.description}. Looking around, breathing, slight movement, subtle gestures. Stable camera, high quality, 4k."
@@ -619,6 +613,21 @@ class AssetWorkflow:
 
         project.updated_at = utc_now()
         self.project_repository.save(project)
+
+    def _resolve_character_motion_source_image(self, asset, asset_type: str) -> str | None:
+        """为角色动作参考解析最稳妥的源图地址。"""
+        asset_unit = getattr(asset, asset_type, None)
+        if asset_unit and asset_unit.selected_image_id and asset_unit.image_variants:
+            source_image = next(
+                (item for item in asset_unit.image_variants if item.id == asset_unit.selected_image_id),
+                None,
+            )
+            if source_image and source_image.url:
+                return source_image.url
+
+        if asset_type == "full_body":
+            return asset.full_body_image_url or asset.image_url
+        return asset.headshot_image_url or asset.avatar_url
 
     def _build_style_prompts(
         self,

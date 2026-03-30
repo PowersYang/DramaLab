@@ -211,6 +211,59 @@ class RepositoryPersistenceTest(unittest.TestCase):
         self.assertEqual(repository.list_by_owner("project", "project_child_1"), [])
         self.assertIsNotNone(repository.get("project", "project_child_1", "char_child_1", include_deleted=True))
 
+    def test_project_repository_avoids_duplicate_image_variant_rows_when_character_legacy_and_unit_share_ids(self):
+        from src.db.models import ImageVariantRecord
+        from src.db.session import get_session_factory
+        from src.repository import ProjectRepository
+        from src.schemas.models import AssetUnit, Character, ImageAsset, ImageVariant, Script
+
+        now = utc_now()
+        shared_variant = ImageVariant(
+            id="shared_img_variant_1",
+            url="oss://shared-character",
+            created_at=now,
+        )
+        project = Script(
+            id="project_shared_variant_1",
+            title="Shared Variant Project",
+            original_text="text",
+            characters=[
+                Character(
+                    id="char_shared_1",
+                    name="Hero",
+                    description="lead",
+                    full_body=AssetUnit(
+                        selected_image_id=shared_variant.id,
+                        image_variants=[shared_variant.model_copy(deep=True)],
+                    ),
+                    full_body_asset=ImageAsset(
+                        selected_id=shared_variant.id,
+                        variants=[shared_variant.model_copy(deep=True)],
+                    ),
+                )
+            ],
+            scenes=[],
+            props=[],
+            frames=[],
+            video_tasks=[],
+            created_at=now,
+            updated_at=now,
+        )
+
+        repository = ProjectRepository()
+        repository.sync([project])
+        loaded = repository.get("project_shared_variant_1")
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded.characters), 1)
+        self.assertEqual(loaded.characters[0].full_body.selected_image_id, "shared_img_variant_1")
+
+        SessionFactory = get_session_factory()
+        with SessionFactory() as session:
+            rows = session.query(ImageVariantRecord).filter(ImageVariantRecord.id == "shared_img_variant_1").all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].owner_type, "character_asset_unit")
+
     def test_child_repositories_support_independent_frame_and_task_crud(self):
         from src.repository import ProjectRepository, StoryboardFrameRepository, VideoTaskRepository
         from src.schemas.models import ImageAsset, ImageVariant, Script, StoryboardFrame, VideoTask

@@ -185,6 +185,57 @@ class TaskWorkerRecoveryTest(unittest.TestCase):
         self.assertIsNotNone(executor.observed_heartbeat_at)
         self.assertGreater(executor.observed_heartbeat_at, executor.observed_started_at)
 
+    def test_worker_periodically_recovers_stale_jobs_while_running(self):
+        from src.application.tasks import TaskService
+        from src.schemas.task_models import TaskAttempt, TaskJob, TaskStatus
+        from src.worker.task_worker import TaskWorker
+
+        service = TaskService()
+        stale_at = utc_now() - timedelta(minutes=5)
+        job = TaskJob(
+            id="job_periodic_recover",
+            task_type="storyboard.analyze",
+            status=TaskStatus.RUNNING,
+            queue_name="llm",
+            max_attempts=1,
+            attempt_count=1,
+            timeout_seconds=600,
+            created_at=stale_at,
+            updated_at=stale_at,
+            scheduled_at=stale_at,
+            claimed_at=stale_at,
+            started_at=stale_at,
+            heartbeat_at=stale_at,
+            worker_id="worker-old",
+        )
+        service.task_job_repository.create(job)
+        service.task_attempt_repository.create(
+            TaskAttempt(
+                id="attempt_periodic_recover",
+                job_id=job.id,
+                attempt_no=1,
+                worker_id="worker-old",
+                started_at=stale_at,
+                created_at=stale_at,
+                updated_at=stale_at,
+            )
+        )
+
+        worker = TaskWorker(
+            queues=["llm"],
+            heartbeat_interval=0.05,
+            stale_after_seconds=60,
+            recovery_check_interval=0.01,
+        )
+        worker.task_service = service
+        worker._last_recovery_check = 0.0
+
+        worker._recover_stale_jobs_if_needed()
+
+        updated = service.get_job(job.id)
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.status, TaskStatus.TIMED_OUT)
+
 
 if __name__ == "__main__":
     unittest.main()
