@@ -251,6 +251,30 @@ class ModelSettings(BaseModel):
     storyboard_aspect_ratio: str = Field("16:9", description="分镜素材的宽高比（9:16、16:9、1:1）")
 
 
+class CaptchaChallenge(BaseModel):
+    id: str
+    code_hash: str
+    expires_at: datetime
+    consumed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CaptchaChallengePayload(BaseModel):
+    captcha_id: str
+    image_svg: str
+    expires_in_seconds: int
+    debug_code: Optional[str] = None
+
+
+class AuthRateLimitEntry(BaseModel):
+    id: str
+    action: str
+    scope_type: str
+    scope_key: str
+    created_at: datetime
+
+
 class StylePreset(BaseModel):
     """数据库中的风格预设定义。"""
     id: str = Field(..., description="风格预设唯一标识")
@@ -386,6 +410,8 @@ class User(BaseModel):
     phone: Optional[str] = Field(None, description="手机号")
     display_name: Optional[str] = Field(None, description="显示名称")
     auth_provider: str = Field("email_otp", description="认证提供方")
+    password_hash: Optional[str] = Field(None, description="密码哈希，仅服务端内部使用", exclude=True)
+    user_art_styles: List[Dict[str, Any]] = Field(default_factory=list, description="用户级自定义美术风格库")
     platform_role: Optional[str] = Field(None, description="平台级角色")
     status: str = Field("active", description="用户状态")
     last_login_at: Optional[datetime] = Field(None, description="最后登录时间")
@@ -414,6 +440,93 @@ class Membership(BaseModel):
     user_id: str = Field(..., description="用户 ID")
     role_id: Optional[str] = Field(None, description="角色 ID")
     status: str = Field("active", description="成员关系状态")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class BillingAccount(BaseModel):
+    """组织级算力豆账本。"""
+
+    id: str = Field(..., description="账本唯一标识")
+    organization_id: Optional[str] = Field(None, description="所属组织 ID")
+    workspace_id: Optional[str] = Field(None, description="默认工作区 ID")
+    owner_type: str = Field("organization", description="账本所有者类型")
+    owner_id: Optional[str] = Field(None, description="账本所有者 ID")
+    status: str = Field("active", description="账本状态")
+    currency: str = Field("CNY", description="货币单位")
+    balance_credits: int = Field(0, description="当前算力豆余额")
+    total_recharged_cents: int = Field(0, description="累计充值金额，单位分")
+    total_credited: int = Field(0, description="累计入账算力豆")
+    total_bonus_credits: int = Field(0, description="累计赠送算力豆")
+    total_consumed_credits: int = Field(0, description="累计消耗算力豆")
+    pricing_version: Optional[str] = Field(None, description="当前价格规则版本")
+    billing_email: Optional[str] = Field(None, description="账单通知邮箱")
+    billing_metadata: Dict[str, Any] = Field(default_factory=dict, description="额外账务元数据")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class BillingTransaction(BaseModel):
+    """账务流水；所有扣费、充值、赠送、补扣都必须落这里。"""
+
+    id: str = Field(..., description="流水唯一标识")
+    billing_account_id: str = Field(..., description="所属账本 ID")
+    organization_id: Optional[str] = Field(None, description="所属组织 ID")
+    workspace_id: Optional[str] = Field(None, description="所属工作区 ID")
+    transaction_type: str = Field(..., description="流水类型")
+    direction: str = Field(..., description="入账或出账方向")
+    amount_credits: int = Field(..., description="本次变动的算力豆数量")
+    balance_before: int = Field(..., description="变动前余额")
+    balance_after: int = Field(..., description="变动后余额")
+    cash_amount_cents: Optional[int] = Field(None, description="关联充值金额，单位分")
+    related_type: Optional[str] = Field(None, description="关联对象类型")
+    related_id: Optional[str] = Field(None, description="关联对象 ID")
+    task_type: Optional[str] = Field(None, description="任务类型")
+    rule_snapshot_json: Dict[str, Any] = Field(default_factory=dict, description="命中的价格或赠送规则快照")
+    remark: Optional[str] = Field(None, description="备注")
+    operator_user_id: Optional[str] = Field(None, description="操作人")
+    operator_source: str = Field("system", description="操作来源")
+    idempotency_key: Optional[str] = Field(None, description="幂等键")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class BillingPricingRule(BaseModel):
+    """平台或组织级任务定价规则。"""
+
+    id: str = Field(..., description="规则唯一标识")
+    scope_type: str = Field("platform", description="作用域类型")
+    organization_id: Optional[str] = Field(None, description="组织级覆写时的组织 ID")
+    task_type: str = Field(..., description="任务类型编码")
+    charge_mode: str = Field("fixed", description="计费模式")
+    price_credits: int = Field(..., description="固定扣费豆数")
+    status: str = Field("active", description="规则状态")
+    effective_from: datetime = Field(default_factory=utc_now, description="生效开始时间")
+    effective_to: Optional[datetime] = Field(None, description="生效结束时间")
+    description: Optional[str] = Field(None, description="规则说明")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class BillingRechargeBonusRule(BaseModel):
+    """充值赠送规则。"""
+
+    id: str = Field(..., description="赠送规则唯一标识")
+    scope_type: str = Field("platform", description="作用域类型")
+    organization_id: Optional[str] = Field(None, description="组织级覆写时的组织 ID")
+    min_recharge_cents: int = Field(..., description="最小充值金额，单位分")
+    max_recharge_cents: Optional[int] = Field(None, description="最大充值金额，单位分")
+    bonus_credits: int = Field(..., description="赠送算力豆数量")
+    status: str = Field("active", description="规则状态")
+    effective_from: datetime = Field(default_factory=utc_now, description="生效开始时间")
+    effective_to: Optional[datetime] = Field(None, description="生效结束时间")
+    description: Optional[str] = Field(None, description="规则说明")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
     created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
 
@@ -477,6 +590,32 @@ class AvailableModelCatalog(BaseModel):
     t2i: List[ModelCatalogEntry] = Field(default_factory=list, description="可用文生图模型")
     i2i: List[ModelCatalogEntry] = Field(default_factory=list, description="可用图生图模型")
     i2v: List[ModelCatalogEntry] = Field(default_factory=list, description="可用图生视频模型")
+
+
+class TaskConcurrencyTaskTypeOption(BaseModel):
+    """可配置并发限制的任务类型选项。"""
+
+    task_type: str = Field(..., description="任务类型编码")
+    label: str = Field(..., description="任务类型展示名称")
+
+
+class TaskConcurrencyLimit(BaseModel):
+    """组织级任务并发限制配置。"""
+
+    id: str = Field(..., description="并发限制记录 ID")
+    organization_id: str = Field(..., description="所属组织 ID")
+    task_type: str = Field(..., description="任务类型编码")
+    max_concurrency: int = Field(1, description="允许同时执行的最大并发数；0 表示暂停该类型任务执行")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class TaskConcurrencyLimitSummary(TaskConcurrencyLimit):
+    """带组织名称的并发限制视图。"""
+
+    organization_name: Optional[str] = Field(None, description="组织名称")
 
 
 class VerificationCode(BaseModel):

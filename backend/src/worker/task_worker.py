@@ -46,7 +46,7 @@ class TaskWorker:
         while not self._stop_event.is_set():
             self._recover_stale_jobs_if_needed()
             try:
-                jobs = self.task_service.task_job_repository.claim_next_jobs(
+                jobs = self.task_service.claim_next_jobs(
                     queue_names=self.queues,
                     limit=1,
                     worker_id=self.worker_id,

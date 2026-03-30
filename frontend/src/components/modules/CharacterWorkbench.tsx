@@ -1,15 +1,77 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { X, RefreshCw, Check, Image as ImageIcon, Lock, Video, Sparkles, Eye } from "lucide-react";
 import { api } from "@/lib/api";
 
-import { VariantSelector } from "../common/VariantSelector";
-import { VideoVariantSelector } from "../common/VideoVariantSelector";
 import { useProjectStore } from "@/store/projectStore";
 import { Image as PhotoIcon } from "lucide-react";
 import { getAssetUrl } from "@/lib/utils";
+
+type PanelKey = "full_body" | "three_view" | "headshot";
+
+const DEFAULT_NEGATIVE_PROMPT = "low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, jpeg artifacts, signature, watermark, blurry";
+const LATEST_BATCH_WINDOW_MS = 5000;
+const CANDIDATE_GRID_CLASS: Record<number, string> = {
+    1: "grid-cols-1",
+    2: "grid-cols-2",
+    3: "grid-cols-3",
+    4: "grid-cols-4",
+};
+
+const parseVariantTime = (value: string | number | undefined | null) => {
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? value : 0;
+    }
+    if (typeof value === "string") {
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+};
+
+// 通过时间窗口和提示词近似识别“最后一次生成”的那一批候选图。
+const getLatestBatchVariants = <T extends { created_at?: string | number; prompt_used?: string | null }>(variants: T[]) => {
+    if (!Array.isArray(variants) || variants.length === 0) {
+        return [];
+    }
+
+    const sortedVariants = [...variants].sort((a, b) => parseVariantTime(b.created_at) - parseVariantTime(a.created_at));
+    const latestTime = parseVariantTime(sortedVariants[0]?.created_at);
+    const latestPrompt = sortedVariants[0]?.prompt_used || "";
+
+    return sortedVariants.filter((variant, index) => {
+        if (index === 0) {
+            return true;
+        }
+        const delta = Math.abs(latestTime - parseVariantTime(variant.created_at));
+        if (delta > LATEST_BATCH_WINDOW_MS) {
+            return false;
+        }
+        if (latestPrompt && variant.prompt_used && variant.prompt_used !== latestPrompt) {
+            return false;
+        }
+        return true;
+    }).slice(0, 4);
+};
+
+const getAspectRatioCardClass = (aspectRatio: string) => {
+    switch (aspectRatio) {
+        case "16:9":
+            return "aspect-video";
+        case "1:1":
+            return "aspect-square";
+        case "9:16":
+        default:
+            return "aspect-[9/16]";
+    }
+};
+
+const getCandidateGridClass = (count: number) => {
+    const safeCount = Math.min(Math.max(count, 1), 4);
+    return CANDIDATE_GRID_CLASS[safeCount];
+};
 
 
 interface CharacterWorkbenchProps {
@@ -26,7 +88,7 @@ interface CharacterWorkbenchProps {
 }
 
 export default function CharacterWorkbench({ asset, onClose, onUpdateDescription, onGenerate, generatingTypes = [], stylePrompt = "", styleNegativePrompt = "", onGenerateVideo, onDeleteVideo, isGeneratingVideo }: CharacterWorkbenchProps) {
-    const [activePanel, setActivePanel] = useState<"full_body" | "three_view" | "headshot" | "video">("full_body");
+    const [activePanel, setActivePanel] = useState<PanelKey>("full_body");
     const updateProject = useProjectStore(state => state.updateProject);
     const currentProject = useProjectStore(state => state.currentProject);
 
@@ -45,6 +107,8 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
     // Motion Ref generation state
     const [isVideoLoading, setIsVideoLoading] = useState(false);
+    const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
+    const [optimisticSelectedIds, setOptimisticSelectedIds] = useState<Partial<Record<PanelKey, string>>>({});
 
 
     // === Reverse Generation: Detect uploaded images ===
@@ -88,7 +152,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     // New State for Style Control
     const [applyStyle, setApplyStyle] = useState(true);
     // User's own negative prompt (initially empty or with sensible defaults)
-    const [negativePrompt, setNegativePrompt] = useState("low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, jpeg artifacts, signature, watermark, blurry");
+    const [negativePrompt, setNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
     // Art Direction Style expanded state (collapsed by default to save space)
     const [showStyleExpanded, setShowStyleExpanded] = useState(false);
 
@@ -209,6 +273,16 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         }
     }, [asset.name, asset.description]);
 
+    useEffect(() => {
+        setOptimisticSelectedIds({});
+    }, [asset.id]);
+
+    useEffect(() => {
+        if (styleNegativePrompt && (!negativePrompt || negativePrompt === DEFAULT_NEGATIVE_PROMPT)) {
+            setNegativePrompt(styleNegativePrompt);
+        }
+    }, [styleNegativePrompt]);
+
     const handleResetMotionPrompt = (type: 'full_body' | 'headshot') => {
         const hasAudio = type === 'full_body' ? !!fullBodyAudioUrl : !!headshotAudioUrl;
         const defaultPrompt = getMotionDefault(type, hasAudio);
@@ -258,36 +332,20 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         return task ? { isGenerating: true, batchSize: task.batchSize || 1 } : { isGenerating: false, batchSize: 1 };
     };
 
-    const handleSelectVariant = async (type: "full_body" | "three_view" | "headshot", variantId: string) => {
+    const handleSelectVariant = async (type: PanelKey, variantId: string) => {
         if (!currentProject) return;
+        setOptimisticSelectedIds((current) => ({ ...current, [type]: variantId }));
 
         try {
             const updatedProject = await api.selectAssetVariant(currentProject.id, asset.id, "character", variantId, type);
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to select variant:", error);
-        }
-    };
-
-    const handleDeleteVariant = async (type: "full_body" | "three_view" | "headshot", variantId: string) => {
-        if (!currentProject) return;
-
-        try {
-            const updatedProject = await api.deleteAssetVariant(currentProject.id, asset.id, "character", variantId);
-            updateProject(currentProject.id, updatedProject);
-        } catch (error) {
-            console.error("Failed to delete variant:", error);
-        }
-    };
-
-    const handleFavoriteVariant = async (type: "full_body" | "three_view" | "headshot", variantId: string, isFavorited: boolean) => {
-        if (!currentProject) return;
-
-        try {
-            const updatedProject = await api.favoriteAssetVariant(currentProject.id, asset.id, "character", variantId, isFavorited, type);
-            updateProject(currentProject.id, updatedProject);
-        } catch (error) {
-            console.error("Failed to favorite variant:", error);
+            setOptimisticSelectedIds((current) => {
+                const next = { ...current };
+                delete next[type];
+                return next;
+            });
         }
     };
 
@@ -308,7 +366,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         },
         {
             key: "three_view" as const,
-            title: "三视图",
+            title: "三视角",
             subtitle: "正侧背结构参考",
             hint: "适合控制角色服装和体态在多视角下的一致性。",
             icon: Sparkles,
@@ -321,7 +379,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         },
         {
             key: "headshot" as const,
-            title: "头像特写",
+            title: "头像",
             subtitle: "面部细节与表情参考",
             hint: "更适合锁定五官、妆容和近景表情特征。",
             icon: Eye,
@@ -379,7 +437,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         else handleGenerateClick("headshot", headshotBatchSize);
     };
 
-    const resolvePanelAsset = (legacyAsset: any, unitAsset: any) => {
+    const resolvePanelAsset = (legacyAsset: any, unitAsset: any, legacyUrl?: string, fallbackVariantId?: string) => {
         const legacyVariants = Array.isArray(legacyAsset?.variants) ? legacyAsset.variants : [];
         const unitVariants = Array.isArray(unitAsset?.image_variants) ? unitAsset.image_variants : [];
         const mergedVariantsById = new Map<string, any>();
@@ -397,26 +455,49 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
             return timeB - timeA;
         });
 
+        if (mergedVariants.length === 0 && legacyUrl) {
+            mergedVariants.push({
+                id: legacyAsset?.selected_id || unitAsset?.selected_image_id || fallbackVariantId || `${asset.id}-legacy`,
+                url: legacyUrl,
+                created_at: asset.updated_at || asset.created_at || Date.now(),
+            });
+        }
+
         return {
             selected_id: legacyAsset?.selected_id || unitAsset?.selected_image_id || mergedVariants[0]?.id || null,
             variants: mergedVariants,
         };
     };
 
-    const fullBodyPanelAsset = resolvePanelAsset(asset.full_body_asset, asset.full_body);
-    const threeViewPanelAsset = resolvePanelAsset(asset.three_view_asset, asset.three_views);
-    const headshotPanelAsset = resolvePanelAsset(asset.headshot_asset, asset.head_shot);
+    const fullBodyPanelAsset = resolvePanelAsset(asset.full_body_asset, asset.full_body, asset.full_body_image_url, `${asset.id}-full-body-legacy`);
+    const threeViewPanelAsset = resolvePanelAsset(asset.three_view_asset, asset.three_views, asset.three_view_image_url, `${asset.id}-three-view-legacy`);
+    const headshotPanelAsset = resolvePanelAsset(asset.headshot_asset, asset.head_shot, asset.headshot_image_url || asset.avatar_url, `${asset.id}-headshot-legacy`);
 
-    const getPanelSelectedUrl = (panelKey: "full_body" | "three_view" | "headshot") => {
+    const getPanelAsset = (panelKey: PanelKey) => {
+        if (panelKey === "full_body") return fullBodyPanelAsset;
+        if (panelKey === "three_view") return threeViewPanelAsset;
+        return headshotPanelAsset;
+    };
+
+    const getPanelSelectedVariantId = (panelKey: PanelKey) => {
+        const panelAsset = getPanelAsset(panelKey);
+        const optimisticSelectedId = optimisticSelectedIds[panelKey];
+        if (optimisticSelectedId && panelAsset.variants?.some((variant: any) => variant.id === optimisticSelectedId)) {
+            return optimisticSelectedId;
+        }
+        return panelAsset.selected_id;
+    };
+
+    const getPanelSelectedUrl = (panelKey: PanelKey) => {
         if (panelKey === "full_body") {
-            const selected = fullBodyPanelAsset.variants?.find((variant: any) => variant.id === fullBodyPanelAsset.selected_id);
+            const selected = fullBodyPanelAsset.variants?.find((variant: any) => variant.id === getPanelSelectedVariantId("full_body"));
             return getAssetUrl(selected?.url || asset.full_body_image_url);
         }
         if (panelKey === "three_view") {
-            const selected = threeViewPanelAsset.variants?.find((variant: any) => variant.id === threeViewPanelAsset.selected_id);
+            const selected = threeViewPanelAsset.variants?.find((variant: any) => variant.id === getPanelSelectedVariantId("three_view"));
             return getAssetUrl(selected?.url || asset.three_view_image_url);
         }
-        const selected = headshotPanelAsset.variants?.find((variant: any) => variant.id === headshotPanelAsset.selected_id);
+        const selected = headshotPanelAsset.variants?.find((variant: any) => variant.id === getPanelSelectedVariantId("headshot"));
         return getAssetUrl(selected?.url || asset.headshot_image_url || asset.avatar_url);
     };
 
@@ -428,7 +509,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="asset-surface-strong asset-workbench-shell border border-white/10 rounded-2xl w-full max-w-[1500px] h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+                className="asset-surface-strong asset-workbench-shell relative border border-white/10 rounded-2xl w-full max-w-[1500px] h-[90vh] flex flex-col overflow-hidden shadow-2xl"
             >
                 <div className="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-black/20">
                     <div className="flex items-center gap-4">
@@ -448,10 +529,10 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                     </button>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] overflow-hidden">
+                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
                     <aside className="asset-workbench-sidebar border-r border-white/10 overflow-hidden">
-                        <div className="flex h-full flex-col gap-4 p-4">
-                            <div className="grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 min-w-0">
+                        <div className="flex h-full flex-col">
+                            <div className="grid grid-cols-3 border-b border-white/10">
                                 {panelConfigs.map((panel, index) => {
                                     const isActive = panel.key === activePanel;
                                     return (
@@ -459,31 +540,40 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                             key={panel.key}
                                             type="button"
                                             onClick={() => setActivePanel(panel.key)}
-                                            className={`asset-workbench-tab flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 transition-colors ${isActive
-                                                ? 'asset-workbench-toggle-active text-white'
-                                                : 'text-gray-400 hover:text-white'
+                                            className={`asset-workbench-tab flex min-w-0 items-center justify-start gap-1.5 border-r border-white/10 px-4 py-3 text-sm font-medium transition-colors last:border-r-0 ${isActive
+                                                ? "asset-workbench-toggle-active text-white"
+                                                : "text-gray-300 hover:bg-white/5 hover:text-white"
                                                 }`}
                                         >
-                                            <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-extrabold ${isActive ? 'bg-white text-black' : 'bg-white/10 text-white'}`}>{index + 1}</span>
-                                            <span className="truncate text-[13px] font-bold">{panel.title}</span>
+                                            <span className="shrink-0 text-xs font-semibold text-gray-400">{index + 1}</span>
+                                            <span className="whitespace-nowrap">{panel.title}</span>
                                         </button>
                                     );
                                 })}
                             </div>
 
-                            <div className="relative flex-1 overflow-hidden rounded-[1.85rem] bg-white/[0.03] p-4">
-                                {activeSelectedImageUrl ? (
-                                    <img
-                                        src={activeSelectedImageUrl}
-                                        alt="当前绑定图片"
-                                        className="h-full w-full object-contain"
-                                    />
-                                ) : (
-                                    <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-gray-500">
-                                        <PhotoIcon size={28} className="opacity-50" />
-                                        <span className="text-sm">暂未绑定图片</span>
-                                    </div>
-                                )}
+                            <div className="flex-1 p-5">
+                                <div className="flex h-full min-h-0 flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] p-4">
+                                    {activeSelectedImageUrl ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setZoomedImageUrl(activeSelectedImageUrl)}
+                                            className="h-full w-full overflow-hidden rounded-[1.4rem] bg-black/20"
+                                            title="点击放大查看"
+                                        >
+                                            <img
+                                                src={activeSelectedImageUrl}
+                                                alt="当前选中的图片"
+                                                className="h-full w-full object-contain"
+                                            />
+                                        </button>
+                                    ) : (
+                                        <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-gray-500">
+                                            <PhotoIcon size={28} className="opacity-50" />
+                                            <span className="text-sm">暂未选中图片</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </aside>
@@ -496,8 +586,8 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                         type="button"
                                         onClick={() => handleActiveModeChange("static")}
                                         className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] transition-colors ${activeMode === "static"
-                                            ? "asset-workbench-toggle-active"
-                                            : "text-gray-400 hover:text-white"
+                                            ? "border border-cyan-400/25 bg-cyan-400/15 text-cyan-100"
+                                            : "text-gray-400 hover:bg-white/5 hover:text-white"
                                             }`}
                                     >
                                         <PhotoIcon size={12} />
@@ -508,9 +598,9 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                         onClick={() => supportsActiveMotion && handleActiveModeChange("motion")}
                                         disabled={!supportsActiveMotion}
                                         className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] transition-colors ${activeMode === "motion"
-                                            ? "asset-workbench-toggle-active"
+                                            ? "border border-amber-400/25 bg-amber-400/15 text-amber-100"
                                             : supportsActiveMotion
-                                                ? "text-gray-400 hover:text-white"
+                                                ? "text-gray-400 hover:bg-white/5 hover:text-white"
                                                 : "text-gray-600 cursor-not-allowed"
                                             }`}
                                     >
@@ -521,7 +611,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                                 {activeMode === "static" && (
                                     <div className="flex items-center gap-3">
-                                        <div className="variant-selector-batch flex items-center gap-1 rounded-xl p-1 bg-black/20">
+                                        <div className="variant-selector-batch flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
                                             {[1, 2, 3, 4].map((size) => {
                                                 return (
                                                     <button
@@ -529,8 +619,8 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                                         type="button"
                                                         onClick={() => setActiveBatchSize(size)}
                                                         className={`px-3 py-1.5 text-[11px] rounded-lg transition-colors ${activeBatchSize === size
-                                                            ? "bg-blue-600 text-white"
-                                                            : "text-gray-400 hover:text-white hover:bg-white/5"
+                                                            ? "bg-white text-slate-950"
+                                                            : "text-gray-300 hover:bg-white/5 hover:text-white"
                                                             }`}
                                                     >
                                                         x{size}
@@ -552,7 +642,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                                     ? getGeneratingInfo("three_view").isGenerating
                                                     : getGeneratingInfo("headshot").isGenerating)
                                                 ? "bg-white/5 text-gray-400 cursor-not-allowed"
-                                                : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20"
+                                                : "bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow-lg shadow-emerald-500/20"
                                                 }`}
                                         >
                                             <PhotoIcon size={11} />
@@ -567,13 +657,12 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                             {activePanel === "full_body" && (
                                 <WorkbenchPanel
                                     asset={fullBodyPanelAsset}
-                                    currentImageUrl={asset.full_body_image_url}
+                                    selectedVariantId={getPanelSelectedVariantId("full_body")}
                                     onSelect={(id: string) => handleSelectVariant("full_body", id)}
-                                    onDelete={(id: string) => handleDeleteVariant("full_body", id)}
-                                    onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("full_body", id, isFav)}
                                     prompt={fullBodyPrompt}
                                     setPrompt={setFullBodyPrompt}
-                                    onGenerate={(batchSize: number) => handleGenerateClick("full_body", batchSize)}
+                                    negativePrompt={negativePrompt}
+                                    setNegativePrompt={setNegativePrompt}
                                     isGenerating={getGeneratingInfo("full_body").isGenerating}
                                     generatingBatchSize={getGeneratingInfo("full_body").batchSize}
                                     aspectRatio="9:16"
@@ -581,7 +670,6 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                     reverseReferenceUrl={getUploadedReferenceUrl()}
                                     supportsMotion={true}
                                     mode={fullBodyMode}
-                                    hasStaticImage={!!asset.full_body_image_url || (asset.full_body_asset?.variants?.length > 0)}
                                     motionRefVideos={asset.full_body?.video_variants || []}
                                     onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('full_body', prompt, audioUrl)}
                                     isGeneratingMotion={generatingTypes.some(t => t.type === "video_full_body")}
@@ -593,43 +681,42 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                     isVideoLoading={isVideoLoading}
                                     setIsVideoLoading={setIsVideoLoading}
                                     onResetPrompt={() => handleResetMotionPrompt('full_body')}
+                                    onZoomImage={setZoomedImageUrl}
                                 />
                             )}
 
                             {activePanel === "three_view" && (
                                 <WorkbenchPanel
                                     asset={threeViewPanelAsset}
-                                    currentImageUrl={asset.three_view_image_url}
+                                    selectedVariantId={getPanelSelectedVariantId("three_view")}
                                     onSelect={(id: string) => handleSelectVariant("three_view", id)}
-                                    onDelete={(id: string) => handleDeleteVariant("three_view", id)}
-                                    onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("three_view", id, isFav)}
                                     prompt={threeViewPrompt}
                                     setPrompt={setThreeViewPrompt}
-                                    onGenerate={(batchSize: number) => handleGenerateClick("three_view", batchSize)}
+                                    negativePrompt={negativePrompt}
+                                    setNegativePrompt={setNegativePrompt}
                                     isGenerating={getGeneratingInfo("three_view").isGenerating}
                                     generatingBatchSize={getGeneratingInfo("three_view").batchSize}
                                     isLocked={!asset.full_body_image_url && !hasAnyUpload}
                                     aspectRatio="16:9"
+                                    onZoomImage={setZoomedImageUrl}
                                 />
                             )}
 
                             {activePanel === "headshot" && (
                                 <WorkbenchPanel
                                     asset={headshotPanelAsset}
-                                    currentImageUrl={asset.headshot_image_url || asset.avatar_url}
+                                    selectedVariantId={getPanelSelectedVariantId("headshot")}
                                     onSelect={(id: string) => handleSelectVariant("headshot", id)}
-                                    onDelete={(id: string) => handleDeleteVariant("headshot", id)}
-                                    onFavorite={(id: string, isFav: boolean) => handleFavoriteVariant("headshot", id, isFav)}
                                     prompt={headshotPrompt}
                                     setPrompt={setHeadshotPrompt}
-                                    onGenerate={(batchSize: number) => handleGenerateClick("headshot", batchSize)}
+                                    negativePrompt={negativePrompt}
+                                    setNegativePrompt={setNegativePrompt}
                                     isGenerating={getGeneratingInfo("headshot").isGenerating}
                                     generatingBatchSize={getGeneratingInfo("headshot").batchSize}
                                     isLocked={!asset.full_body_image_url && !hasAnyUpload}
                                     aspectRatio="1:1"
                                     supportsMotion={true}
                                     mode={headshotMode}
-                                    hasStaticImage={!!asset.headshot_image_url || (asset.headshot_asset?.variants?.length > 0)}
                                     motionRefVideos={asset.head_shot?.video_variants || []}
                                     onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('head_shot', prompt, audioUrl)}
                                     isGeneratingMotion={generatingTypes.some(t => t.type === "video_head_shot")}
@@ -641,11 +728,32 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                     isVideoLoading={isVideoLoading}
                                     setIsVideoLoading={setIsVideoLoading}
                                     onResetPrompt={() => handleResetMotionPrompt('headshot')}
+                                    onZoomImage={setZoomedImageUrl}
                                 />
                             )}
                         </div>
                     </div>
                 </div>
+
+                {zoomedImageUrl && (
+                    <div
+                        className="absolute inset-0 z-[60] flex items-center justify-center bg-black/85 p-6"
+                        onClick={() => setZoomedImageUrl(null)}
+                    >
+                        <button
+                            type="button"
+                            onClick={() => setZoomedImageUrl(null)}
+                            className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white transition hover:bg-white/20"
+                        >
+                            <X size={20} />
+                        </button>
+                        <img
+                            src={zoomedImageUrl}
+                            alt="放大预览"
+                            className="max-h-full max-w-full object-contain"
+                        />
+                    </div>
+                )}
             </motion.div>
         </div>
     );
@@ -653,28 +761,19 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
 function WorkbenchPanel({
     asset,
-    currentImageUrl,
+    selectedVariantId,
     onSelect,
-    onDelete,
-    onFavorite,
-
     prompt,
     setPrompt,
-    onGenerate,
+    negativePrompt,
+    setNegativePrompt,
     isGenerating,
     generatingBatchSize,
     isLocked,
     aspectRatio = "9:16",
-    // Video specific
-    isVideo = false,
-    videos,
-    onDeleteVideo,
-    onGenerateVideo,
-
     // Motion Ref Mode (Asset Activation v2)
     supportsMotion = false,
     mode = 'static',  // 'static' | 'motion'
-    hasStaticImage = false,
     motionRefVideos = [],
     onGenerateMotionRef,
     isGeneratingMotion = false,
@@ -688,196 +787,259 @@ function WorkbenchPanel({
     onResetPrompt,
     // Reverse Generation Props
     reverseGenerationMode = false,
-    reverseReferenceUrl = null
+    reverseReferenceUrl = null,
+    onZoomImage,
 }: any) {
+    const latestVariants = getLatestBatchVariants(Array.isArray(asset?.variants) ? asset.variants : []);
+    const aspectRatioClass = getAspectRatioCardClass(aspectRatio);
+
     return (
         <div className="h-full overflow-y-auto">
-            <div className="grid h-full min-w-0 grid-cols-1 grid-rows-[6fr_4fr] gap-4 p-4">
-                <div className="asset-workbench-stage relative min-h-0 overflow-hidden rounded-3xl">
-                        {isLocked && (
-                            <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center text-center p-6">
-                                <div className="text-gray-500 flex flex-col items-center gap-2">
-                                    <Lock size={32} />
-                                    <span className="text-sm">请先完成主素材，再继续当前板块</span>
-                                </div>
+            <div className="grid h-full min-w-0 grid-cols-1 gap-4 p-4">
+                <div className="asset-workbench-stage relative min-h-0 overflow-hidden rounded-3xl p-4">
+                    {isLocked && (
+                        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-6 text-center">
+                            <div className="flex flex-col items-center gap-2 text-gray-500">
+                                <Lock size={32} />
+                                <span className="text-sm">请先完成主素材，再继续当前板块</span>
                             </div>
-                        )}
+                        </div>
+                    )}
 
                     {reverseGenerationMode && (
-                            <div className="absolute inset-x-5 top-5 z-10 rounded-2xl border border-primary/30 bg-black/70 p-4 backdrop-blur-md">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                                        <RefreshCw size={18} />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <div className="text-sm font-semibold text-white">检测到已上传参考图</div>
-                                        <p className="mt-1 text-xs text-gray-400">可以基于现有上传图继续反推完整主素材，不需要重头开始。</p>
-                                    </div>
-                                    {reverseReferenceUrl && (
-                                        <img
-                                            src={typeof reverseReferenceUrl === 'string' && reverseReferenceUrl.startsWith('http')
-                                                ? reverseReferenceUrl
-                                                : `${window.location.origin}/${reverseReferenceUrl}`}
-                                            alt="Reference"
-                                            className="h-14 w-14 rounded-xl object-cover border border-white/20"
-                                        />
-                                    )}
+                        <div className="absolute inset-x-5 top-5 z-10 rounded-2xl border border-primary/30 bg-black/70 p-4 backdrop-blur-md">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                                    <RefreshCw size={18} />
                                 </div>
-                            </div>
-                        )}
-
-                    <div className="h-full overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-700">
-                        {mode === 'motion' && supportsMotion ? (
-                            <div className="flex h-full flex-col gap-4">
-                                <div className="h-full rounded-2xl bg-black/20 p-3">
-                                    <div className={`relative w-full ${aspectRatio === '9:16' ? 'aspect-[9/16] max-h-[40vh]' : aspectRatio === '1:1' ? 'aspect-square max-h-[35vh]' : 'aspect-video'} rounded-xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-black shadow-xl backdrop-blur-sm`}>
-                                        {isGeneratingMotion ? (
-                                            <div className="absolute inset-0 z-10 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center gap-4">
-                                                <div className="relative">
-                                                    <RefreshCw size={48} className="text-purple-400 animate-spin" />
-                                                    <div className="absolute inset-0 blur-xl bg-purple-500/30 animate-pulse"></div>
-                                                </div>
-                                                <div className="flex flex-col items-center">
-                                                    <span className="text-sm font-bold text-white tracking-widest animate-pulse">正在生成视频</span>
-                                                    <span className="text-[10px] text-purple-300/60 mt-1">AI 正在处理动态内容...</span>
-                                                </div>
-                                            </div>
-                                        ) : isVideoLoading && motionRefVideos?.length > 0 ? (
-                                            <div className="absolute inset-0 z-10 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
-                                                <RefreshCw size={32} className="text-gray-400 animate-spin" />
-                                                <span className="text-xs text-gray-400 font-medium">正在加载视频文件...</span>
-                                            </div>
-                                        ) : null}
-
-                                        {motionRefVideos?.length > 0 ? (
-                                            <video
-                                                key={motionRefVideos[motionRefVideos.length - 1]?.url}
-                                                src={getAssetUrl(motionRefVideos[motionRefVideos.length - 1]?.url)}
-                                                onCanPlay={() => setIsVideoLoading(false)}
-                                                onLoadStart={() => setIsVideoLoading(true)}
-                                                className="w-full h-full object-contain"
-                                                controls
-                                                loop
-                                                autoPlay
-                                                muted
-                                            />
-                                        ) : !isGeneratingMotion && (
-                                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-2">
-                                                <Video size={40} className="opacity-50" />
-                                                <span className="text-sm">暂无动态参考</span>
-                                                <span className="text-xs opacity-70">可在下方生成</span>
-                                            </div>
-                                        )}
-                                    </div>
+                                <div className="min-w-0">
+                                    <div className="text-sm font-semibold text-white">检测到已上传参考图</div>
+                                    <p className="mt-1 text-xs text-gray-400">可以基于现有上传图继续反推完整主素材，不需要重头开始。</p>
                                 </div>
-                            </div>
-                        ) : isVideo ? (
-                            <VideoVariantSelector
-                                videos={videos}
-                                onDelete={onDeleteVideo}
-                                onGenerate={onGenerateVideo}
-                                isGenerating={isGenerating}
-                                aspectRatio={aspectRatio}
-                                className="h-full"
-                            />
-                        ) : (
-                            <VariantSelector
-                                asset={asset}
-                                currentImageUrl={currentImageUrl}
-                                onSelect={onSelect}
-                                onDelete={onDelete}
-                                onFavorite={onFavorite}
-                                    onGenerate={onGenerate}
-                                    isGenerating={isGenerating}
-                                generatingBatchSize={generatingBatchSize}
-                                aspectRatio={aspectRatio}
-                                className="h-full"
-                                showGenerateControls={false}
-                                showMainViewer={false}
-                                showFilmstripArrows={false}
-                            />
-                        )}
-                    </div>
-                </div>
-
-                <aside className="asset-workbench-inspector min-h-0 rounded-3xl overflow-hidden">
-                    <div className="flex h-full flex-col gap-3 overflow-y-auto p-4">
-                        {mode === "motion" && supportsMotion && (
-                            <div className="rounded-2xl bg-black/20 p-3">
-                                <label className="text-xs font-semibold text-gray-300 mb-2 block">音频文件</label>
-                                <label className={`asset-workbench-upload flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-dashed cursor-pointer transition-all ${audioUrl
-                                    ? 'border-green-500/50 bg-green-500/10 text-green-400'
-                                    : 'border-white/15 hover:border-white/25 text-gray-400'
-                                    }`}>
-                                    <input
-                                        type="file"
-                                        accept="audio/*"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) onAudioUpload?.(file);
-                                        }}
-                                        disabled={isUploadingAudio}
+                                {reverseReferenceUrl && (
+                                    <img
+                                        src={typeof reverseReferenceUrl === 'string' && reverseReferenceUrl.startsWith('http')
+                                            ? reverseReferenceUrl
+                                            : `${window.location.origin}/${reverseReferenceUrl}`}
+                                        alt="Reference"
+                                        className="h-14 w-14 rounded-xl border border-white/20 object-cover"
                                     />
-                                    {isUploadingAudio ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary/30 border-t-primary"></div>
-                                            <span className="text-xs">上传中...</span>
-                                        </>
-                                    ) : audioUrl ? (
-                                        <>
-                                            <Check size={14} />
-                                            <span className="text-xs font-medium">音频已上传</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ImageIcon size={14} />
-                                            <span className="text-xs">上传音频</span>
-                                        </>
-                                    )}
-                                </label>
-                            </div>
-                        )}
-
-                        <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-black/20 p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                                <span className="text-xs font-semibold text-gray-300">{mode === "motion" ? "动态视频提示词" : "生成图片提示词"}</span>
-                                {mode === "motion" && (
-                                    <button
-                                        onClick={() => onResetPrompt?.()}
-                                        className="text-[10px] text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
-                                        title="恢复推荐提示词"
-                                    >
-                                        <RefreshCw size={10} />
-                                        重置
-                                    </button>
                                 )}
                             </div>
-                            <textarea
-                                value={mode === "motion" ? motionPrompt : prompt}
-                                onChange={(e) => mode === "motion" ? setMotionPrompt?.(e.target.value) : setPrompt(e.target.value)}
-                                disabled={isLocked}
-                                className="asset-workbench-textarea min-h-0 flex-1 w-full rounded-none border-0 bg-transparent p-0 text-xs resize-none focus:outline-none font-mono leading-relaxed shadow-none"
-                                placeholder={mode === "motion" ? "请输入动态视频提示词..." : "请输入图片生成提示词..."}
-                            />
                         </div>
+                    )}
 
-                        {mode === "motion" && supportsMotion && (
+                    {mode === "motion" && supportsMotion ? (
+                        <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
+                            <div className={`relative flex min-h-[320px] items-center justify-center overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/20 p-4 ${aspectRatioClass}`}>
+                                {isGeneratingMotion ? (
+                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/60 backdrop-blur-md">
+                                        <div className="relative">
+                                            <RefreshCw size={48} className="animate-spin text-amber-300" />
+                                            <div className="absolute inset-0 animate-pulse bg-amber-400/20 blur-xl"></div>
+                                        </div>
+                                        <div className="flex flex-col items-center">
+                                            <span className="text-sm font-bold tracking-widest text-white">正在生成视频</span>
+                                            <span className="mt-1 text-[10px] text-amber-100/70">AI 正在处理动态内容...</span>
+                                        </div>
+                                    </div>
+                                ) : isVideoLoading && motionRefVideos?.length > 0 ? (
+                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-sm">
+                                        <RefreshCw size={32} className="animate-spin text-gray-300" />
+                                        <span className="text-xs font-medium text-gray-300">正在加载视频文件...</span>
+                                    </div>
+                                ) : null}
+
+                                {motionRefVideos?.length > 0 ? (
+                                    <video
+                                        key={motionRefVideos[motionRefVideos.length - 1]?.url}
+                                        src={getAssetUrl(motionRefVideos[motionRefVideos.length - 1]?.url)}
+                                        onCanPlay={() => setIsVideoLoading(false)}
+                                        onLoadStart={() => setIsVideoLoading(true)}
+                                        className="h-full w-full object-contain"
+                                        controls
+                                        loop
+                                        autoPlay
+                                        muted
+                                    />
+                                ) : !isGeneratingMotion && (
+                                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500">
+                                        <Video size={40} className="opacity-50" />
+                                        <span className="text-sm">暂无动态参考</span>
+                                        <span className="text-xs opacity-70">可在下方生成</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
+                                <div className="asset-workbench-inspector rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+                                    <label className="mb-3 block text-xs font-semibold text-gray-300">音频文件</label>
+                                    <label className={`asset-workbench-upload flex min-h-[160px] cursor-pointer items-center justify-center gap-2 rounded-[1.25rem] border border-dashed px-3 py-3 transition-all ${audioUrl
+                                        ? 'border-green-500/50 bg-green-500/10 text-green-400'
+                                        : 'border-white/15 hover:border-white/25 text-gray-400'
+                                        }`}>
+                                        <input
+                                            type="file"
+                                            accept="audio/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) onAudioUpload?.(file);
+                                            }}
+                                            disabled={isUploadingAudio}
+                                        />
+                                        {isUploadingAudio ? (
+                                            <>
+                                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary"></div>
+                                                <span className="text-xs">上传中...</span>
+                                            </>
+                                        ) : audioUrl ? (
+                                            <>
+                                                <Check size={14} />
+                                                <span className="text-xs font-medium">音频已上传</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <ImageIcon size={14} />
+                                                <span className="text-xs">上传音频</span>
+                                            </>
+                                        )}
+                                    </label>
+                                </div>
+
+                                <PromptField
+                                    label="动态视频提示词"
+                                    value={motionPrompt}
+                                    onChange={(value: string) => setMotionPrompt?.(value)}
+                                    placeholder="请输入动态视频提示词..."
+                                    disabled={isLocked}
+                                    action={(
+                                        <button
+                                            type="button"
+                                            onClick={() => onResetPrompt?.()}
+                                            className="flex items-center gap-1 text-[10px] text-primary transition-colors hover:text-primary/80"
+                                            title="恢复推荐提示词"
+                                        >
+                                            <RefreshCw size={10} />
+                                            重置
+                                        </button>
+                                    )}
+                                />
+                            </div>
+
                             <button
                                 onClick={() => onGenerateMotionRef?.(motionPrompt, audioUrl)}
                                 disabled={isGeneratingMotion}
                                 className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${isGeneratingMotion
                                     ? 'bg-white/5 text-gray-500 cursor-not-allowed'
-                                    : 'bg-primary hover:bg-primary/90 text-white shadow-lg'
+                                    : 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-lg shadow-amber-500/20'
                                     }`}
                             >
                                 <Video size={16} />
                                 生成动态视频
                             </button>
-                        )}
-                    </div>
-                </aside>
+                        </div>
+                    ) : (
+                        <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
+                            <div className="relative">
+                                {latestVariants.length > 0 ? (
+                                    <div className={`grid gap-4 ${getCandidateGridClass(latestVariants.length)}`}>
+                                        {latestVariants.map((variant: any, index: number) => {
+                                            const imageUrl = getAssetUrl(variant.url);
+                                            const isSelected = selectedVariantId === variant.id;
+                                            return (
+                                                <button
+                                                    key={variant.id}
+                                                    type="button"
+                                                    onClick={() => onSelect(variant.id)}
+                                                    onDoubleClick={() => onZoomImage?.(imageUrl)}
+                                                    className={`group flex min-w-0 flex-col overflow-hidden rounded-[1.5rem] border bg-black/15 text-left transition-all ${isSelected
+                                                        ? 'border-cyan-400/60 shadow-[0_0_0_1px_rgba(34,211,238,0.22)]'
+                                                        : 'border-white/10 hover:border-white/20'
+                                                        }`}
+                                                    title="单击设为当前图片，双击放大查看"
+                                                >
+                                                    <div className={`relative w-full ${aspectRatioClass} overflow-hidden bg-black/20`}>
+                                                        <img
+                                                            src={imageUrl}
+                                                            alt={`候选图${index + 1}`}
+                                                            className="h-full w-full object-contain"
+                                                        />
+                                                    </div>
+                                                    <div className="border-t border-white/10 px-3 py-2 text-center text-xs text-gray-300">
+                                                        候选图{index + 1}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="flex min-h-[260px] items-center justify-center rounded-[1.5rem] border border-dashed border-white/12 bg-white/[0.03] text-sm text-gray-500">
+                                        暂无候选图
+                                    </div>
+                                )}
+
+                                {isGenerating && (
+                                    <div className="variant-selector-loading absolute inset-0 z-10 flex items-center justify-center rounded-[1.5rem] bg-black/45 backdrop-blur-sm">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="variant-selector-spinner h-10 w-10 animate-spin rounded-full border-b-2"></div>
+                                            <span className="font-medium text-white">正在生成 {generatingBatchSize} 个候选版本...</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <PromptField
+                                label="正向提示词"
+                                value={prompt}
+                                onChange={setPrompt}
+                                placeholder="请输入正向提示词..."
+                                disabled={isLocked}
+                            />
+
+                            <PromptField
+                                label="负向提示词"
+                                value={negativePrompt}
+                                onChange={setNegativePrompt}
+                                placeholder="请输入负向提示词..."
+                                disabled={isLocked}
+                            />
+                        </div>
+                    )}
+                </div>
             </div>
+        </div>
+    );
+}
+
+function PromptField({
+    label,
+    value,
+    onChange,
+    placeholder,
+    disabled,
+    action,
+}: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    placeholder: string;
+    disabled?: boolean;
+    action?: ReactNode;
+}) {
+    return (
+        <div className="asset-workbench-inspector rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-gray-300">{label}</span>
+                {action}
+            </div>
+            <textarea
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                disabled={disabled}
+                className="asset-workbench-textarea min-h-[160px] w-full resize-none rounded-[1.25rem] border border-white/10 bg-black/10 px-4 py-3 text-sm leading-relaxed text-white shadow-none outline-none focus:border-white/20"
+                placeholder={placeholder}
+            />
         </div>
     );
 }

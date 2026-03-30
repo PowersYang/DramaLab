@@ -40,6 +40,10 @@ const STUDIO_SHELL_META: Record<string, { title: string; description: string }> 
     title: "模型配置",
     description: "通过表格统一管理平台级模型供应商、模型目录以及前台可见范围。",
   },
+  "/studio/task-concurrency": {
+    title: "任务并发管理",
+    description: "按组织和任务类型配置平台总并发上限，让超额任务自动留在队列中等待执行位。",
+  },
   "/studio/settings": {
     title: "工作台设置",
     description: "根据当前角色收敛账号、工作区与管理员配置边界。",

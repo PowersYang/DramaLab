@@ -1,5 +1,7 @@
 """平台级模型目录仓储。"""
 
+from __future__ import annotations
+
 from ..db.models import ModelCatalogEntryRecord
 from ..schemas.models import ModelCatalogEntry
 from ..utils.datetime import utc_now
@@ -75,6 +77,21 @@ class ModelCatalogEntryRepository(BaseRepository[ModelCatalogEntry]):
                     setattr(record, key, value)
             record.updated_at = utc_now()
             return _to_domain(record)
+
+    def set_enabled_by_provider(self, provider_key: str, enabled: bool, updated_by: str | None = None) -> list[ModelCatalogEntry]:
+        """按供应商批量更新模型启停状态，保证供应商停用时模型目录与之保持一致。"""
+        with self._with_session() as session:
+            records = (
+                session.query(ModelCatalogEntryRecord)
+                .filter(ModelCatalogEntryRecord.provider_key == provider_key)
+                .all()
+            )
+            now = utc_now()
+            for record in records:
+                record.enabled = enabled
+                record.updated_by = updated_by
+                record.updated_at = now
+            return [_to_domain(record) for record in records]
 
     def delete(self, model_id: str) -> None:
         """删除模型目录项。"""

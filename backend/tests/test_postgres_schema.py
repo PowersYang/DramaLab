@@ -45,6 +45,56 @@ class PostgresStorageConfigurationTest(unittest.TestCase):
             )
             override_env_path_for_tests(None)
 
+    def test_configure_postgres_connection_sets_search_path_and_beijing_timezone(self):
+        from src.db.session import _configure_postgres_connection
+
+        statements: list[str] = []
+
+        class _FakeCursor:
+            def execute(self, sql: str) -> None:
+                statements.append(sql)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConnection:
+            def cursor(self):
+                return _FakeCursor()
+
+        _configure_postgres_connection(_FakeConnection(), schema="duanju_dev")
+        self.assertEqual(
+            statements,
+            [
+                'SET search_path TO "duanju_dev", public',
+                "SET TIME ZONE 'Asia/Shanghai'",
+            ],
+        )
+
+    def test_configure_postgres_connection_sets_beijing_timezone_without_schema(self):
+        from src.db.session import _configure_postgres_connection
+
+        statements: list[str] = []
+
+        class _FakeCursor:
+            def execute(self, sql: str) -> None:
+                statements.append(sql)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConnection:
+            def cursor(self):
+                return _FakeCursor()
+
+        _configure_postgres_connection(_FakeConnection(), schema=None)
+        self.assertEqual(statements, ["SET TIME ZONE 'Asia/Shanghai'"])
+
 
 class PostgresSchemaSqlTest(unittest.TestCase):
     def test_schema_sql_uses_varchar_primary_keys_and_jsonb(self):

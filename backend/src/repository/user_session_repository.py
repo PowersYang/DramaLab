@@ -70,6 +70,20 @@ class UserSessionRepository(BaseRepository[UserSession]):
             record.updated_at = record.revoked_at
             return _to_user_session(record)
 
+    def revoke_all_for_user(self, user_id: str, *, except_session_id: str | None = None) -> None:
+        with self._with_session() as session:
+            query = session.query(UserSessionRecord).filter(UserSessionRecord.user_id == user_id, UserSessionRecord.revoked_at.is_(None))
+            if except_session_id:
+                query = query.filter(UserSessionRecord.id != except_session_id)
+            now = utc_now()
+            query.update(
+                {
+                    UserSessionRecord.revoked_at: now,
+                    UserSessionRecord.updated_at: now,
+                },
+                synchronize_session=False,
+            )
+
     def list_map(self):
         return {}
 

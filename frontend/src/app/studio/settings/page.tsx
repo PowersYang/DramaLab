@@ -10,6 +10,7 @@ export default function StudioSettingsRoutePage() {
   const me = useAuthStore((state) => state.me);
   const hasCapability = useAuthStore((state) => state.hasCapability);
   const bootstrapAuth = useAuthStore((state) => state.bootstrapAuth);
+  const changePassword = useAuthStore((state) => state.changePassword);
   const canManageOrganization = hasCapability("org.manage") || me?.current_role_code === "individual_creator";
 
   const currentWorkspace = me?.workspaces.find((item) => item.workspace_id === me.current_workspace_id);
@@ -19,6 +20,9 @@ export default function StudioSettingsRoutePage() {
   const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
   const hasOrganizationChanges = organizationName.trim() !== (currentWorkspace?.organization_name || "").trim();
   const hasWorkspaceChanges = workspaceName.trim() !== (currentWorkspace?.workspace_name || "").trim();
 
@@ -44,6 +48,45 @@ export default function StudioSettingsRoutePage() {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
             <div className="font-semibold text-slate-900">当前角色</div>
             <div className="mt-1">{me?.current_role_name || me?.current_role_code || "未分配"}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="font-semibold text-slate-900">修改密码</div>
+            <p className="mt-1 text-xs leading-6 text-slate-500">已有老账号如果还没主动设置过密码，可以先使用初始密码 123456 登录后再修改。</p>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              placeholder="当前密码"
+              className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            />
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="新密码，至少 6 位"
+              className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            />
+            <button
+              disabled={!currentPassword.trim() || !newPassword.trim() || savingPassword}
+              onClick={async () => {
+                try {
+                  setError(null);
+                  setMessage(null);
+                  setSavingPassword(true);
+                  await changePassword({ currentPassword, newPassword });
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setMessage("密码已更新");
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "密码修改失败");
+                } finally {
+                  setSavingPassword(false);
+                }
+              }}
+              className="mt-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+            >
+              {savingPassword ? "保存中..." : "更新密码"}
+            </button>
           </div>
         </div>
       </section>

@@ -4,7 +4,10 @@ import uuid
 from datetime import timedelta, timezone
 
 from ...common.log import get_logger
+from ...db.session import session_scope
 from ...repository import ProjectRepository, TaskAttemptRepository, TaskEventRepository, TaskJobRepository, VideoTaskRepository
+from ..services.billing_service import BillingService
+from ..services.task_concurrency_service import TaskConcurrencyService
 from ...schemas.models import VideoTask
 from ...schemas.task_models import TaskAttempt, TaskEvent, TaskJob, TaskReceipt, TaskStatus, TaskType
 from ...utils.datetime import utc_now
@@ -27,6 +30,8 @@ class TaskService:
         self.task_job_repository = TaskJobRepository()
         self.task_attempt_repository = TaskAttemptRepository()
         self.task_event_repository = TaskEventRepository()
+        self.task_concurrency_service = TaskConcurrencyService()
+        self.billing_service = BillingService()
 
     def create_video_generation_job(
         self,
@@ -79,31 +84,39 @@ class TaskService:
             created_at=utc_now(),
             updated_at=utc_now(),
         )
-        self.task_job_repository.create(job)
-        video_task.source_job_id = job.id
-        self.video_task_repository.save(video_task)
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job.id,
-                organization_id=job.organization_id,
-                workspace_id=job.workspace_id,
-                created_by=job.created_by,
-                updated_by=job.updated_by,
-                event_type="job.created",
-                to_status=job.status,
-                progress=0,
-                message="Video generation job queued",
-                event_payload_json={
-                    "task_type": task_type,
-                    "resource_type": resource_type,
-                    "resource_id": resource_id,
-                    "source_video_task_id": video_task.id,
-                },
-                created_at=utc_now(),
-                updated_at=utc_now(),
+        with session_scope() as session:
+            self.billing_service.charge_task_submission(
+                job=job,
+                actor_id=job.created_by,
+                idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
+                session=session,
             )
-        )
+            self.task_job_repository.create(job, session=session)
+            video_task.source_job_id = job.id
+            self.video_task_repository.save(video_task, session=session)
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job.id,
+                    organization_id=job.organization_id,
+                    workspace_id=job.workspace_id,
+                    created_by=job.created_by,
+                    updated_by=job.updated_by,
+                    event_type="job.created",
+                    to_status=job.status,
+                    progress=0,
+                    message="Video generation job queued",
+                    event_payload_json={
+                        "task_type": task_type,
+                        "resource_type": resource_type,
+                        "resource_id": resource_id,
+                        "source_video_task_id": video_task.id,
+                    },
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                ),
+                session=session,
+            )
         logger.info(
             "TASK_SERVICE: create_video_generation_job job_id=%s task_type=%s project_id=%s source_video_task_id=%s",
             job.id,
@@ -168,28 +181,36 @@ class TaskService:
             created_at=now,
             updated_at=now,
         )
-        self.task_job_repository.create(job)
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job.id,
-                organization_id=job.organization_id,
-                workspace_id=job.workspace_id,
-                created_by=job.created_by,
-                updated_by=job.updated_by,
-                event_type="job.created",
-                to_status=job.status,
-                progress=0,
-                message=f"{task_type} queued",
-                event_payload_json={
-                    "task_type": task_type,
-                    "resource_type": resource_type,
-                    "resource_id": resource_id,
-                },
-                created_at=now,
-                updated_at=now,
+        with session_scope() as session:
+            self.billing_service.charge_task_submission(
+                job=job,
+                actor_id=job.created_by,
+                idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
+                session=session,
             )
-        )
+            self.task_job_repository.create(job, session=session)
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job.id,
+                    organization_id=job.organization_id,
+                    workspace_id=job.workspace_id,
+                    created_by=job.created_by,
+                    updated_by=job.updated_by,
+                    event_type="job.created",
+                    to_status=job.status,
+                    progress=0,
+                    message=f"{task_type} queued",
+                    event_payload_json={
+                        "task_type": task_type,
+                        "resource_type": resource_type,
+                        "resource_id": resource_id,
+                    },
+                    created_at=now,
+                    updated_at=now,
+                ),
+                session=session,
+            )
         logger.info("TASK_SERVICE: create_job job_id=%s task_type=%s project_id=%s series_id=%s", job.id, task_type, project_id, series_id)
         return self._to_receipt(job)
 
@@ -216,6 +237,15 @@ class TaskService:
 
     def get_job(self, job_id: str) -> TaskJob | None:
         return self.task_job_repository.get(job_id)
+
+    def claim_next_jobs(self, queue_names: list[str], limit: int, worker_id: str) -> list[TaskJob]:
+        """按组织级任务并发限制认领下一批可执行任务。"""
+        return self.task_job_repository.claim_next_jobs(
+            queue_names=queue_names,
+            limit=limit,
+            worker_id=worker_id,
+            concurrency_limits=self.task_concurrency_service.get_limit_map(),
+        )
 
     def get_job_by_idempotency_key(self, idempotency_key: str) -> TaskJob | None:
         return self.task_job_repository.get_by_idempotency_key(idempotency_key)
@@ -597,6 +627,10 @@ class TaskService:
         digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
         scope = dedupe_scope or resource_id or "project"
         return f"{task_type}:{project_id}:{scope}:{digest}"
+
+    def _build_charge_idempotency_key(self, *, idempotency_key: str | None, dedupe_key: str) -> str:
+        # 中文注释：扣费幂等必须至少绑定到 dedupe_key，避免多实例同时处理同一活动任务时重复扣豆。
+        return f"task_charge:{idempotency_key}" if idempotency_key else f"task_charge:{dedupe_key}"
 
     def _to_receipt(self, job: TaskJob, source_video_task_id: str | None = None) -> TaskReceipt:
         return TaskReceipt(

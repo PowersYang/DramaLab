@@ -36,6 +36,7 @@ class AuthApiTest(unittest.TestCase):
         Base.metadata.drop_all(bind=engine)
         init_database()
         AuthService().ensure_default_roles()
+        AuthService().ensure_existing_users_have_initial_password()
 
         from src.api.auth import router as auth_router
         from src.api.project import router as project_router
@@ -65,7 +66,8 @@ class AuthApiTest(unittest.TestCase):
         organization_name: str | None = None,
         purpose: str = "signup",
     ):
-        send_result = self.client.post("/auth/email-code/send", json={"email": email, "purpose": purpose})
+        captcha = self._captcha_payload()
+        send_result = self.client.post("/auth/email-code/send", json={"email": email, "purpose": purpose, **captcha})
         self.assertEqual(send_result.status_code, 200)
         debug_code = send_result.json()["debug_code"]
         verify_result = self.client.post(
@@ -82,6 +84,39 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(verify_result.status_code, 200)
         return verify_result.json()
 
+    def _login_phone(
+        self,
+        phone: str,
+        display_name: str | None = None,
+        purpose: str = "signup",
+    ):
+        captcha = self._captcha_payload()
+        send_result = self.client.post("/auth/email-code/send", json={"target": phone, "channel": "phone", "purpose": purpose, **captcha})
+        self.assertEqual(send_result.status_code, 200)
+        debug_code = send_result.json()["debug_code"]
+        verify_result = self.client.post(
+            "/auth/email-code/verify",
+            json={
+                "target": phone,
+                "channel": "phone",
+                "code": debug_code,
+                "purpose": purpose,
+                "display_name": display_name,
+            },
+        )
+        self.assertEqual(verify_result.status_code, 200)
+        return verify_result.json()
+
+    def _captcha_payload(self, client: TestClient | None = None):
+        resolved_client = client or self.client
+        captcha_result = resolved_client.get("/auth/captcha")
+        self.assertEqual(captcha_result.status_code, 200)
+        payload = captcha_result.json()
+        return {
+            "captcha_id": payload["captcha_id"],
+            "captcha_code": payload["debug_code"],
+        }
+
     def test_email_signin_creates_personal_workspace_and_session(self):
         payload = self._login("creator@example.com", "Creator")
         me = payload["me"]
@@ -92,6 +127,14 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(me["workspaces"][0]["workspace_name"], "默认工作区")
         self.assertIn("project.create", me["capabilities"])
         self.assertIn("dramalab_refresh_token", self.client.cookies)
+
+    def test_phone_code_signup_creates_personal_workspace_and_session(self):
+        payload = self._login_phone("13800138000", "Phone Creator")
+        me = payload["me"]
+
+        self.assertEqual(me["user"]["phone"], "13800138000")
+        self.assertEqual(me["current_role_code"], "individual_creator")
+        self.assertEqual(len(me["workspaces"]), 1)
 
     def test_authenticated_project_routes_are_scoped_to_current_workspace(self):
         login_payload = self._login("alice@example.com", "Alice")
@@ -111,7 +154,10 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(list_result.json()[0]["title"], "Alice Draft")
 
         second_client = TestClient(self.app)
-        second_send = second_client.post("/auth/email-code/send", json={"email": "bob@example.com", "purpose": "signup"}).json()
+        second_send = second_client.post(
+            "/auth/email-code/send",
+            json={"email": "bob@example.com", "purpose": "signup", **self._captcha_payload(second_client)},
+        ).json()
         second_login = second_client.post(
             "/auth/email-code/verify",
             json={"email": "bob@example.com", "code": second_send["debug_code"], "purpose": "signup", "display_name": "Bob"},
@@ -133,7 +179,7 @@ class AuthApiTest(unittest.TestCase):
         self.assertIn("access_token", refreshed["session"])
 
     def test_signin_requires_existing_account(self):
-        send_result = self.client.post("/auth/email-code/send", json={"email": "missing@example.com", "purpose": "signin"})
+        send_result = self.client.post("/auth/email-code/send", json={"email": "missing@example.com", "purpose": "signin", **self._captcha_payload()})
         self.assertEqual(send_result.status_code, 200)
         debug_code = send_result.json()["debug_code"]
 
@@ -144,19 +190,262 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(verify_result.status_code, 400)
         self.assertEqual(verify_result.json()["detail"], "Account not found, please sign up first")
 
+    def test_password_signup_creates_session_and_workspace(self):
+        signup_result = self.client.post(
+            "/auth/password/signup",
+            json={
+                "email": "password-user@example.com",
+                "password": "strong-pass-123",
+                **self._captcha_payload(),
+                "display_name": "Password User",
+                "signup_kind": "individual_creator",
+            },
+        )
+        self.assertEqual(signup_result.status_code, 200)
+        payload = signup_result.json()
+        self.assertEqual(payload["me"]["user"]["email"], "password-user@example.com")
+        self.assertEqual(payload["me"]["user"]["auth_provider"], "email_password")
+        self.assertIn("access_token", payload["session"])
+        self.assertIn("dramalab_refresh_token", self.client.cookies)
+
+    def test_password_signin_works_for_existing_password_account(self):
+        signup_result = self.client.post(
+            "/auth/password/signup",
+            json={
+                "email": "password-login@example.com",
+                "password": "strong-pass-123",
+                **self._captcha_payload(),
+                "display_name": "Password Login",
+            },
+        )
+        self.assertEqual(signup_result.status_code, 200)
+
+        signin_client = TestClient(self.app)
+        signin_result = signin_client.post(
+            "/auth/password/signin",
+            json={
+                "email": "password-login@example.com",
+                "password": "strong-pass-123",
+                **self._captcha_payload(signin_client),
+            },
+        )
+        self.assertEqual(signin_result.status_code, 200)
+        payload = signin_result.json()
+        self.assertEqual(payload["me"]["user"]["email"], "password-login@example.com")
+        self.assertIn("dramalab_refresh_token", signin_client.cookies)
+
+    def test_password_signin_rejects_wrong_password(self):
+        self.client.post(
+            "/auth/password/signup",
+            json={
+                "email": "password-wrong@example.com",
+                "password": "strong-pass-123",
+                **self._captcha_payload(),
+                "display_name": "Wrong Password",
+            },
+        )
+        signin_result = self.client.post(
+            "/auth/password/signin",
+            json={
+                "email": "password-wrong@example.com",
+                "password": "bad-pass-123",
+                **self._captcha_payload(),
+            },
+        )
+        self.assertEqual(signin_result.status_code, 400)
+        self.assertEqual(signin_result.json()["detail"], "Email or password is incorrect")
+
+    def test_phone_password_signup_and_signin_work(self):
+        signup_result = self.client.post(
+            "/auth/password/signup",
+            json={
+                "identifier": "13800138001",
+                "channel": "phone",
+                "password": "strong-pass-123",
+                **self._captcha_payload(),
+                "display_name": "Phone Login",
+            },
+        )
+        self.assertEqual(signup_result.status_code, 200)
+        self.assertEqual(signup_result.json()["me"]["user"]["phone"], "13800138001")
+
+        signin_result = self.client.post(
+            "/auth/password/signin",
+            json={
+                "identifier": "13800138001",
+                "channel": "phone",
+                "password": "strong-pass-123",
+                **self._captcha_payload(),
+            },
+        )
+        self.assertEqual(signin_result.status_code, 200)
+
+    def test_phone_reset_password_with_code_signs_user_in(self):
+        self.client.post(
+            "/auth/password/signup",
+            json={
+                "identifier": "13800138002",
+                "channel": "phone",
+                "password": "123456",
+                **self._captcha_payload(),
+                "display_name": "Phone Reset",
+            },
+        )
+        send_result = self.client.post(
+            "/auth/email-code/send",
+            json={"target": "13800138002", "channel": "phone", "purpose": "reset_password", **self._captcha_payload()},
+        )
+        self.assertEqual(send_result.status_code, 200)
+        debug_code = send_result.json()["debug_code"]
+
+        reset_result = self.client.post(
+            "/auth/password/reset",
+            json={
+                "identifier": "13800138002",
+                "channel": "phone",
+                "code": debug_code,
+                "new_password": "654321",
+                **self._captcha_payload(),
+            },
+        )
+        self.assertEqual(reset_result.status_code, 200)
+
+    def test_password_signup_rejects_short_password(self):
+        signup_result = self.client.post(
+            "/auth/password/signup",
+            json={
+                "email": "short-pass@example.com",
+                "password": "12345",
+                **self._captcha_payload(),
+                "display_name": "Short Pass",
+            },
+        )
+        self.assertEqual(signup_result.status_code, 400)
+        self.assertEqual(signup_result.json()["detail"], "Password must be at least 6 characters")
+
+    def test_existing_email_code_user_receives_default_initial_password(self):
+        self._login("otp-user@example.com", "Otp User")
+
+        from src.application.services import AuthService
+
+        AuthService().ensure_existing_users_have_initial_password()
+        signin_result = self.client.post(
+            "/auth/password/signin",
+            json={
+                "email": "otp-user@example.com",
+                "password": "123456",
+                **self._captcha_payload(),
+            },
+        )
+        self.assertEqual(signin_result.status_code, 200)
+
+    def test_reset_password_with_email_code_signs_user_in(self):
+        self.client.post(
+            "/auth/password/signup",
+            json={
+                "email": "reset-user@example.com",
+                "password": "123456",
+                **self._captcha_payload(),
+                "display_name": "Reset User",
+            },
+        )
+        send_result = self.client.post(
+            "/auth/email-code/send",
+            json={"email": "reset-user@example.com", "purpose": "reset_password", **self._captcha_payload()},
+        )
+        self.assertEqual(send_result.status_code, 200)
+        debug_code = send_result.json()["debug_code"]
+
+        reset_result = self.client.post(
+            "/auth/password/reset",
+            json={
+                "email": "reset-user@example.com",
+                "code": debug_code,
+                "new_password": "654321",
+                **self._captcha_payload(),
+            },
+        )
+        self.assertEqual(reset_result.status_code, 200)
+        self.assertEqual(reset_result.json()["me"]["user"]["email"], "reset-user@example.com")
+
+        signin_result = self.client.post(
+            "/auth/password/signin",
+            json={
+                "email": "reset-user@example.com",
+                "password": "654321",
+                **self._captcha_payload(),
+            },
+        )
+        self.assertEqual(signin_result.status_code, 200)
+
+    def test_change_password_updates_credentials_for_authenticated_user(self):
+        signup_result = self.client.post(
+            "/auth/password/signup",
+            json={
+                "email": "change-user@example.com",
+                "password": "123456",
+                **self._captcha_payload(),
+                "display_name": "Change User",
+            },
+        )
+        access_token = signup_result.json()["session"]["access_token"]
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        change_result = self.client.post(
+            "/auth/password/change",
+            json={
+                "current_password": "123456",
+                "new_password": "654321",
+            },
+            headers=headers,
+        )
+        self.assertEqual(change_result.status_code, 200)
+
+        signin_result = self.client.post(
+            "/auth/password/signin",
+            json={
+                "email": "change-user@example.com",
+                "password": "654321",
+                **self._captcha_payload(),
+            },
+        )
+        self.assertEqual(signin_result.status_code, 200)
+
     def test_signup_rejects_existing_account(self):
         self._login("existing@example.com", "Existing")
-        send_result = self.client.post("/auth/email-code/send", json={"email": "existing@example.com", "purpose": "signup"})
+        send_result = self.client.post("/auth/email-code/send", json={"email": "existing@example.com", "purpose": "signup", **self._captcha_payload()})
         self.assertEqual(send_result.status_code, 400)
         self.assertEqual(send_result.json()["detail"], "Account already exists, please sign in")
 
     def test_signup_rejects_reserved_platform_admin_email_before_sending_code(self):
-        send_result = self.client.post("/auth/email-code/send", json={"email": "admin@example.com", "purpose": "signup"})
+        send_result = self.client.post("/auth/email-code/send", json={"email": "admin@example.com", "purpose": "signup", **self._captcha_payload()})
         self.assertEqual(send_result.status_code, 400)
         self.assertEqual(
             send_result.json()["detail"],
             "This email is reserved for platform administration and cannot use public sign up",
         )
+
+    def test_send_code_requires_captcha(self):
+        send_result = self.client.post(
+            "/auth/email-code/send",
+            json={"email": "nocaptcha@example.com", "purpose": "signup"},
+        )
+        self.assertEqual(send_result.status_code, 422)
+
+    def test_send_code_is_rate_limited_per_identifier(self):
+        first_send = self.client.post(
+            "/auth/email-code/send",
+            json={"email": "limit@example.com", "purpose": "signup", **self._captcha_payload()},
+        )
+        self.assertEqual(first_send.status_code, 200)
+
+        second_send = self.client.post(
+            "/auth/email-code/send",
+            json={"email": "limit@example.com", "purpose": "signup", **self._captcha_payload()},
+        )
+        self.assertEqual(second_send.status_code, 429)
+        self.assertIn("Too many verification code requests. Please retry in", second_send.json()["detail"])
+        self.assertEqual(second_send.headers.get("retry-after"), "60")
 
     def test_org_admin_signup_creates_team_workspace(self):
         payload = self._login(
@@ -190,7 +479,7 @@ class AuthApiTest(unittest.TestCase):
 
         verify_code = self.client.post(
             "/auth/email-code/send",
-            json={"email": "maker@example.com", "purpose": "invite_accept"},
+            json={"email": "maker@example.com", "purpose": "invite_accept", **self._captcha_payload()},
         )
         self.assertEqual(verify_code.status_code, 200)
         debug_code = verify_code.json()["debug_code"]

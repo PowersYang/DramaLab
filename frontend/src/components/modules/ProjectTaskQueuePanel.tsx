@@ -10,13 +10,15 @@ import { useTaskStore } from "@/store/taskStore";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 type QueueFilter = "all" | "processing" | "completed" | "failed";
-type QueueStep = "assets" | "storyboard" | "audio";
+type QueueStep = "script" | "assets" | "storyboard" | "audio";
 
 const ACTIVE_STATUSES = ["queued", "claimed", "running", "retry_waiting", "cancel_requested"] as const;
 const FAILED_STATUSES = ["failed", "timed_out"] as const;
 const COMPLETED_STATUSES = ["succeeded", "cancelled"] as const;
 
 const STEP_TASK_TYPES: Record<QueueStep, string[]> = {
+    // 剧本页当前只展示实体提取任务，让用户能直接追踪“提取实体”按钮触发的后台解析。
+    script: ["project.reparse"],
     // 资产页只展示资产图像/参考动作视频相关任务，避免把其它生产阶段任务混进当前面板。
     assets: ["asset.generate", "asset.generate_batch", "asset.motion_ref.generate"],
     // 分镜页同时承载“分析、润色、渲染”三类任务，统一聚合到一个队列里。
@@ -26,6 +28,7 @@ const STEP_TASK_TYPES: Record<QueueStep, string[]> = {
 };
 
 const TASK_TYPE_LABELS: Record<string, string> = {
+    "project.reparse": "实体提取",
     "asset.generate": "资产生成",
     "asset.generate_batch": "批量资产生成",
     "asset.motion_ref.generate": "资产动作参考生成",
@@ -363,6 +366,9 @@ function formatTimestamp(value: string | number): string {
 }
 
 function buildJobDisplayInfo(step: QueueStep, job: TaskJob, project: any): QueueJobDisplayInfo {
+    if (step === "script") {
+        return buildScriptJobDisplayInfo(job, project);
+    }
     if (step === "assets") {
         return buildAssetJobDisplayInfo(job, project);
     }
@@ -370,6 +376,29 @@ function buildJobDisplayInfo(step: QueueStep, job: TaskJob, project: any): Queue
         return buildAudioJobDisplayInfo(job, project);
     }
     return buildStoryboardJobDisplayInfo(job, project);
+}
+
+function buildScriptJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayInfo {
+    const result = job.result_json || {};
+    const badges = [
+        typeof result.character_count === "number" ? `角色 ${result.character_count}` : null,
+        typeof result.scene_count === "number" ? `场景 ${result.scene_count}` : null,
+        typeof result.prop_count === "number" ? `道具 ${result.prop_count}` : null,
+    ].filter(Boolean) as string[];
+    const detailParts = [
+        job.attempt_count > 0 ? `已尝试 ${job.attempt_count}/${job.max_attempts} 次` : null,
+    ].filter(Boolean);
+    const scriptLength = typeof job.payload_json?.text === "string"
+        ? job.payload_json.text.trim().length
+        : 0;
+
+    return {
+        title: TASK_TYPE_LABELS[job.task_type] || "剧本任务",
+        subtitle: scriptLength > 0 ? `本次解析剧本约 ${scriptLength} 字` : "从当前剧本中提取角色、场景和道具",
+        badges,
+        detail: detailParts.length > 0 ? detailParts.join(" · ") : null,
+        accentClassName: "bg-cyan-400",
+    };
 }
 
 function buildAssetJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayInfo {

@@ -267,6 +267,7 @@ function StoryboardInspector() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
 
     if (!currentProject) return null;
@@ -391,6 +392,8 @@ function StoryboardInspector() {
 
         try {
             const receipt = await api.refineFramePrompt(currentProject.id, selectedFrame.id, draft, assets, feedback);
+            // 提交成功后立即写入任务 store，避免右侧队列要等轮询或首次 fetchJob 才出现。
+            enqueueReceipts(currentProject.id, [receipt]);
             const job = await waitForJob(receipt.job_id, { intervalMs: 1500 });
             const result = job.result_json || {};
             if (job.status === "succeeded" && result.prompt_cn && result.prompt_en) {

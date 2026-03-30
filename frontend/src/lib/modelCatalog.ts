@@ -89,9 +89,10 @@ const normalizeCatalog = (payload: AvailableModelCatalog | null | undefined): Av
     return fallbackCatalog;
   }
   return {
-    t2i: payload.t2i?.length ? payload.t2i.map(toSimpleOption) : fallbackCatalog.t2i,
-    i2i: payload.i2i?.length ? payload.i2i.map(toSimpleOption) : fallbackCatalog.i2i,
-    i2v: payload.i2v?.length ? payload.i2v.map(toI2vConfig) : fallbackCatalog.i2v,
+    // 中文注释：接口成功返回空数组时，说明管理员确实把该类型模型全部下线，不应再回退到本地默认模型。
+    t2i: (payload.t2i ?? []).map(toSimpleOption),
+    i2i: (payload.i2i ?? []).map(toSimpleOption),
+    i2v: (payload.i2v ?? []).map(toI2vConfig),
   };
 };
 

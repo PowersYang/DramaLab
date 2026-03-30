@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from .base import BaseRepository
 from .mappers import _task_job_from_record, _task_job_record
@@ -12,6 +12,7 @@ from ..utils.datetime import utc_now
 
 
 ACTIVE_JOB_STATUSES = ("queued", "claimed", "running", "retry_waiting", "cancel_requested")
+ACTIVE_EXECUTION_STATUSES = ("claimed", "running", "cancel_requested")
 
 
 class TaskJobRepository(BaseRepository[TaskJob]):
@@ -21,13 +22,13 @@ class TaskJobRepository(BaseRepository[TaskJob]):
     避免前端再自己拼装“先拿项目再逐个拉任务”的脆弱链路。
     """
 
-    def create(self, job: TaskJob) -> TaskJob:
-        with self._with_session() as session:
+    def create(self, job: TaskJob, session=None) -> TaskJob:
+        with self._with_session(session) as session:
             session.merge(_task_job_record(job))
         return job
 
-    def save(self, job: TaskJob) -> TaskJob:
-        return self.create(job)
+    def save(self, job: TaskJob, session=None) -> TaskJob:
+        return self.create(job, session=session)
 
     def get(self, job_id: str) -> TaskJob | None:
         with self._with_session() as session:
@@ -101,7 +102,37 @@ class TaskJobRepository(BaseRepository[TaskJob]):
             rows = query.order_by(TaskJobRecord.created_at.desc()).all()
             return [_task_job_from_record(row) for row in rows]
 
-    def claim_next_jobs(self, queue_names: list[str], limit: int, worker_id: str) -> list[TaskJob]:
+    def count_active_by_organization_and_task_type(
+        self,
+        organization_ids: Iterable[str] | None = None,
+        task_types: Iterable[str] | None = None,
+    ) -> dict[tuple[str, str], int]:
+        with self._with_session() as session:
+            query = (
+                session.query(TaskJobRecord.organization_id, TaskJobRecord.task_type, func.count(TaskJobRecord.id))
+                .filter(
+                    TaskJobRecord.organization_id.is_not(None),
+                    TaskJobRecord.status.in_(ACTIVE_EXECUTION_STATUSES),
+                )
+                .group_by(TaskJobRecord.organization_id, TaskJobRecord.task_type)
+            )
+            if organization_ids:
+                query = query.filter(TaskJobRecord.organization_id.in_(list(organization_ids)))
+            if task_types:
+                query = query.filter(TaskJobRecord.task_type.in_(list(task_types)))
+            return {
+                (organization_id, task_type): count
+                for organization_id, task_type, count in query.all()
+                if organization_id and task_type
+            }
+
+    def claim_next_jobs(
+        self,
+        queue_names: list[str],
+        limit: int,
+        worker_id: str,
+        concurrency_limits: dict[tuple[str, str], int] | None = None,
+    ) -> list[TaskJob]:
         claimed: list[TaskJob] = []
         with self._with_session() as session:
             query = (
@@ -116,9 +147,26 @@ class TaskJobRepository(BaseRepository[TaskJob]):
             # PostgreSQL 环境下用 skip locked 避免多 worker 抢到同一行；SQLite 测试会自动退化。
             if session.bind and session.bind.dialect.name == "postgresql":
                 query = query.with_for_update(skip_locked=True)
-            rows = query.limit(limit).all()
+            # 中文注释：并发限制可能会挡住排在前面的某些任务，所以认领时要多看一些候选行，避免后面的可执行任务被饿死。
+            rows = query.limit(max(limit * 50, 200)).all()
+            active_counts: dict[tuple[str, str], int] = {}
+            if rows:
+                active_counts = self.count_active_by_organization_and_task_type(
+                    organization_ids={row.organization_id for row in rows if row.organization_id},
+                    task_types={row.task_type for row in rows if row.task_type},
+                )
             now = utc_now()
             for row in rows:
+                if len(claimed) >= limit:
+                    break
+                if row.organization_id and concurrency_limits is not None:
+                    key = (row.organization_id, row.task_type)
+                    max_concurrency = concurrency_limits.get(key)
+                    if max_concurrency is not None:
+                        current_active = active_counts.get(key, 0)
+                        if current_active >= max_concurrency:
+                            continue
+                        active_counts[key] = current_active + 1
                 row.status = "claimed"
                 row.claimed_at = now
                 row.heartbeat_at = now

@@ -55,7 +55,7 @@ class ProjectService:
         return project
 
     def reparse_project(self, script_id: str, text: str):
-        """重新解析剧本，同时保留稳定元数据字段。"""
+        """重新解析剧本中的实体信息，同时保留分镜、视频等非实体资源。"""
         logger.info(
             "PROJECT_SERVICE: reparse_project script_id=%s text_length=%s",
             script_id,
@@ -67,10 +67,14 @@ class ProjectService:
             raise ValueError("Script not found")
 
         reparsed = self.text_provider.parse_novel(existing.title, text)
-        # 重新解析时只替换结构化内容，保留标识、租户占位字段和用户已编辑配置。
+        # 重新解析时仅替换剧本文本与实体集合；分镜、视频任务、成片地址等非实体资源继续沿用旧项目，
+        # 避免“提取实体”误伤已存在的分镜或后续生产产物。
         reparsed.id = existing.id
         reparsed.created_at = existing.created_at
         reparsed.updated_at = utc_now()
+        reparsed.original_text = text
+        reparsed.frames = existing.frames
+        reparsed.video_tasks = existing.video_tasks
         reparsed.art_direction = existing.art_direction
         reparsed.model_settings = existing.model_settings
         reparsed.style_preset = existing.style_preset

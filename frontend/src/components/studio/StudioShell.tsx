@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
-import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, Users2, Workflow } from "lucide-react";
+import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, SlidersHorizontal, Users2, Workflow } from "lucide-react";
 
 import DramaLabBranding from "@/components/layout/DramaLabBranding";
 import { useAuthStore } from "@/store/authStore";
@@ -31,6 +31,7 @@ const NAV_ITEMS: StudioNavItem[] = [
   { href: "/studio/team", label: "团队", icon: Users2, capability: "workspace.manage_members" },
   { href: "/studio/billing", label: "计费", icon: CreditCard, capability: "workspace.manage_billing" },
   { href: "/studio/model-config", label: "模型配置", icon: Boxes, capability: "workspace.view", requiresPlatformSuperAdmin: true },
+  { href: "/studio/task-concurrency", label: "任务并发", icon: SlidersHorizontal, capability: "workspace.view", requiresPlatformSuperAdmin: true },
   { href: "/studio/settings", label: "设置", icon: Settings2, capability: "workspace.view" },
 ];
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import AuthCaptchaField from "@/components/site/AuthCaptchaField";
 import MarketingShell from "@/components/site/MarketingShell";
 import { api, type InvitationPreview } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
@@ -11,6 +12,8 @@ import { useAuthStore } from "@/store/authStore";
 interface AcceptInvitePageProps {
   invitationId: string;
 }
+
+const SEND_CODE_COOLDOWN_SECONDS = 60;
 
 const formatExpiry = (value?: string | null) => {
   if (!value) return "-";
@@ -22,12 +25,18 @@ const formatExpiry = (value?: string | null) => {
 export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps) {
   const router = useRouter();
   const sendEmailCode = useAuthStore((state) => state.sendEmailCode);
+  const getAuthCaptcha = useAuthStore((state) => state.getAuthCaptcha);
   const verifyEmailCode = useAuthStore((state) => state.verifyEmailCode);
 
   const [invitation, setInvitation] = useState<InvitationPreview | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [code, setCode] = useState("");
   const [debugCode, setDebugCode] = useState<string | null>(null);
+  const [captchaId, setCaptchaId] = useState("");
+  const [captchaSvg, setCaptchaSvg] = useState<string | null>(null);
+  const [captchaCode, setCaptchaCode] = useState("");
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [sendCooldown, setSendCooldown] = useState(0);
   const [step, setStep] = useState<"loading" | "ready" | "verify">("loading");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +48,11 @@ export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps
       try {
         setError(null);
         const result = await api.getInvitationPreview(invitationId);
+        const captcha = await getAuthCaptcha();
         if (cancelled) return;
         setInvitation(result);
+        setCaptchaId(captcha.captcha_id);
+        setCaptchaSvg(captcha.image_svg);
         setStep("ready");
       } catch (err) {
         if (cancelled) return;
@@ -52,7 +64,31 @@ export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps
     return () => {
       cancelled = true;
     };
-  }, [invitationId]);
+  }, [getAuthCaptcha, invitationId]);
+
+  useEffect(() => {
+    if (sendCooldown <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setSendCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [sendCooldown]);
+
+  const refreshCaptcha = async () => {
+    setCaptchaLoading(true);
+    try {
+      const captcha = await getAuthCaptcha();
+      setCaptchaId(captcha.captcha_id);
+      setCaptchaSvg(captcha.image_svg);
+      setCaptchaCode("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "图形验证码加载失败");
+    } finally {
+      setCaptchaLoading(false);
+    }
+  };
 
   const handleSendCode = async () => {
     if (!invitation) return;
@@ -60,12 +96,15 @@ export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps
     setError(null);
     setInfoMessage(null);
     try {
-      const result = await sendEmailCode(invitation.email, "invite_accept");
+      const result = await sendEmailCode(invitation.email, "invite_accept", "email", { captchaId, captchaCode });
       setDebugCode(result.debug_code || null);
       setStep("verify");
       setInfoMessage("验证码已发送到受邀邮箱，请在下方输入后完成加入。");
+      setSendCooldown(SEND_CODE_COOLDOWN_SECONDS);
+      await refreshCaptcha();
     } catch (err) {
       setError(err instanceof Error ? err.message : "验证码发送失败");
+      await refreshCaptcha();
     } finally {
       setSubmitting(false);
     }
@@ -89,7 +128,7 @@ export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps
     }
   };
 
-  const disabled = !invitation || invitation.accepted_at || invitation.is_expired;
+  const disabled = !invitation || Boolean(invitation.accepted_at) || Boolean(invitation.is_expired);
 
   return (
     <MarketingShell ctaMode="auth">
@@ -182,6 +221,15 @@ export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps
                 />
               </label>
 
+              <AuthCaptchaField
+                captchaSvg={captchaSvg}
+                captchaCode={captchaCode}
+                onChange={setCaptchaCode}
+                onRefresh={() => void refreshCaptcha()}
+                disabled={disabled || submitting}
+                loading={captchaLoading}
+              />
+
               {step === "verify" ? (
                 <label className="block">
                   <span className="mb-2 block text-sm font-semibold text-slate-800">验证码</span>
@@ -208,11 +256,11 @@ export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps
               <div className="flex flex-wrap gap-3 pt-2">
                 {step !== "verify" ? (
                   <button
-                    disabled={disabled || submitting}
+                    disabled={disabled || !captchaId.trim() || !captchaCode.trim() || sendCooldown > 0 || submitting}
                     onClick={() => void handleSendCode()}
                     className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
                   >
-                    {submitting ? "发送中..." : "发送验证码"}
+                    {submitting ? "发送中..." : sendCooldown > 0 ? `${sendCooldown}s 后可重发` : "发送验证码"}
                   </button>
                 ) : (
                   <>
@@ -224,11 +272,11 @@ export default function AcceptInvitePage({ invitationId }: AcceptInvitePageProps
                       {submitting ? "加入中..." : "确认加入团队"}
                     </button>
                     <button
-                      disabled={disabled || submitting}
+                      disabled={disabled || sendCooldown > 0 || submitting}
                       onClick={() => void handleSendCode()}
                       className="rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700"
                     >
-                      重新发送验证码
+                      {sendCooldown > 0 ? `${sendCooldown}s 后可重发` : "重新发送验证码"}
                     </button>
                   </>
                 )}

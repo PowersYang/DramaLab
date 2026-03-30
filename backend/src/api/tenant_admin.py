@@ -8,6 +8,7 @@ from ..common import signed_response
 from ..common.log import get_logger
 from ..schemas.requests import (
     CreateModelProviderRequest,
+    UpsertTaskConcurrencyLimitRequest,
     CreateModelCatalogEntryRequest,
     CreateMembershipRequest,
     CreateOrganizationRequest,
@@ -413,5 +414,42 @@ async def delete_model_catalog_entry(model_id: str):
     try:
         logger.info("TENANT_ADMIN_API: delete_model_catalog_entry model_id=%s", model_id)
         return signed_response(tenant_admin_service.delete_model_catalog_entry(model_id))
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
+@router.get("/task-concurrency-limits/options")
+async def list_task_concurrency_task_types():
+    """列出可配置并发限制的任务类型选项。"""
+    options = tenant_admin_service.list_task_concurrency_task_types()
+    logger.info("TENANT_ADMIN_API: list_task_concurrency_task_types count=%s", len(options))
+    return signed_response(options)
+
+
+@router.get("/task-concurrency-limits")
+async def list_task_concurrency_limits():
+    """列出所有组织级任务并发限制。"""
+    limits = tenant_admin_service.list_task_concurrency_limits()
+    logger.info("TENANT_ADMIN_API: list_task_concurrency_limits count=%s", len(limits))
+    return signed_response(limits)
+
+
+@router.put("/task-concurrency-limits")
+async def upsert_task_concurrency_limit(request: UpsertTaskConcurrencyLimitRequest):
+    """创建或更新组织级任务并发限制。"""
+    try:
+        return signed_response(tenant_admin_service.upsert_task_concurrency_limit(request.model_dump()))
+    except ValueError as exc:
+        _raise_http_error(exc)
+
+
+@router.delete("/task-concurrency-limits")
+async def delete_task_concurrency_limit(
+    organization_id: str = Query(...),
+    task_type: str = Query(...),
+):
+    """删除组织级任务并发限制。"""
+    try:
+        return signed_response(tenant_admin_service.delete_task_concurrency_limit(organization_id, task_type))
     except ValueError as exc:
         _raise_http_error(exc)

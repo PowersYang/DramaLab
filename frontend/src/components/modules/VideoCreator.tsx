@@ -35,6 +35,7 @@ interface VideoCreatorProps {
 export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, onRemixClear, params, onParamsChange }: VideoCreatorProps) {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
 
     const sortedFrames = useMemo(() => {
@@ -191,6 +192,10 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                 // I2V mode: use video polish
                 receipt = await api.polishVideoPrompt(draftPrompt, feedback, scriptId);
             }
+            if (currentProject) {
+                // Prompt 润色提交成功后立即入队，避免右侧 Queue 只能靠后续轮询补录。
+                enqueueReceipts(currentProject.id, [receipt]);
+            }
             const job = await waitForJob(receipt.job_id);
             if (job.status !== "succeeded") {
                 throw new Error(job.error_message || "AI 润色失败");
@@ -346,8 +351,6 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             if (generationMode === 'r2v' && selectedImages.length === 0) {
                 itemsToProcess = [""]; // Dummy item to trigger one iteration
             }
-            const createdReceipts: TaskReceipt[] = [];
-
             // Batch submit for all images
             for (const img of itemsToProcess) {
                 let finalImageUrl = img;
@@ -408,11 +411,8 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                     params.viduAudio,
                     params.movementAmplitude
                 );
-                createdReceipts.push(...receipts);
-            }
-
-            if (createdReceipts.length > 0) {
-                onJobCreated(createdReceipts);
+                // 多图顺序提交时，每一批任务都应立刻入队，避免用户等整批接口都返回后才看到第一条任务。
+                onJobCreated(receipts);
             }
 
             // Success feedback

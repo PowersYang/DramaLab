@@ -127,6 +127,10 @@ class EnvConfig(BaseModel):
     AUTH_ACCESS_TOKEN_TTL_MINUTES: Optional[str] = None
     AUTH_REFRESH_TOKEN_TTL_DAYS: Optional[str] = None
     AUTH_EMAIL_CODE_TTL_MINUTES: Optional[str] = None
+    AUTH_CAPTCHA_TTL_SECONDS: Optional[str] = None
+    AUTH_SEND_CODE_COOLDOWN_SECONDS: Optional[str] = None
+    AUTH_SEND_CODE_LIMIT_PER_IDENTIFIER_PER_HOUR: Optional[str] = None
+    AUTH_SEND_CODE_LIMIT_PER_IP_PER_HOUR: Optional[str] = None
     AUTH_EXPOSE_TEST_CODE: Optional[str] = None
     AUTH_PLATFORM_SUPER_ADMIN_EMAILS: Optional[str] = None
     AUTH_APP_BASE_URL: Optional[str] = None
@@ -369,6 +373,38 @@ class UpdateModelCatalogEntryRequest(BaseModel):
     default_settings_json: Optional[Dict[str, Any]] = None
 
 
+class UpsertTaskConcurrencyLimitRequest(BaseModel):
+    organization_id: str
+    task_type: str
+    max_concurrency: int = Field(..., ge=0)
+
+
+class UpsertBillingPricingRuleRequest(BaseModel):
+    organization_id: Optional[str] = None
+    task_type: str
+    price_credits: int = Field(..., ge=0)
+    status: str = "active"
+    description: Optional[str] = None
+
+
+class UpsertBillingRechargeBonusRuleRequest(BaseModel):
+    organization_id: Optional[str] = None
+    min_recharge_cents: int = Field(..., ge=0)
+    max_recharge_cents: Optional[int] = Field(None, ge=0)
+    bonus_credits: int = Field(..., ge=0)
+    status: str = "active"
+    description: Optional[str] = None
+
+
+class CreateManualRechargeRequest(BaseModel):
+    organization_id: str
+    amount_cents: int = Field(..., gt=0)
+    remark: Optional[str] = None
+    workspace_id: Optional[str] = None
+    billing_email: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
+
 class CreateMembershipRequest(BaseModel):
     organization_id: Optional[str] = None
     workspace_id: Optional[str] = None
@@ -386,18 +422,63 @@ class UpdateMembershipRequest(BaseModel):
 
 
 class SendEmailCodeRequest(BaseModel):
-    email: str
+    email: Optional[str] = None
+    target: Optional[str] = None
+    channel: str = "email"
     purpose: str = "signin"
+    captcha_id: str
+    captcha_code: str
 
 
 class VerifyEmailCodeRequest(BaseModel):
-    email: str
+    email: Optional[str] = None
+    target: Optional[str] = None
+    channel: str = "email"
     code: str
     purpose: str = "signin"
     display_name: Optional[str] = None
     signup_kind: Optional[str] = None
     organization_name: Optional[str] = None
     invitation_id: Optional[str] = None
+
+
+class PasswordSignInRequest(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    identifier: Optional[str] = None
+    channel: str = "email"
+    password: str
+    captcha_id: str
+    captcha_code: str
+
+
+class PasswordSignUpRequest(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    identifier: Optional[str] = None
+    channel: str = "email"
+    password: str
+    captcha_id: str
+    captcha_code: str
+    display_name: Optional[str] = None
+    signup_kind: Optional[str] = None
+    organization_name: Optional[str] = None
+
+
+class ResetPasswordRequest(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    identifier: Optional[str] = None
+    channel: str = "email"
+    code: str
+    new_password: str
+    captcha_id: str
+    captcha_code: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class SwitchWorkspaceRequest(BaseModel):

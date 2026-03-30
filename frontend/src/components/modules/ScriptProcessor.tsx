@@ -19,6 +19,45 @@ interface ScriptNode {
     visual_weight?: number;
 }
 
+function hasImageVariants(asset?: { variants?: any[] | null; selected_id?: string | null } | null) {
+    return Boolean(asset?.selected_id) || Boolean(asset?.variants && asset.variants.length > 0);
+}
+
+function hasCharacterAssets(character: any) {
+    return Boolean(
+        character?.full_body_image_url
+        || character?.three_view_image_url
+        || character?.headshot_image_url
+        || hasImageVariants(character?.full_body_asset)
+        || hasImageVariants(character?.three_view_asset)
+        || hasImageVariants(character?.headshot_asset)
+        || character?.full_body?.selected_image_id
+        || character?.head_shot?.selected_image_id
+        || (character?.full_body?.image_variants?.length || 0) > 0
+        || (character?.head_shot?.image_variants?.length || 0) > 0
+        || (character?.three_views?.image_variants?.length || 0) > 0
+        || (character?.video_assets?.length || 0) > 0
+        || (character?.full_body?.video_variants?.length || 0) > 0
+        || (character?.head_shot?.video_variants?.length || 0) > 0
+    );
+}
+
+function hasSceneAssets(scene: any) {
+    return Boolean(
+        scene?.image_url
+        || hasImageVariants(scene?.image_asset)
+        || (scene?.video_assets?.length || 0) > 0
+    );
+}
+
+function hasPropAssets(prop: any) {
+    return Boolean(
+        prop?.image_url
+        || hasImageVariants(prop?.image_asset)
+        || (prop?.video_assets?.length || 0) > 0
+    );
+}
+
 export default function ScriptProcessor() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
@@ -69,6 +108,14 @@ export default function ScriptProcessor() {
 
     const handleAnalyze = async () => {
         if (!script) return;
+        const hasExistingEntities = nodes.length > 0;
+        const hasExistingFrames = (currentProject?.frames?.length || 0) > 0;
+        if (hasExistingEntities || hasExistingFrames) {
+            const confirmed = confirm("已经存在资产和分镜，再次点击提取会导致已有数据丢失。");
+            if (!confirmed) {
+                return;
+            }
+        }
         try {
             await analyzeProject(script);
         } catch (error: any) {
@@ -82,7 +129,35 @@ export default function ScriptProcessor() {
     const handleDeleteNode = async (node: ScriptNode, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
-        if (!confirm(`确认删除“${node.name}”吗？`)) return;
+
+        const hasRelatedAssets = (() => {
+            if (node.type === "character") {
+                const character = currentProject.characters.find((item: any) => item.id === node.id);
+                return hasCharacterAssets(character);
+            }
+            if (node.type === "scene") {
+                const scene = currentProject.scenes.find((item: any) => item.id === node.id);
+                return hasSceneAssets(scene);
+            }
+            const prop = currentProject.props.find((item: any) => item.id === node.id);
+            return hasPropAssets(prop);
+        })();
+
+        const hasRelatedFrames = (() => {
+            const frames = currentProject.frames || [];
+            if (node.type === "character") {
+                return frames.some((frame: any) => (frame.character_ids || []).includes(node.id));
+            }
+            if (node.type === "scene") {
+                return frames.some((frame: any) => frame.scene_id === node.id);
+            }
+            return frames.some((frame: any) => (frame.prop_ids || []).includes(node.id));
+        })();
+
+        const confirmMessage = hasRelatedAssets || hasRelatedFrames
+            ? `“${node.name}” 已有关联资产或分镜，删除后可能影响已有数据。确认继续删除吗？`
+            : `确认删除“${node.name}”吗？`;
+        if (!confirm(confirmMessage)) return;
 
         try {
             if (node.type === "character" && node.id) {

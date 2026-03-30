@@ -227,6 +227,74 @@ class TenantAdminApiTest(unittest.TestCase):
         self.assertGreaterEqual(len(payload["i2i"]), 1)
         self.assertFalse(any(item["model_id"] == "wan2.6-i2v" for item in payload["i2v"]))
 
+    def test_disabling_provider_turns_off_related_models_and_hides_them(self):
+        enable_provider = self.client.put(
+            "/model-providers/DASHSCOPE",
+            json={"enabled": True},
+        )
+        self.assertEqual(enable_provider.status_code, 200)
+
+        disable_provider = self.client.put(
+            "/model-providers/DASHSCOPE",
+            json={"enabled": False},
+        )
+        self.assertEqual(disable_provider.status_code, 200)
+        self.assertFalse(disable_provider.json()["enabled"])
+
+        catalog = self.client.get("/model-catalog")
+        self.assertEqual(catalog.status_code, 200)
+        dashscope_models = [item for item in catalog.json() if item["provider_key"] == "DASHSCOPE"]
+        self.assertTrue(dashscope_models)
+        self.assertTrue(all(item["enabled"] is False for item in dashscope_models))
+
+        available_models = self.client.get("/system/models/available")
+        self.assertEqual(available_models.status_code, 200)
+        payload = available_models.json()
+        self.assertEqual(payload["t2i"], [])
+        self.assertEqual(payload["i2i"], [])
+        self.assertEqual(payload["i2v"], [])
+
+    def test_task_concurrency_limit_management_flow(self):
+        organization = self.client.post(
+            "/organizations",
+            json={"name": "Concurrency Studio", "slug": "concurrency-studio"},
+        ).json()
+
+        options = self.client.get("/task-concurrency-limits/options")
+        self.assertEqual(options.status_code, 200)
+        self.assertTrue(any(item["task_type"] == "asset.generate" for item in options.json()))
+
+        upserted = self.client.put(
+            "/task-concurrency-limits",
+            json={
+                "organization_id": organization["id"],
+                "task_type": "asset.generate",
+                "max_concurrency": 10,
+            },
+        )
+        self.assertEqual(upserted.status_code, 200)
+        self.assertEqual(upserted.json()["organization_id"], organization["id"])
+        self.assertEqual(upserted.json()["task_type"], "asset.generate")
+        self.assertEqual(upserted.json()["max_concurrency"], 10)
+        self.assertEqual(upserted.json()["organization_name"], "Concurrency Studio")
+
+        listed = self.client.get("/task-concurrency-limits")
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(
+            any(
+                item["organization_id"] == organization["id"]
+                and item["task_type"] == "asset.generate"
+                and item["max_concurrency"] == 10
+                for item in listed.json()
+            )
+        )
+
+        deleted = self.client.delete(
+            f"/task-concurrency-limits?organization_id={organization['id']}&task_type=asset.generate"
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json()["status"], "deleted")
+
     def test_model_provider_and_catalog_full_crud(self):
         created_provider = self.client.post(
             "/model-providers",

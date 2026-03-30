@@ -331,6 +331,7 @@ class ModelProviderService:
         current = self.provider_repository.get(provider_key)
         if current is None:
             raise ValueError("Model provider not found")
+        next_enabled = current.enabled if enabled is None else enabled
         credentials = dict(current.credentials_json or {})
         for key, value in (credentials_patch or {}).items():
             if value is None:
@@ -348,13 +349,16 @@ class ModelProviderService:
             {
                 "display_name": display_name or current.display_name,
                 "description": description if description is not None else current.description,
-                "enabled": current.enabled if enabled is None else enabled,
+                "enabled": next_enabled,
                 "base_url": (base_url.strip() if isinstance(base_url, str) and base_url.strip() else None) if base_url is not None else current.base_url,
                 "credentials_json": credentials,
                 "settings_json": settings,
                 "updated_by": actor_id,
             },
         )
+        # 中文注释：供应商被停用时，同步把其下所有模型设为停用，避免前台继续看到已失效模型。
+        if not next_enabled:
+            self.catalog_repository.set_enabled_by_provider(provider_key, False, updated_by=actor_id)
         return self._to_summary(updated)
 
     def delete_provider(self, provider_key: str) -> dict[str, str]:

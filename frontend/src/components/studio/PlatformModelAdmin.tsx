@@ -384,6 +384,32 @@ export default function PlatformModelAdmin() {
     }
   };
 
+  const toggleProviderStatus = async (provider: ModelProviderSummary) => {
+    setError(null);
+    setSuccessMessage(null);
+    const nextEnabled = !provider.enabled;
+    try {
+      setBusyKey(`provider:toggle:${provider.provider_key}`);
+      const updated = await api.updateModelProvider(provider.provider_key, { enabled: nextEnabled });
+      setProviders((prev) =>
+        prev.map((entry) => (entry.provider_key === provider.provider_key ? updated : entry)),
+      );
+      // 中文注释：供应商停用会在后端级联关闭所属模型，这里同步更新前端本地态，避免重新整页加载。
+      if (!nextEnabled) {
+        setCatalog((prev) =>
+          prev.map((entry) =>
+            entry.provider_key === provider.provider_key ? { ...entry, enabled: false } : entry,
+          ),
+        );
+      }
+      setSuccessMessage(`${provider.display_name} 已${nextEnabled ? "启用" : "停用"}`);
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : "切换厂商状态失败");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const deleteModel = async (modelId: string) => {
     if (!window.confirm(`确认删除模型 ${modelId} 吗？`)) return;
     setError(null);
@@ -454,7 +480,23 @@ export default function PlatformModelAdmin() {
                     <div className="font-semibold text-slate-900">{provider.display_name}</div>
                     <div className="mt-1 text-xs text-slate-500">{provider.description || "-"}</div>
                   </td>
-                  <td className="px-4 py-3">{provider.enabled ? "启用" : "停用"}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => void toggleProviderStatus(provider)}
+                      disabled={busyKey === `provider:toggle:${provider.provider_key}`}
+                      aria-pressed={provider.enabled}
+                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-50 ${
+                        provider.enabled ? "bg-emerald-500" : "bg-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                          provider.enabled ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                      <span className="sr-only">{provider.enabled ? "停用厂商" : "启用厂商"}</span>
+                    </button>
+                  </td>
                   <td className="px-4 py-3">{provider.credential_fields.join(", ") || "-"}</td>
                   <td className="px-4 py-3 max-w-[260px] break-all">{provider.base_url || "-"}</td>
                   <td className="px-4 py-3">

@@ -5,8 +5,8 @@ from ..schemas.task_models import TaskEvent
 
 
 class TaskEventRepository(BaseRepository[TaskEvent]):
-    def create(self, event: TaskEvent) -> TaskEvent:
-        with self._with_session() as session:
+    def create(self, event: TaskEvent, session=None) -> TaskEvent:
+        with self._with_session(session) as session:
             session.merge(_task_event_record(event))
         return event
 
@@ -19,4 +19,3 @@ class TaskEventRepository(BaseRepository[TaskEvent]):
                 .all()
             )
             return [_task_event_from_record(row) for row in rows]
-

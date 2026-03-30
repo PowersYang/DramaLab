@@ -1,3 +1,9 @@
+from .billing_account_repository import BillingAccountRepository
+from .billing_pricing_rule_repository import BillingPricingRuleRepository
+from .billing_recharge_bonus_rule_repository import BillingRechargeBonusRuleRepository
+from .billing_transaction_repository import BillingTransactionRepository
+from .auth_rate_limit_repository import AuthRateLimitRepository
+from .captcha_challenge_repository import CaptchaChallengeRepository
 from .character_asset_unit_repository import CharacterAssetUnitRepository
 from .character_repository import CharacterRepository
 from .image_variant_repository import ImageVariantRepository
@@ -14,6 +20,7 @@ from .series_repository import SeriesRepository
 from .style_preset_repository import StylePresetRepository
 from .storyboard_frame_repository import StoryboardFrameRepository
 from .task_attempt_repository import TaskAttemptRepository
+from .task_concurrency_limit_repository import TaskConcurrencyLimitRepository
 from .task_event_repository import TaskEventRepository
 from .task_job_repository import TaskJobRepository
 from .user_repository import UserRepository
@@ -24,6 +31,12 @@ from .video_variant_repository import VideoVariantRepository
 from .workspace_repository import WorkspaceRepository
 
 __all__ = [
+    "AuthRateLimitRepository",
+    "BillingAccountRepository",
+    "BillingPricingRuleRepository",
+    "BillingRechargeBonusRuleRepository",
+    "BillingTransactionRepository",
+    "CaptchaChallengeRepository",
     "CharacterAssetUnitRepository",
     "CharacterRepository",
     "ImageVariantRepository",
@@ -40,6 +53,7 @@ __all__ = [
     "StylePresetRepository",
     "StoryboardFrameRepository",
     "TaskAttemptRepository",
+    "TaskConcurrencyLimitRepository",
     "TaskEventRepository",
     "TaskJobRepository",
     "UserRepository",

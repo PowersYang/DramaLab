@@ -2,7 +2,19 @@
 
 import { create } from "zustand";
 
-import { api, getAccessToken, setAccessToken, type AuthMeResponse, type VerifyEmailCodeOptions } from "@/lib/api";
+import {
+  api,
+  getAccessToken,
+  setAccessToken,
+  type AuthCaptchaPayload,
+  type AuthMeResponse,
+  type CaptchaVerificationOptions,
+  type ChangePasswordOptions,
+  type PasswordSignInOptions,
+  type PasswordSignUpOptions,
+  type ResetPasswordOptions,
+  type VerifyEmailCodeOptions,
+} from "@/lib/api";
 
 type AuthStatus = "idle" | "loading" | "authenticated" | "anonymous";
 
@@ -67,8 +79,18 @@ interface AuthState {
   isBootstrapping: boolean;
   restoreSnapshot: () => void;
   bootstrapAuth: () => Promise<AuthMeResponse | null>;
-  sendEmailCode: (email: string, purpose?: string) => Promise<{ status: string; email: string; purpose: string; debug_code?: string }>;
-  verifyEmailCode: (email: string, code: string, options?: VerifyEmailCodeOptions) => Promise<AuthMeResponse>;
+  getAuthCaptcha: () => Promise<AuthCaptchaPayload>;
+  sendEmailCode: (
+    target: string,
+    purpose?: string,
+    channel?: "email" | "phone",
+    captcha?: CaptchaVerificationOptions,
+  ) => Promise<{ status: string; target: string; channel: "email" | "phone"; purpose: string; debug_code?: string }>;
+  verifyEmailCode: (target: string, code: string, options?: VerifyEmailCodeOptions) => Promise<AuthMeResponse>;
+  signInWithPassword: (payload: PasswordSignInOptions) => Promise<AuthMeResponse>;
+  signUpWithPassword: (payload: PasswordSignUpOptions) => Promise<AuthMeResponse>;
+  resetPasswordWithCode: (payload: ResetPasswordOptions) => Promise<AuthMeResponse>;
+  changePassword: (payload: ChangePasswordOptions) => Promise<AuthMeResponse>;
   signOut: () => Promise<void>;
   switchWorkspace: (workspaceId: string) => Promise<AuthMeResponse>;
   hasCapability: (capability: string) => boolean;
@@ -136,16 +158,51 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  sendEmailCode: async (email, purpose = "signin") => {
-    return await api.sendEmailCode(email, purpose);
+  getAuthCaptcha: async () => {
+    return await api.getAuthCaptcha();
   },
 
-  verifyEmailCode: async (email, code, options = {}) => {
-    const payload = await api.verifyEmailCode(email, code, options);
+  sendEmailCode: async (target, purpose = "signin", channel = "email", captcha) => {
+    return await api.sendEmailCode(target, purpose, channel, captcha);
+  },
+
+  verifyEmailCode: async (target, code, options = {}) => {
+    const payload = await api.verifyEmailCode(target, code, options);
     setAccessToken(payload.session.access_token);
     writeAuthSnapshot({ accessToken: payload.session.access_token, me: payload.me });
     set({ me: payload.me, authStatus: "authenticated" });
     return payload.me;
+  },
+
+  signInWithPassword: async (payload) => {
+    const result = await api.signInWithPassword(payload);
+    setAccessToken(result.session.access_token);
+    writeAuthSnapshot({ accessToken: result.session.access_token, me: result.me });
+    set({ me: result.me, authStatus: "authenticated" });
+    return result.me;
+  },
+
+  signUpWithPassword: async (payload) => {
+    const result = await api.signUpWithPassword(payload);
+    setAccessToken(result.session.access_token);
+    writeAuthSnapshot({ accessToken: result.session.access_token, me: result.me });
+    set({ me: result.me, authStatus: "authenticated" });
+    return result.me;
+  },
+
+  resetPasswordWithCode: async (payload) => {
+    const result = await api.resetPasswordWithCode(payload);
+    setAccessToken(result.session.access_token);
+    writeAuthSnapshot({ accessToken: result.session.access_token, me: result.me });
+    set({ me: result.me, authStatus: "authenticated" });
+    return result.me;
+  },
+
+  changePassword: async (payload) => {
+    const me = await api.changePassword(payload);
+    writeAuthSnapshot({ accessToken: getAccessToken(), me });
+    set({ me, authStatus: "authenticated" });
+    return me;
   },
 
   signOut: async () => {

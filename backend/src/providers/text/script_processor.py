@@ -312,7 +312,7 @@ class ScriptProcessor:
             return self._mock_style_recommendations()
 
         system_prompt = """你是一个专业的电影美术指导和视觉风格顾问。
-请根据提供的剧本内容，分析其题材、情绪和氛围，推荐3种截然不同但都适合的视觉风格。
+请根据提供的剧本内容，分析其题材、情绪和氛围，推荐4种截然不同但都适合的视觉风格。
 
 对于每种风格，请提供：
 1. 风格名称（简洁、专业，使用英文）
@@ -328,7 +328,7 @@ IMPORTANT:
 - 确保JSON完整，不要被截断。
 - 保持内容精炼，避免过长的描述。
 - 严禁重复生成相同的内容，不要陷入循环。
-- 只返回3个推荐风格，不要多也不要少。
+- 只返回4个推荐风格，不要多也不要少。
 
 CRITICAL STYLE GUIDELINES:
 - 正向提示词必须只描述：光影、色调、材质、艺术媒介、氛围、镜头语言 (e.g., "cinematic lighting, film grain, watercolor texture, dark atmosphere").
@@ -410,6 +410,8 @@ CRITICAL STYLE GUIDELINES:
                         return self._mock_style_recommendations()
 
             recommendations = data.get("recommendations", [])
+            # 把返回数量标准化到 4 个，避免模型偶发少返或多返导致前端展示不稳定。
+            recommendations = self._normalize_style_recommendations(recommendations)
             for index, recommendation in enumerate(recommendations):
                 recommendation["id"] = f"ai-rec-{index + 1}-{str(uuid.uuid4())[:8]}"
                 recommendation["is_custom"] = False
@@ -417,6 +419,40 @@ CRITICAL STYLE GUIDELINES:
         except Exception as exc:
             logger.error("Error analyzing script for styles: %s", exc, exc_info=True)
             return self._mock_style_recommendations()
+
+    def _normalize_style_recommendations(self, recommendations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """把推荐列表裁剪/补足为 4 个，保证前端布局和交互恒定。"""
+        normalized: List[Dict[str, Any]] = []
+        for recommendation in recommendations:
+            if not isinstance(recommendation, dict):
+                continue
+            normalized.append(recommendation)
+            if len(normalized) == 4:
+                break
+
+        if len(normalized) >= 4:
+            return normalized
+
+        fallback_styles = self._mock_style_recommendations()
+        existing_names = {str(item.get("name", "")).strip().lower() for item in normalized}
+        for fallback in fallback_styles:
+            fallback_name = str(fallback.get("name", "")).strip().lower()
+            if fallback_name in existing_names:
+                continue
+            normalized.append(
+                {
+                    "name": fallback.get("name", ""),
+                    "description": fallback.get("description", ""),
+                    "reason": fallback.get("reason", ""),
+                    "positive_prompt": fallback.get("positive_prompt", ""),
+                    "negative_prompt": fallback.get("negative_prompt", ""),
+                }
+            )
+            existing_names.add(fallback_name)
+            if len(normalized) == 4:
+                break
+
+        return normalized
 
     def _mock_style_recommendations(self) -> List[Dict[str, Any]]:
         """在 LLM 分析不可用时返回兜底风格推荐。"""
@@ -446,6 +482,15 @@ CRITICAL STYLE GUIDELINES:
                 "reason": "适合悬疑、神秘题材的叙事",
                 "positive_prompt": "black and white, film noir, high contrast, dramatic shadows, moody lighting",
                 "negative_prompt": "colorful, bright, happy, modern",
+                "is_custom": False,
+            },
+            {
+                "id": f"mock-painterly-{str(uuid.uuid4())[:8]}",
+                "name": "Painterly Drama",
+                "description": "绘画感电影风格，强调笔触肌理与情绪色彩",
+                "reason": "适合情绪浓烈或带有作者表达的故事氛围",
+                "positive_prompt": "painterly texture, cinematic composition, rich color contrast, expressive brushwork, atmospheric lighting, fine art look",
+                "negative_prompt": "flat lighting, low detail, messy composition, oversaturated, cheap cg",
                 "is_custom": False,
             },
         ]

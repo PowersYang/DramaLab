@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from src.api.auth import router as auth_router
 from src.api.asset import router as project_assets_router
+from src.api.billing import router as billing_router
 from src.api.project import router as project_core_router
 from src.api.media import router as project_media_router
 from src.api.storyboard import router as project_storyboard_router
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(system_router)
+    app.include_router(billing_router)
     app.include_router(task_router)
     app.include_router(tenant_admin_router)
     app.include_router(series_router)

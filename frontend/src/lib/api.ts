@@ -373,12 +373,58 @@ export interface AuthBootstrapPayload {
     me: AuthMeResponse;
 }
 
+export interface AuthCaptchaPayload {
+    captcha_id: string;
+    image_svg: string;
+    expires_in_seconds: number;
+    debug_code?: string;
+}
+
+export interface CaptchaVerificationOptions {
+    captchaId: string;
+    captchaCode: string;
+}
+
 export interface VerifyEmailCodeOptions {
+    channel?: "email" | "phone";
     displayName?: string;
     purpose?: string;
     signupKind?: "individual_creator" | "org_admin";
     organizationName?: string;
     invitationId?: string;
+}
+
+export interface PasswordSignInOptions {
+    channel: "email" | "phone";
+    identifier: string;
+    password: string;
+    captchaId: string;
+    captchaCode: string;
+}
+
+export interface PasswordSignUpOptions {
+    channel: "email" | "phone";
+    identifier: string;
+    password: string;
+    captchaId: string;
+    captchaCode: string;
+    displayName?: string;
+    signupKind?: "individual_creator" | "org_admin";
+    organizationName?: string;
+}
+
+export interface ResetPasswordOptions {
+    channel: "email" | "phone";
+    identifier: string;
+    code: string;
+    newPassword: string;
+    captchaId: string;
+    captchaCode: string;
+}
+
+export interface ChangePasswordOptions {
+    currentPassword: string;
+    newPassword: string;
 }
 
 export interface InvitationPreview {
@@ -491,6 +537,68 @@ export interface AvailableModelCatalog {
     i2v: ModelCatalogEntry[];
 }
 
+export interface TaskConcurrencyTaskTypeOption {
+    task_type: string;
+    label: string;
+}
+
+export interface TaskConcurrencyLimitSummary {
+    id: string;
+    organization_id: string;
+    organization_name?: string | null;
+    task_type: string;
+    max_concurrency: number;
+    created_by?: string | null;
+    updated_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface BillingAccountSummary {
+    id: string;
+    organization_id?: string | null;
+    workspace_id?: string | null;
+    owner_type: string;
+    owner_id?: string | null;
+    status: string;
+    currency: string;
+    balance_credits: number;
+    total_recharged_cents: number;
+    total_credited: number;
+    total_bonus_credits: number;
+    total_consumed_credits: number;
+    pricing_version?: string | null;
+    billing_email?: string | null;
+    billing_metadata: Record<string, any>;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface BillingTransactionSummary {
+    id: string;
+    billing_account_id: string;
+    organization_id?: string | null;
+    workspace_id?: string | null;
+    transaction_type: string;
+    direction: "credit" | "debit" | string;
+    amount_credits: number;
+    balance_before: number;
+    balance_after: number;
+    cash_amount_cents?: number | null;
+    related_type?: string | null;
+    related_id?: string | null;
+    task_type?: string | null;
+    rule_snapshot_json: Record<string, any>;
+    remark?: string | null;
+    operator_user_id?: string | null;
+    operator_source: string;
+    idempotency_key?: string | null;
+    created_by?: string | null;
+    updated_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface FinalMixClipDraft {
     frame_id: string;
     video_id: string;
@@ -553,14 +661,31 @@ export interface EpisodeBrief {
 }
 
 export const api = {
-    sendEmailCode: async (email: string, purpose: string = "signin") => {
-        const res = await axios.post(`${API_URL}/auth/email-code/send`, { email, purpose });
-        return res.data as { status: string; email: string; purpose: string; debug_code?: string };
+    getAuthCaptcha: async () => {
+        const res = await axios.get(`${API_URL}/auth/captcha`);
+        return res.data as AuthCaptchaPayload;
     },
 
-    verifyEmailCode: async (email: string, code: string, options: VerifyEmailCodeOptions = {}) => {
+    sendEmailCode: async (
+        target: string,
+        purpose: string = "signin",
+        channel: "email" | "phone" = "email",
+        captcha?: CaptchaVerificationOptions,
+    ) => {
+        const res = await axios.post(`${API_URL}/auth/email-code/send`, {
+            target,
+            purpose,
+            channel,
+            captcha_id: captcha?.captchaId,
+            captcha_code: captcha?.captchaCode,
+        });
+        return res.data as { status: string; target: string; channel: "email" | "phone"; purpose: string; debug_code?: string };
+    },
+
+    verifyEmailCode: async (target: string, code: string, options: VerifyEmailCodeOptions = {}) => {
         const res = await axios.post(`${API_URL}/auth/email-code/verify`, {
-            email,
+            target,
+            channel: options.channel || "email",
             code,
             purpose: options.purpose || "signin",
             display_name: options.displayName,
@@ -569,6 +694,51 @@ export const api = {
             invitation_id: options.invitationId,
         });
         return res.data as AuthBootstrapPayload;
+    },
+
+    signInWithPassword: async (payload: PasswordSignInOptions) => {
+        const res = await axios.post(`${API_URL}/auth/password/signin`, {
+            identifier: payload.identifier,
+            channel: payload.channel,
+            password: payload.password,
+            captcha_id: payload.captchaId,
+            captcha_code: payload.captchaCode,
+        });
+        return res.data as AuthBootstrapPayload;
+    },
+
+    signUpWithPassword: async (payload: PasswordSignUpOptions) => {
+        const res = await axios.post(`${API_URL}/auth/password/signup`, {
+            identifier: payload.identifier,
+            channel: payload.channel,
+            password: payload.password,
+            captcha_id: payload.captchaId,
+            captcha_code: payload.captchaCode,
+            display_name: payload.displayName,
+            signup_kind: payload.signupKind,
+            organization_name: payload.organizationName,
+        });
+        return res.data as AuthBootstrapPayload;
+    },
+
+    resetPasswordWithCode: async (payload: ResetPasswordOptions) => {
+        const res = await axios.post(`${API_URL}/auth/password/reset`, {
+            identifier: payload.identifier,
+            channel: payload.channel,
+            code: payload.code,
+            new_password: payload.newPassword,
+            captcha_id: payload.captchaId,
+            captcha_code: payload.captchaCode,
+        });
+        return res.data as AuthBootstrapPayload;
+    },
+
+    changePassword: async (payload: ChangePasswordOptions) => {
+        const res = await axios.post(`${API_URL}/auth/password/change`, {
+            current_password: payload.currentPassword,
+            new_password: payload.newPassword,
+        });
+        return res.data as AuthMeResponse;
     },
 
     refreshSession: async () => {
@@ -621,6 +791,11 @@ export const api = {
 
     updateCurrentWorkspace: async (name: string): Promise<WorkspaceSummary> => {
         const res = await axios.patch(`${API_URL}/workspace/current`, { name });
+        return res.data;
+    },
+
+    listOrganizations: async (): Promise<OrganizationSummary[]> => {
+        const res = await axios.get(`${API_URL}/organizations`);
         return res.data;
     },
 
@@ -1257,6 +1432,50 @@ export const api = {
 
     deleteModelCatalogEntry: async (modelId: string): Promise<{ status: string; model_id: string }> => {
         const res = await axios.delete(`${API_URL}/model-catalog/${modelId}`);
+        return res.data;
+    },
+
+    listTaskConcurrencyTaskTypes: async (): Promise<TaskConcurrencyTaskTypeOption[]> => {
+        const res = await axios.get(`${API_URL}/task-concurrency-limits/options`);
+        return res.data;
+    },
+
+    listTaskConcurrencyLimits: async (): Promise<TaskConcurrencyLimitSummary[]> => {
+        const res = await axios.get(`${API_URL}/task-concurrency-limits`);
+        return res.data;
+    },
+
+    upsertTaskConcurrencyLimit: async (payload: {
+        organization_id: string;
+        task_type: string;
+        max_concurrency: number;
+    }): Promise<TaskConcurrencyLimitSummary> => {
+        const res = await axios.put(`${API_URL}/task-concurrency-limits`, payload);
+        return res.data;
+    },
+
+    deleteTaskConcurrencyLimit: async (organizationId: string, taskType: string): Promise<{ status: string; organization_id: string; task_type: string }> => {
+        const res = await axios.delete(`${API_URL}/task-concurrency-limits`, {
+            params: {
+                organization_id: organizationId,
+                task_type: taskType,
+            },
+        });
+        return res.data;
+    },
+
+    getBillingAccount: async (): Promise<BillingAccountSummary> => {
+        const res = await axios.get(`${API_URL}/billing/account`);
+        return res.data;
+    },
+
+    listBillingTransactions: async (params?: {
+        transaction_type?: string;
+        direction?: string;
+        limit?: number;
+        offset?: number;
+    }): Promise<BillingTransactionSummary[]> => {
+        const res = await axios.get(`${API_URL}/billing/transactions`, { params });
         return res.data;
     },
 

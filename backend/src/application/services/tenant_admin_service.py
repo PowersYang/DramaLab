@@ -307,6 +307,121 @@ class TenantAdminService:
         logger.info("TENANT_ADMIN_SERVICE: delete_model_catalog_entry model_id=%s", model_id)
         return ModelProviderService().delete_model_catalog_entry(model_id)
 
+    def list_task_concurrency_task_types(self):
+        """列出可配置并发限制的任务类型。"""
+        from .task_concurrency_service import TaskConcurrencyService
+
+        return TaskConcurrencyService().list_task_type_options()
+
+    def list_task_concurrency_limits(self):
+        """列出所有组织级任务并发限制。"""
+        from .task_concurrency_service import TaskConcurrencyService
+
+        return TaskConcurrencyService().list_limits()
+
+    def upsert_task_concurrency_limit(self, payload: dict):
+        """创建或更新组织级任务并发限制。"""
+        from .task_concurrency_service import TaskConcurrencyService
+
+        logger.info(
+            "TENANT_ADMIN_SERVICE: upsert_task_concurrency_limit organization_id=%s task_type=%s max_concurrency=%s",
+            payload.get("organization_id"),
+            payload.get("task_type"),
+            payload.get("max_concurrency"),
+        )
+        return TaskConcurrencyService().upsert_limit(
+            organization_id=payload["organization_id"],
+            task_type=payload["task_type"],
+            max_concurrency=payload["max_concurrency"],
+        )
+
+    def delete_task_concurrency_limit(self, organization_id: str, task_type: str):
+        """删除组织级任务并发限制。"""
+        from .task_concurrency_service import TaskConcurrencyService
+
+        logger.info(
+            "TENANT_ADMIN_SERVICE: delete_task_concurrency_limit organization_id=%s task_type=%s",
+            organization_id,
+            task_type,
+        )
+        return TaskConcurrencyService().delete_limit(organization_id=organization_id, task_type=task_type)
+
+    def list_billing_accounts(self):
+        """列出全部组织账本。"""
+        from .billing_service import BillingService
+
+        return BillingService().account_repository.list()
+
+    def list_billing_pricing_rules(self):
+        """列出任务计费规则。"""
+        from .billing_service import BillingService
+
+        return BillingService().list_pricing_rules()
+
+    def upsert_billing_pricing_rule(self, payload: dict, actor_id: str | None = None):
+        """创建或更新任务计费规则。"""
+        from .billing_service import BillingService
+
+        logger.info(
+            "TENANT_ADMIN_SERVICE: upsert_billing_pricing_rule organization_id=%s task_type=%s price_credits=%s",
+            payload.get("organization_id"),
+            payload.get("task_type"),
+            payload.get("price_credits"),
+        )
+        return BillingService().upsert_pricing_rule(
+            task_type=payload["task_type"],
+            price_credits=payload["price_credits"],
+            organization_id=payload.get("organization_id"),
+            actor_id=actor_id,
+            status=payload.get("status", "active"),
+            description=payload.get("description"),
+        )
+
+    def list_billing_recharge_bonus_rules(self):
+        """列出充值赠送规则。"""
+        from .billing_service import BillingService
+
+        return BillingService().list_recharge_bonus_rules()
+
+    def upsert_billing_recharge_bonus_rule(self, payload: dict, actor_id: str | None = None):
+        """创建或更新充值赠送规则。"""
+        from .billing_service import BillingService
+
+        logger.info(
+            "TENANT_ADMIN_SERVICE: upsert_billing_recharge_bonus_rule organization_id=%s min_recharge_cents=%s bonus_credits=%s",
+            payload.get("organization_id"),
+            payload.get("min_recharge_cents"),
+            payload.get("bonus_credits"),
+        )
+        return BillingService().upsert_recharge_bonus_rule(
+            min_recharge_cents=payload["min_recharge_cents"],
+            max_recharge_cents=payload.get("max_recharge_cents"),
+            bonus_credits=payload["bonus_credits"],
+            organization_id=payload.get("organization_id"),
+            actor_id=actor_id,
+            status=payload.get("status", "active"),
+            description=payload.get("description"),
+        )
+
+    def manual_recharge_billing_account(self, payload: dict, actor_id: str | None = None):
+        """给组织手工充值，自动应用赠送规则。"""
+        from .billing_service import BillingService
+
+        logger.info(
+            "TENANT_ADMIN_SERVICE: manual_recharge_billing_account organization_id=%s amount_cents=%s",
+            payload.get("organization_id"),
+            payload.get("amount_cents"),
+        )
+        return BillingService().manual_recharge(
+            organization_id=payload["organization_id"],
+            amount_cents=payload["amount_cents"],
+            workspace_id=payload.get("workspace_id"),
+            actor_id=actor_id,
+            remark=payload.get("remark"),
+            billing_email=payload.get("billing_email"),
+            idempotency_key=payload.get("idempotency_key"),
+        )
+
     def list_memberships(
         self,
         organization_id: str | None = None,

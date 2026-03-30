@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from ..application.services import AuthService
+from ..application.services import AuthRateLimitError, AuthService
 from ..auth.constants import (
     ACCESS_TOKEN_COOKIE,
     CAP_WORKSPACE_MANAGE_MEMBERS,
@@ -18,7 +18,11 @@ from ..auth.dependencies import RequestContext, get_request_context
 from ..common import signed_response
 from ..common.log import get_logger
 from ..schemas.requests import (
+    ChangePasswordRequest,
     InviteWorkspaceMemberRequest,
+    PasswordSignInRequest,
+    PasswordSignUpRequest,
+    ResetPasswordRequest,
     SendEmailCodeRequest,
     SwitchWorkspaceRequest,
     UpdateCurrentOrganizationRequest,
@@ -31,6 +35,16 @@ from ..schemas.requests import (
 router = APIRouter()
 logger = get_logger(__name__)
 auth_service = AuthService()
+
+
+def _resolve_identifier_and_channel(*, email: str | None = None, phone: str | None = None, identifier: str | None = None, target: str | None = None, channel: str = "email") -> tuple[str, str]:
+    resolved_identifier = identifier or target or email or phone
+    resolved_channel = channel
+    if phone and not identifier and not target and not email:
+        resolved_channel = "phone"
+    if not resolved_identifier:
+        raise ValueError("Identifier is required")
+    return resolved_identifier, resolved_channel
 
 
 def _set_refresh_cookie(response, refresh_token: str) -> None:
@@ -65,19 +79,31 @@ def _clear_auth_cookies(response: Response) -> None:
 
 
 @router.post("/auth/email-code/send")
-async def send_email_code(request: SendEmailCodeRequest):
+async def send_email_code(request: SendEmailCodeRequest, http_request: Request):
     try:
-        payload = auth_service.send_email_code(request.email, request.purpose)
+        auth_service.verify_captcha(request.captcha_id, request.captcha_code)
+        identifier, channel = _resolve_identifier_and_channel(email=request.email, target=request.target, channel=request.channel)
+        payload = auth_service.send_verification_code(channel, identifier, request.purpose, http_request.client.host if http_request.client else None)
         return signed_response(payload)
+    except AuthRateLimitError as exc:
+        headers = {"Retry-After": str(exc.retry_after_seconds)} if exc.retry_after_seconds else None
+        raise HTTPException(status_code=429, detail=str(exc), headers=headers)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/auth/captcha")
+async def get_auth_captcha():
+    return signed_response(auth_service.create_captcha_challenge().model_dump())
 
 
 @router.post("/auth/email-code/verify")
 async def verify_email_code(request: VerifyEmailCodeRequest, response: Response, http_request: Request):
     try:
-        auth_payload, me, refresh_token = auth_service.verify_email_code(
-            email=request.email,
+        identifier, channel = _resolve_identifier_and_channel(email=request.email, target=request.target, channel=request.channel)
+        auth_payload, me, refresh_token = auth_service.verify_identifier_code(
+            identifier=identifier,
+            target_type=channel,
             code=request.code,
             purpose=request.purpose,
             display_name=request.display_name,
@@ -95,6 +121,84 @@ async def verify_email_code(request: VerifyEmailCodeRequest, response: Response,
         _set_refresh_cookie(http_response, refresh_token)
         _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
         return http_response
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/auth/password/signin")
+async def sign_in_with_password(request: PasswordSignInRequest, http_request: Request):
+    try:
+        auth_service.verify_captcha(request.captcha_id, request.captcha_code)
+        identifier, channel = _resolve_identifier_and_channel(email=request.email, phone=request.phone, identifier=request.identifier, channel=request.channel)
+        auth_payload, me, refresh_token = auth_service.sign_in_with_password(
+            identifier=identifier,
+            target_type=channel,
+            password=request.password,
+            ip_address=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("user-agent"),
+        )
+        http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        _set_refresh_cookie(http_response, refresh_token)
+        _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
+        return http_response
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/auth/password/signup")
+async def sign_up_with_password(request: PasswordSignUpRequest, http_request: Request):
+    try:
+        auth_service.verify_captcha(request.captcha_id, request.captcha_code)
+        identifier, channel = _resolve_identifier_and_channel(email=request.email, phone=request.phone, identifier=request.identifier, channel=request.channel)
+        auth_payload, me, refresh_token = auth_service.sign_up_with_password(
+            identifier=identifier,
+            target_type=channel,
+            password=request.password,
+            display_name=request.display_name,
+            signup_kind=request.signup_kind,
+            organization_name=request.organization_name,
+            ip_address=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("user-agent"),
+        )
+        http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        _set_refresh_cookie(http_response, refresh_token)
+        _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
+        return http_response
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/auth/password/reset")
+async def reset_password_with_code(request: ResetPasswordRequest, http_request: Request):
+    try:
+        auth_service.verify_captcha(request.captcha_id, request.captcha_code)
+        identifier, channel = _resolve_identifier_and_channel(email=request.email, phone=request.phone, identifier=request.identifier, channel=request.channel)
+        auth_payload, me, refresh_token = auth_service.reset_password_with_code(
+            identifier=identifier,
+            target_type=channel,
+            code=request.code,
+            new_password=request.new_password,
+            ip_address=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("user-agent"),
+        )
+        http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        _set_refresh_cookie(http_response, refresh_token)
+        _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
+        return http_response
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/auth/password/change")
+async def change_password(request: ChangePasswordRequest, context: RequestContext = Depends(get_request_context)):
+    try:
+        user = auth_service.change_password(
+            context.user,
+            current_password=request.current_password,
+            new_password=request.new_password,
+            current_session_refresh_token=context.refresh_token,
+        )
+        return signed_response(auth_service.build_auth_me(user, context.current_workspace_id).model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

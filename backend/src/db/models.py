@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -66,6 +66,8 @@ class UserRecord(Base):
     phone: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     auth_provider: Mapped[str] = mapped_column(String(64), default="email_otp", nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    user_art_styles: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
     platform_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -100,15 +102,92 @@ class MembershipRecord(Base):
 
 class BillingAccountRecord(Base):
     __tablename__ = "billing_accounts"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_billing_accounts_organization"),
+        Index("ix_billing_accounts_status_updated", "status", "updated_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     organization_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("organizations.id"), nullable=True, index=True)
     workspace_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    owner_type: Mapped[str] = mapped_column(String(16), default="organization", nullable=False)
+    owner_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    currency: Mapped[str] = mapped_column(String(16), default="CNY", nullable=False)
+    balance_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_recharged_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_credited: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_bonus_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_consumed_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pricing_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     billing_metadata: Mapped[dict] = mapped_column("metadata", JSON_TYPE, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class BillingTransactionRecord(TenantAuditMixin, Base):
+    __tablename__ = "billing_transactions"
+    __table_args__ = (
+        Index("ix_billing_transactions_org_created", "organization_id", "created_at"),
+        Index("ix_billing_transactions_account_created", "billing_account_id", "created_at"),
+        Index("ix_billing_transactions_related", "related_type", "related_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    billing_account_id: Mapped[str] = mapped_column(String(64), ForeignKey("billing_accounts.id"), nullable=False, index=True)
+    transaction_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    amount_credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    cash_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    related_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    related_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    task_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    rule_snapshot_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    remark: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operator_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    operator_source: Mapped[str] = mapped_column(String(32), default="system", nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+
+
+class BillingPricingRuleRecord(GlobalAuditMixin, Base):
+    __tablename__ = "billing_pricing_rules"
+    __table_args__ = (
+        UniqueConstraint("scope_type", "organization_id", "task_type", "effective_from", name="uq_billing_pricing_scope_task_effective"),
+        Index("ix_billing_pricing_task_status_effective", "task_type", "status", "effective_from"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(16), default="platform", nullable=False)
+    organization_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("organizations.id"), nullable=True, index=True)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    charge_mode: Mapped[str] = mapped_column(String(16), default="fixed", nullable=False)
+    price_credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BillingRechargeBonusRuleRecord(GlobalAuditMixin, Base):
+    __tablename__ = "billing_recharge_bonus_rules"
+    __table_args__ = (
+        UniqueConstraint("scope_type", "organization_id", "min_recharge_cents", "effective_from", name="uq_billing_recharge_bonus_scope_min_effective"),
+        Index("ix_billing_recharge_bonus_status_effective", "status", "effective_from"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(16), default="platform", nullable=False)
+    organization_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("organizations.id"), nullable=True, index=True)
+    min_recharge_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_recharge_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bonus_credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class VerificationCodeRecord(Base):
@@ -128,6 +207,33 @@ class VerificationCodeRecord(Base):
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class CaptchaChallengeRecord(Base):
+    __tablename__ = "captcha_challenges"
+    __table_args__ = (
+        Index("ix_captcha_challenges_expires", "expires_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class AuthRateLimitRecord(Base):
+    __tablename__ = "auth_rate_limits"
+    __table_args__ = (
+        Index("ix_auth_rate_limits_scope", "action", "scope_type", "scope_key", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
 class UserSessionRecord(Base):
@@ -535,3 +641,16 @@ class TaskEventRecord(TenantAuditMixin, Base):
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_payload_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class TaskConcurrencyLimitRecord(GlobalAuditMixin, Base):
+    __tablename__ = "task_concurrency_limits"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "task_type", name="uq_task_concurrency_limits_org_task_type"),
+        Index("ix_task_concurrency_limits_org_task_type", "organization_id", "task_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(64), ForeignKey("organizations.id"), nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

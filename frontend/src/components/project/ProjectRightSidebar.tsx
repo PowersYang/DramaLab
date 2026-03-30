@@ -13,8 +13,8 @@ interface ProjectRightSidebarProps {
     activeStep: string;
 }
 
-function isQueueEnabledStep(step: string): step is "assets" | "storyboard" | "audio" {
-    return step === "assets" || step === "storyboard" || step === "audio";
+function isQueueEnabledStep(step: string): step is "script" | "assets" | "storyboard" | "audio" {
+    return step === "script" || step === "assets" || step === "storyboard" || step === "audio";
 }
 
 export default function ProjectRightSidebar({ activeStep }: ProjectRightSidebarProps) {

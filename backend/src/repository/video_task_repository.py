@@ -25,8 +25,8 @@ class VideoTaskRepository(BaseRepository[VideoTask]):
             row = query.one_or_none()
             return _video_task_from_record(row) if row else None
 
-    def create(self, task: VideoTask) -> VideoTask:
-        with self._with_session() as session:
+    def create(self, task: VideoTask, session=None) -> VideoTask:
+        with self._with_session(session) as session:
             ctx = load_owner_context(session, "project", task.project_id)
             session.merge(_video_task_record(task, owner_tenant_kwargs(ctx)))
         return task
@@ -52,8 +52,8 @@ class VideoTaskRepository(BaseRepository[VideoTask]):
             self._restore_record(record)
             return self.get(project_id, task_id)
 
-    def save(self, task: VideoTask) -> VideoTask:
-        return self.create(task)
+    def save(self, task: VideoTask, session=None) -> VideoTask:
+        return self.create(task, session=session)
 
     def delete(self, project_id: str, task_id: str) -> None:
         self.soft_delete(project_id, task_id)

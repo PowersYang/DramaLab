@@ -19,5 +19,4 @@ class ProjectReparseExecutor:
             "character_count": len(project.characters or []),
             "scene_count": len(project.scenes or []),
             "prop_count": len(project.props or []),
-            "frame_count": len(project.frames or []),
         }

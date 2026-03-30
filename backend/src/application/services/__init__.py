@@ -1,5 +1,12 @@
 from .asset_service import AssetService
-from .auth_service import AuthService
+from .auth_service import AuthRateLimitError, AuthService
+from .billing_service import (
+    BillingAccountUnavailableError,
+    BillingError,
+    BillingInsufficientBalanceError,
+    BillingPricingNotConfiguredError,
+    BillingService,
+)
 from .character_service import CharacterService
 from .model_provider_service import ModelProviderService
 from .project_service import ProjectService
@@ -14,7 +21,13 @@ from .video_task_service import VideoTaskService
 __all__ = [
     "CharacterService",
     "AssetService",
+    "AuthRateLimitError",
     "AuthService",
+    "BillingAccountUnavailableError",
+    "BillingError",
+    "BillingInsufficientBalanceError",
+    "BillingPricingNotConfiguredError",
+    "BillingService",
     "ModelProviderService",
     "ProjectService",
     "PropService",

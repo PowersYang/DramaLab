@@ -133,6 +133,75 @@ class ProjectServiceReparseTest(unittest.TestCase):
         self.assertEqual(reparsed.characters[0].id, "char_2")
         self.assertEqual(parse_calls, [("Parsed", "same text")])
 
+    def test_reparse_preserves_existing_frames_and_video_tasks(self):
+        from src.application.services.project_service import ProjectService
+        from src.repository import ProjectRepository
+        from src.schemas.models import Character, Script, StoryboardFrame, VideoTask
+
+        now = utc_now()
+        existing = Script(
+            id="project_keep_outputs_1",
+            title="Parsed",
+            original_text="old text",
+            characters=[Character(id="char_old_1", name="Old Hero", description="old lead")],
+            scenes=[],
+            props=[],
+            frames=[
+                StoryboardFrame(
+                    id="frame_existing_1",
+                    scene_id="scene_existing_1",
+                    action_description="旧分镜",
+                )
+            ],
+            video_tasks=[
+                VideoTask(
+                    id="video_existing_1",
+                    project_id="project_keep_outputs_1",
+                    frame_id="frame_existing_1",
+                    image_url="oss://frame-existing",
+                    prompt="old video",
+                    video_url="oss://video-existing",
+                    created_at=now,
+                )
+            ],
+            created_at=now,
+            updated_at=now,
+        )
+        ProjectRepository().create(existing)
+
+        service = ProjectService()
+
+        class FakeTextProvider:
+            def parse_novel(self, title: str, text: str) -> Script:
+                return Script(
+                    id="parsed_project_again",
+                    title=title,
+                    original_text=text,
+                    characters=[Character(id="char_new_1", name="New Hero", description="new lead")],
+                    scenes=[],
+                    props=[],
+                    frames=[],
+                    video_tasks=[],
+                    created_at=now,
+                    updated_at=now,
+                )
+
+        service.text_provider = FakeTextProvider()
+
+        reparsed = service.reparse_project("project_keep_outputs_1", "new text")
+
+        self.assertEqual(reparsed.original_text, "new text")
+        self.assertEqual([item.id for item in reparsed.characters], ["char_new_1"])
+        self.assertEqual([item.id for item in reparsed.frames], ["frame_existing_1"])
+        self.assertEqual([item.id for item in reparsed.video_tasks], ["video_existing_1"])
+
+        stored = ProjectRepository().get("project_keep_outputs_1")
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored.original_text, "new text")
+        self.assertEqual([item.id for item in stored.characters], ["char_new_1"])
+        self.assertEqual([item.id for item in stored.frames], ["frame_existing_1"])
+        self.assertEqual([item.id for item in stored.video_tasks], ["video_existing_1"])
+
 
 if __name__ == "__main__":
     unittest.main()

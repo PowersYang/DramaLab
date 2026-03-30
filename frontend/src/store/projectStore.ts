@@ -114,9 +114,13 @@ export interface StoryboardFrame {
 export interface StylePreset {
     id: string;
     name: string;
-    color: string;
-    prompt: string;
+    description?: string;
+    positive_prompt: string;
     negative_prompt?: string;
+    thumbnail_url?: string;
+    sort_order?: number;
+    is_builtin?: boolean;
+    is_active?: boolean;
 }
 
 export interface StyleConfig {

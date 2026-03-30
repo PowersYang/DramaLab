@@ -30,7 +30,9 @@ def bootstrap_api_environment(logger: logging.Logger) -> None:
     from ..application.services import AuthService, ModelProviderService, SystemService
 
     SystemService().ensure_default_style_presets()
-    AuthService().ensure_default_roles()
+    auth_service = AuthService()
+    auth_service.ensure_default_roles()
+    auth_service.ensure_existing_users_have_initial_password()
     model_provider_service = ModelProviderService()
     model_provider_service.ensure_defaults()
     model_provider_service.migrate_from_env()
