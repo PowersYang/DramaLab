@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, RefreshCw, Check, AlertTriangle, Image as ImageIcon, Lock, Unlock, ChevronRight, Maximize2 } from "lucide-react";
 import { api, API_URL } from "@/lib/api";
+import BillingTaskHint from "@/components/billing/BillingTaskHint";
 import { VariantSelector } from "../common/VariantSelector";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 
@@ -18,6 +20,7 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
     const updateProject = useProjectStore(state => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
 
     // Get the latest frame data from the store (instead of using stale prop)
     const frame = useMemo(() => {
@@ -27,6 +30,8 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
 
     const [prompt, setPrompt] = useState(frame.image_prompt || frame.action_description || "");
     const [isGenerating, setIsGenerating] = useState(false);
+    const storyboardRenderPrice = getTaskPrice("storyboard.render");
+    const storyboardRenderAffordable = canAffordTask("storyboard.render");
 
     // Sync prompt when frame changes
     useEffect(() => {
@@ -35,6 +40,10 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
 
     const handleGenerate = async (batchSize: number) => {
         if (!currentProject) return;
+        if (!storyboardRenderAffordable) {
+            alert("当前组织算力豆余额不足，无法提交分镜渲染任务。");
+            return;
+        }
 
         setIsGenerating(true);
         try {
@@ -123,6 +132,15 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                             onDelete={handleDeleteVariant}
                             onGenerate={handleGenerate}
                             isGenerating={isGenerating}
+                            disableGenerate={!storyboardRenderAffordable}
+                            generateDisabledReason="当前组织算力豆余额不足，无法提交分镜渲染任务"
+                            generateHint={
+                                <BillingTaskHint
+                                    priceCredits={storyboardRenderPrice}
+                                    balanceCredits={account?.balance_credits}
+                                    compact
+                                />
+                            }
                             aspectRatio="16:9"
                             className="h-full"
                         />

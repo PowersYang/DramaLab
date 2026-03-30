@@ -17,6 +17,9 @@ interface VariantSelectorProps {
     showGenerateControls?: boolean;
     showMainViewer?: boolean;
     showFilmstripArrows?: boolean;
+    disableGenerate?: boolean;
+    generateDisabledReason?: string;
+    generateHint?: React.ReactNode;
 }
 
 export const VariantSelector: React.FC<VariantSelectorProps> = ({
@@ -32,7 +35,10 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
     aspectRatio = "9:16",
     showGenerateControls = true,
     showMainViewer = true,
-    showFilmstripArrows = true
+    showFilmstripArrows = true,
+    disableGenerate = false,
+    generateDisabledReason,
+    generateHint
 }) => {
     const [batchSize, setBatchSize] = useState(1);
     const [localGeneratingBatchSize, setLocalGeneratingBatchSize] = useState(1); // Track the batch size when generation started locally
@@ -170,16 +176,18 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
 
                             <button
                                 onClick={() => onGenerate(batchSize)}
-                                disabled={isGenerating}
-                                className={`variant-selector-generate flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isGenerating
+                                disabled={isGenerating || disableGenerate}
+                                className={`variant-selector-generate flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isGenerating || disableGenerate
                                     ? 'bg-white/5 text-gray-400 cursor-not-allowed'
                                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20'
                                     }`}
+                                title={disableGenerate ? generateDisabledReason : undefined}
                             >
                                 <Layers size={16} />
                                 生成候选
                             </button>
                         </div>
+                        {generateHint ? <div className="mt-3">{generateHint}</div> : null}
                     </div>
                 )}
 

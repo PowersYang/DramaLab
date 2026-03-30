@@ -101,3 +101,23 @@ class LLMAdapterTest(unittest.TestCase):
 
             self.assertEqual(content, "ok")
             self.assertEqual(fake_client.chat.completions.calls, 2)
+
+    def test_resolves_provider_dynamically_instead_of_binding_at_init(self):
+        with TemporaryDirectory() as temp_dir:
+            self._bootstrap_provider_db(temp_dir, {"request_timeout_seconds": 450})
+
+            adapter = LLMAdapter()
+            service = ModelProviderService()
+            service.update_provider(
+                "OPENAI",
+                enabled=True,
+                credentials_patch={"api_key": "openai-key"},
+                settings_patch={"default_text_model": "gpt-4.1"},
+            )
+            service.update_provider(
+                "DASHSCOPE",
+                enabled=False,
+            )
+
+            self.assertTrue(adapter.is_configured)
+            self.assertEqual(adapter._get_default_model(), "gpt-4.1")

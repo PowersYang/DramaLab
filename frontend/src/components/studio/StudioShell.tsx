@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
-import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Settings2, SlidersHorizontal, Users2, Workflow } from "lucide-react";
+import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Palette, Settings2, SlidersHorizontal, Users2, WalletCards, Workflow } from "lucide-react";
 
 import DramaLabBranding from "@/components/layout/DramaLabBranding";
 import { useAuthStore } from "@/store/authStore";
@@ -28,8 +28,10 @@ const NAV_ITEMS: StudioNavItem[] = [
   { href: "/studio/projects", label: "项目中心", icon: FolderKanban, capability: "workspace.view" },
   { href: "/studio/library", label: "资产库", icon: Library, capability: "workspace.view" },
   { href: "/studio/tasks", label: "任务中心", icon: Workflow, capability: "task.run" },
+  { href: "/studio/styles", label: "美术风格", icon: Palette, capability: "workspace.view" },
   { href: "/studio/team", label: "团队", icon: Users2, capability: "workspace.manage_members" },
-  { href: "/studio/billing", label: "计费", icon: CreditCard, capability: "workspace.manage_billing" },
+  { href: "/studio/billing", label: "算力豆账本", icon: CreditCard, capability: "workspace.view" },
+  { href: "/studio/billing-admin", label: "计费配置", icon: WalletCards, capability: "workspace.view", requiresPlatformSuperAdmin: true },
   { href: "/studio/model-config", label: "模型配置", icon: Boxes, capability: "workspace.view", requiresPlatformSuperAdmin: true },
   { href: "/studio/task-concurrency", label: "任务并发", icon: SlidersHorizontal, capability: "workspace.view", requiresPlatformSuperAdmin: true },
   { href: "/studio/settings", label: "设置", icon: Settings2, capability: "workspace.view" },
@@ -72,7 +74,7 @@ export default function StudioShell({ children, title, description, actions }: S
 
         <nav className="mt-4 space-y-2">
           {visibleNavItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/studio" && pathname.startsWith(item.href));
+            const isActive = pathname === item.href || (item.href !== "/studio" && pathname.startsWith(`${item.href}/`));
             const Icon = item.icon;
             return (
               <Link

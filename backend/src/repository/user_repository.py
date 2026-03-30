@@ -17,6 +17,7 @@ def _to_user(record: UserRecord) -> User:
         display_name=record.display_name,
         auth_provider=record.auth_provider,
         password_hash=record.password_hash,
+        user_art_styles=record.user_art_styles or [],
         platform_role=record.platform_role,
         status=record.status,
         last_login_at=record.last_login_at,
@@ -31,6 +32,17 @@ class UserRepository(BaseRepository[User]):
     def list(self) -> List[User]:
         with self._with_session() as session:
             records = session.query(UserRecord).order_by(UserRecord.created_at.desc()).all()
+            return [_to_user(record) for record in records]
+
+    def list_by_ids(self, user_ids: List[str]) -> List[User]:
+        if not user_ids:
+            return []
+        with self._with_session() as session:
+            records = (
+                session.query(UserRecord)
+                .filter(UserRecord.id.in_(user_ids))
+                .all()
+            )
             return [_to_user(record) for record in records]
 
     def get(self, user_id: str) -> User | None:
@@ -53,6 +65,7 @@ class UserRepository(BaseRepository[User]):
                     display_name=user.display_name,
                     auth_provider=user.auth_provider,
                     password_hash=user.password_hash,
+                    user_art_styles=user.user_art_styles,
                     platform_role=user.platform_role,
                     status=user.status,
                     last_login_at=user.last_login_at,

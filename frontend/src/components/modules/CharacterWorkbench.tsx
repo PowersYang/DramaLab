@@ -3,6 +3,8 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { X, RefreshCw, Check, Image as ImageIcon, Lock, Video, Sparkles, Eye } from "lucide-react";
+import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { api } from "@/lib/api";
 
 import { useProjectStore } from "@/store/projectStore";
@@ -155,6 +157,11 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     const [negativePrompt, setNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
     // Art Direction Style expanded state (collapsed by default to save space)
     const [showStyleExpanded, setShowStyleExpanded] = useState(false);
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
+    const assetGeneratePrice = getTaskPrice("asset.generate");
+    const motionRefPrice = getTaskPrice("asset.motion_ref.generate");
+    const assetGenerateAffordable = canAffordTask("asset.generate");
+    const motionRefAffordable = canAffordTask("asset.motion_ref.generate");
 
     // Get the uploaded image URL for reverse generation reference
     const getUploadedReferenceUrl = () => {
@@ -172,6 +179,10 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     // Motion Ref generation handler with validation
     const handleGenerateMotionRef = async (assetType: 'full_body' | 'head_shot', prompt: string, audioUrl?: string) => {
         if (!onGenerateVideo) return;
+        if (!motionRefAffordable) {
+            alert("当前组织算力豆余额不足，无法提交动态参考视频任务。");
+            return;
+        }
 
         // Check if source image exists
         const hasSourceImage = assetType === 'full_body'
@@ -315,6 +326,10 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     }, [asset, hasAnyUpload, hasNonFullBodyUpload]);
 
     const handleGenerateClick = (type: "full_body" | "three_view" | "headshot", batchSize: number) => {
+        if (!assetGenerateAffordable) {
+            alert("当前组织算力豆余额不足，无法提交资产生成任务。");
+            return;
+        }
         let prompt = "";
         if (type === "full_body") prompt = fullBodyPrompt;
         else if (type === "three_view") prompt = threeViewPrompt;
@@ -631,23 +646,25 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                         <button
                                             type="button"
                                             onClick={handleToolbarGenerate}
-                                            disabled={activePanel === "full_body"
+                                            disabled={(activePanel === "full_body"
                                                 ? getGeneratingInfo("full_body").isGenerating
                                                 : activePanel === "three_view"
                                                     ? getGeneratingInfo("three_view").isGenerating
-                                                    : getGeneratingInfo("headshot").isGenerating}
-                                            className={`variant-selector-generate flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-medium transition-all ${(activePanel === "full_body"
+                                                    : getGeneratingInfo("headshot").isGenerating) || !assetGenerateAffordable}
+                                            className={`variant-selector-generate flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-medium transition-all ${((activePanel === "full_body"
                                                 ? getGeneratingInfo("full_body").isGenerating
                                                 : activePanel === "three_view"
                                                     ? getGeneratingInfo("three_view").isGenerating
-                                                    : getGeneratingInfo("headshot").isGenerating)
+                                                    : getGeneratingInfo("headshot").isGenerating) || !assetGenerateAffordable)
                                                 ? "bg-white/5 text-gray-400 cursor-not-allowed"
                                                 : "bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow-lg shadow-emerald-500/20"
                                                 }`}
+                                            title={!assetGenerateAffordable ? "当前组织算力豆余额不足，无法提交资产生成任务" : undefined}
                                         >
                                             <PhotoIcon size={11} />
                                             生成图片
                                         </button>
+                                        <BillingTaskHint priceCredits={assetGeneratePrice} balanceCredits={account?.balance_credits} compact />
                                     </div>
                                 )}
                             </div>
@@ -929,15 +946,19 @@ function WorkbenchPanel({
 
                             <button
                                 onClick={() => onGenerateMotionRef?.(motionPrompt, audioUrl)}
-                                disabled={isGeneratingMotion}
+                                disabled={isGeneratingMotion || !motionRefAffordable}
                                 className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${isGeneratingMotion
                                     ? 'bg-white/5 text-gray-500 cursor-not-allowed'
-                                    : 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-lg shadow-amber-500/20'
+                                    : !motionRefAffordable
+                                        ? 'bg-white/5 text-gray-500 cursor-not-allowed'
+                                        : 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-lg shadow-amber-500/20'
                                     }`}
+                                title={!motionRefAffordable ? "当前组织算力豆余额不足，无法提交动态参考视频任务" : undefined}
                             >
                                 <Video size={16} />
                                 生成动态视频
                             </button>
+                            <BillingTaskHint priceCredits={motionRefPrice} balanceCredits={account?.balance_credits} />
                         </div>
                     ) : (
                         <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">

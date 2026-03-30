@@ -368,6 +368,17 @@ export interface AuthMeResponse {
     memberships: MembershipWithRole[];
 }
 
+export interface UserArtStyle {
+    id: string;
+    name: string;
+    description?: string;
+    positive_prompt: string;
+    negative_prompt: string;
+    thumbnail_url?: string;
+    is_custom: boolean;
+    reason?: string;
+}
+
 export interface AuthBootstrapPayload {
     session: AuthSession;
     me: AuthMeResponse;
@@ -593,6 +604,41 @@ export interface BillingTransactionSummary {
     operator_user_id?: string | null;
     operator_source: string;
     idempotency_key?: string | null;
+    created_by?: string | null;
+    updated_by?: string | null;
+    operator_display_name?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface BillingPricingRuleSummary {
+    id: string;
+    scope_type: string;
+    organization_id?: string | null;
+    task_type: string;
+    charge_mode: string;
+    price_credits: number;
+    status: string;
+    effective_from: string;
+    effective_to?: string | null;
+    description?: string | null;
+    created_by?: string | null;
+    updated_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface BillingRechargeBonusRuleSummary {
+    id: string;
+    scope_type: string;
+    organization_id?: string | null;
+    min_recharge_cents: number;
+    max_recharge_cents?: number | null;
+    bonus_credits: number;
+    status: string;
+    effective_from: string;
+    effective_to?: string | null;
+    description?: string | null;
     created_by?: string | null;
     updated_by?: string | null;
     created_at: string;
@@ -1183,6 +1229,18 @@ export const api = {
         return res.data;
     },
 
+    getUserArtStyles: async (): Promise<{ styles: UserArtStyle[] }> => {
+        const res = await axios.get(`${API_URL}/art_direction/user-styles`);
+        return res.data;
+    },
+
+    saveUserArtStyles: async (styles: UserArtStyle[]): Promise<{ styles: UserArtStyle[] }> => {
+        const res = await axios.put(`${API_URL}/art_direction/user-styles`, {
+            styles,
+        });
+        return res.data;
+    },
+
     // NOTE: polishPrompt removed - use refineFramePrompt for storyboard prompts
     polishVideoPrompt: async (draftPrompt: string, feedback: string = "", scriptId: string = ""): Promise<TaskReceipt> => {
         const res = await axios.post(`${API_URL}/video/polish_prompt`, {
@@ -1476,6 +1534,77 @@ export const api = {
         offset?: number;
     }): Promise<BillingTransactionSummary[]> => {
         const res = await axios.get(`${API_URL}/billing/transactions`, { params });
+        return res.data;
+    },
+
+    listCurrentBillingPricingRules: async (): Promise<BillingPricingRuleSummary[]> => {
+        const res = await axios.get(`${API_URL}/billing/pricing-rules`);
+        return res.data;
+    },
+
+    listBillingAccounts: async (): Promise<BillingAccountSummary[]> => {
+        const res = await axios.get(`${API_URL}/admin/billing/accounts`);
+        return res.data;
+    },
+
+    listAdminBillingTransactions: async (params: {
+        organization_id: string;
+        transaction_type?: string;
+        direction?: string;
+        limit?: number;
+        offset?: number;
+    }): Promise<BillingTransactionSummary[]> => {
+        const res = await axios.get(`${API_URL}/admin/billing/transactions`, { params });
+        return res.data;
+    },
+
+    listBillingPricingRules: async (): Promise<BillingPricingRuleSummary[]> => {
+        const res = await axios.get(`${API_URL}/admin/billing/pricing-rules`);
+        return res.data;
+    },
+
+    upsertBillingPricingRule: async (payload: {
+        organization_id?: string | null;
+        task_type: string;
+        price_credits: number;
+        status?: string;
+        description?: string;
+    }): Promise<BillingPricingRuleSummary> => {
+        const res = await axios.post(`${API_URL}/admin/billing/pricing-rules`, payload);
+        return res.data;
+    },
+
+    listBillingRechargeBonusRules: async (): Promise<BillingRechargeBonusRuleSummary[]> => {
+        const res = await axios.get(`${API_URL}/admin/billing/recharge-bonus-rules`);
+        return res.data;
+    },
+
+    upsertBillingRechargeBonusRule: async (payload: {
+        organization_id?: string | null;
+        min_recharge_cents: number;
+        max_recharge_cents?: number | null;
+        bonus_credits: number;
+        status?: string;
+        description?: string;
+    }): Promise<BillingRechargeBonusRuleSummary> => {
+        const res = await axios.post(`${API_URL}/admin/billing/recharge-bonus-rules`, payload);
+        return res.data;
+    },
+
+    createManualRecharge: async (payload: {
+        organization_id: string;
+        amount_cents: number;
+        remark?: string;
+        workspace_id?: string;
+        billing_email?: string;
+        idempotency_key?: string;
+    }): Promise<{
+        organization_id: string;
+        account: BillingAccountSummary;
+        base_credits: number;
+        bonus_credits: number;
+    }> => {
+        const res = await axios.post(`${API_URL}/admin/billing/recharges/manual`, payload);
         return res.data;
     },
 

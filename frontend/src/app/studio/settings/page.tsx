@@ -169,6 +169,13 @@ export default function StudioSettingsRoutePage() {
             <div className="font-semibold text-slate-900">通知偏好</div>
             <div className="mt-1">首版先使用系统默认策略，后续会开放任务通知、团队邀请与运营通知配置。</div>
           </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="font-semibold text-slate-900">自定义美术风格</div>
+            <div className="mt-1 text-sm leading-6 text-slate-500">在独立风格库页面统一管理你保存过的风格，美术设定页会直接显示这些历史风格。</div>
+            <Link href="/studio/styles" className="mt-3 inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+              前往风格库
+            </Link>
+          </div>
           {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message} 头部工作区信息已同步刷新。</div> : null}
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
         </div>

@@ -8,6 +8,8 @@ import {
     ChevronRight, ChevronLeft, Trash2, Copy, Wand2, Users, FileText, RefreshCw, Loader2, X, Lock, Unlock,
     Plus, ArrowUp, ArrowDown, Zap, Upload, Film
 } from "lucide-react";
+import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
@@ -41,6 +43,11 @@ export default function StoryboardComposer() {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadTargetFrameId, setUploadTargetFrameId] = useState<string | null>(null);
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
+    const storyboardAnalyzePrice = getTaskPrice("storyboard.analyze");
+    const storyboardAnalyzeAffordable = canAffordTask("storyboard.analyze");
+    const storyboardRenderPrice = getTaskPrice("storyboard.render");
+    const storyboardRenderAffordable = canAffordTask("storyboard.render");
 
     const sortedFrames = useMemo(() => {
         if (!currentProject?.frames) {
@@ -63,6 +70,10 @@ export default function StoryboardComposer() {
     // NEW: Analyze script text to generate storyboard frames
     const handleAnalyzeToStoryboard = async () => {
         if (!currentProject) return;
+        if (!storyboardAnalyzeAffordable) {
+            alert("当前组织算力豆余额不足，无法提交分镜分析任务。");
+            return;
+        }
 
         const text = currentProject.originalText;
         if (!text || !text.trim()) {
@@ -244,6 +255,10 @@ export default function StoryboardComposer() {
     const handleRenderFrame = async (frame: any, batchSize: number = 1, e?: React.MouseEvent) => {
         e?.stopPropagation();
         if (!currentProject) return;
+        if (!storyboardRenderAffordable) {
+            alert("当前组织算力豆余额不足，无法提交分镜渲染任务。");
+            return;
+        }
 
         addRenderingFrame(frame.id);
         try {
@@ -377,13 +392,14 @@ export default function StoryboardComposer() {
                     <div className="w-px h-4 bg-white/10" />
                     <button
                         onClick={handleAnalyzeToStoryboard}
-                        disabled={isAnalyzing}
+                        disabled={isAnalyzing || !storyboardAnalyzeAffordable}
                         className="flex items-center gap-1.5 text-xs bg-primary/80 hover:bg-primary px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-50"
-                        title="从剧本生成分镜帧"
+                        title={!storyboardAnalyzeAffordable ? "当前组织算力豆余额不足，无法提交分镜分析任务" : "从剧本生成分镜帧"}
                     >
                         {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
                         {isAnalyzing ? "生成中..." : "生成分镜"}
                     </button>
+                    <BillingTaskHint priceCredits={storyboardAnalyzePrice} balanceCredits={account?.balance_credits} compact />
                     <div className="w-px h-4 bg-white/10" />
                     <span className="text-xs text-gray-500 font-mono">
                         {currentProject?.frames?.length || 0} 个分镜
@@ -475,8 +491,9 @@ export default function StoryboardComposer() {
                                                                 <button
                                                                     key={size}
                                                                     onClick={(e) => { e.stopPropagation(); handleRenderFrame(frame, size); }}
-                                                                    className="px-2 py-1.5 bg-primary/80 hover:bg-primary text-white rounded text-xs font-bold transition-colors"
-                                                                    title={`生成 ${size} 个变体`}
+                                                                    disabled={!storyboardRenderAffordable}
+                                                                    className="px-2 py-1.5 bg-primary/80 hover:bg-primary text-white rounded text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                    title={!storyboardRenderAffordable ? "当前组织算力豆余额不足，无法提交分镜渲染任务" : `生成 ${size} 个变体`}
                                                                 >
                                                                     <div className="flex items-center gap-1">
                                                                         <Wand2 size={12} />
@@ -489,6 +506,16 @@ export default function StoryboardComposer() {
                                                 </div>
                                             )}
                                         </div>
+                                        {!frame.locked ? (
+                                            <div className="absolute bottom-2 left-2 pointer-events-none">
+                                                <BillingTaskHint
+                                                    priceCredits={storyboardRenderPrice}
+                                                    balanceCredits={account?.balance_credits}
+                                                    compact
+                                                    className="rounded-full bg-black/55 px-2 py-1"
+                                                />
+                                            </div>
+                                        ) : null}
                                     </div>
 
                                     {/* Content */}
@@ -579,7 +606,7 @@ export default function StoryboardComposer() {
                                 </motion.div>
 
                                 {/* Add Button Between Frames */}
-                                < div className="flex justify-center opacity-0 hover:opacity-100 transition-opacity -my-3 z-10 relative" >
+                                <div className="flex justify-center opacity-0 hover:opacity-100 transition-opacity -my-3 z-10 relative">
                                     <button
                                         onClick={() => { setInsertIndex(index + 1); setIsCreateDialogOpen(true); }}
                                         className="storyboard-insert-button p-1 border border-white/20 rounded-full text-gray-400 hover:text-white hover:border-primary hover:bg-primary/20 transition-all transform hover:scale-110"
@@ -663,7 +690,7 @@ export default function StoryboardComposer() {
                 className="hidden"
                 onChange={handleFileSelected}
             />
-        </div >
+        </div>
     );
 }
 

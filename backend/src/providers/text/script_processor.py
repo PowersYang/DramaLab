@@ -358,12 +358,10 @@ CRITICAL STYLE GUIDELINES:
             )
             logger.debug("Style Analysis Response:\n%s", content)
             content = _strip_markdown_json(content)
+            # 中文注释：4 组风格 JSON 很容易超过 5000 字符；此前这里先截断再解析，会直接把最后 1 条推荐切掉。
+            # 这里改成只记录日志、不做预截断，优先完整解析原始 JSON，再走后续标准化补齐逻辑。
             if len(content) > 5000:
-                logger.warning("Response too long (%s chars), truncating...", len(content))
-                content = content[:5000]
-                last_brace = content.rfind("}")
-                if last_brace != -1:
-                    content = content[: last_brace + 1]
+                logger.warning("Style analysis response is long (%s chars), skip pre-truncation and parse full payload", len(content))
 
             def repair_json(json_str):
                 json_str = json_str.strip()

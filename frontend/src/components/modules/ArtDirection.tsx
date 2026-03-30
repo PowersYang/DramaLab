@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Sparkles, SwatchBook, Wand2, Check, Loader2, Plus } from "lucide-react";
 import { useProjectStore, type StyleConfig, type StylePreset } from "@/store/projectStore";
@@ -32,6 +33,27 @@ function createEmptyCustomStyle(): StyleConfig {
     };
 }
 
+function upsertStyle(styles: StyleConfig[], targetStyle: StyleConfig): StyleConfig[] {
+    return styles.some((style) => style.id === targetStyle.id)
+        ? styles.map((style) => style.id === targetStyle.id ? targetStyle : style)
+        : [...styles, targetStyle];
+}
+
+function mergeStyles(primaryStyles: StyleConfig[], secondaryStyles: StyleConfig[]): StyleConfig[] {
+    const merged: StyleConfig[] = [];
+    const seen = new Set<string>();
+
+    [...primaryStyles, ...secondaryStyles].forEach((style) => {
+        if (!style?.id || seen.has(style.id)) {
+            return;
+        }
+        seen.add(style.id);
+        merged.push(style);
+    });
+
+    return merged;
+}
+
 export default function ArtDirection() {
     const {
         currentProject,
@@ -41,7 +63,7 @@ export default function ArtDirection() {
     } = useProjectStore();
 
     const [selectedStyle, setSelectedStyle] = useState<StyleConfig | null>(null);
-    const [customStyles, setCustomStyles] = useState<StyleConfig[]>([]);
+    const [userStyles, setUserStyles] = useState<StyleConfig[]>([]);
     const [aiRecommendations, setAiRecommendations] = useState<StyleConfig[]>([]);
     const [presets, setPresets] = useState<StylePreset[]>([]);
 
@@ -52,10 +74,13 @@ export default function ArtDirection() {
     const [editingNegative, setEditingNegative] = useState("");
     const [isSaving, setIsSaving] = useState(false);
 
-    // Load presets only once on mount (separate from project-dependent state)
+    const customStyles = mergeStyles(userStyles, currentProject?.art_direction?.custom_styles || []);
+
+    // Load presets and user style library once on mount.
     useEffect(() => {
         loadPresets();
-    }, []);  // Empty dependency - only run on mount
+        loadUserStyles();
+    }, []);
 
     // Load art direction from project when it changes
     useEffect(() => {
@@ -69,8 +94,6 @@ export default function ArtDirection() {
                 setEditingNegative(currentProject.art_direction.style_config.negative_prompt || "");
             }
 
-            setCustomStyles(currentProject.art_direction.custom_styles || []);
-
             // Load recommendations from project if available
             setAiRecommendations(currentProject.art_direction.ai_recommendations || []);
         } else {
@@ -79,7 +102,6 @@ export default function ArtDirection() {
             setEditingDescription("");
             setEditingPositive("");
             setEditingNegative("");
-            setCustomStyles([]);
             setAiRecommendations([]);
         }
     }, [currentProject?.id, currentProject?.art_direction]);
@@ -95,6 +117,15 @@ export default function ArtDirection() {
             setPresets(data.presets || []);
         } catch (error) {
             console.error("Failed to load presets:", error);
+        }
+    };
+
+    const loadUserStyles = async () => {
+        try {
+            const data = await api.getUserArtStyles();
+            setUserStyles(data.styles || []);
+        } catch (error) {
+            console.error("Failed to load user art styles:", error);
         }
     };
 
@@ -146,16 +177,16 @@ export default function ArtDirection() {
             is_custom: true
         };
 
-        const updatedCustomStyles = customStyles.some((style) => style.id === newCustomStyle.id)
-            ? customStyles.map((style) => style.id === newCustomStyle.id ? newCustomStyle : style)
-            : [...customStyles, newCustomStyle];
+        const nextUserStyles = upsertStyle(userStyles, newCustomStyle);
+        const updatedCustomStyles = mergeStyles(nextUserStyles, currentProject?.art_direction?.custom_styles || []);
 
-        setCustomStyles(updatedCustomStyles);
+        setUserStyles(nextUserStyles);
         setSelectedStyle(newCustomStyle);
 
         // 新建/编辑自定义风格都立即持久化，避免刷新后丢失。
-        if (currentProject) {
-            try {
+        try {
+            await api.saveUserArtStyles(nextUserStyles);
+            if (currentProject) {
                 const updated = await api.saveArtDirection(
                     currentProject.id,
                     newCustomStyle.id,
@@ -164,11 +195,11 @@ export default function ArtDirection() {
                     aiRecommendations
                 );
                 updateProject(currentProject.id, updated);
-                alert("自定义风格已保存！");
-            } catch (error) {
-                console.error("Failed to save custom style:", error);
-                alert("保存失败，请重试");
             }
+            alert("自定义风格已保存！");
+        } catch (error) {
+            console.error("Failed to save custom style:", error);
+            alert("保存失败，请重试");
         }
     };
 
@@ -187,14 +218,15 @@ export default function ArtDirection() {
             negative_prompt: editingNegative,
         };
 
-        const nextCustomStyles = finalConfig.is_custom
-            ? (customStyles.some((style) => style.id === finalConfig.id)
-                ? customStyles.map((style) => style.id === finalConfig.id ? finalConfig : style)
-                : [...customStyles, finalConfig])
-            : customStyles;
+        const nextUserStyles = finalConfig.is_custom ? upsertStyle(userStyles, finalConfig) : userStyles;
+        const nextCustomStyles = mergeStyles(nextUserStyles, currentProject.art_direction?.custom_styles || []);
 
         setIsSaving(true);
         try {
+            if (finalConfig.is_custom) {
+                await api.saveUserArtStyles(nextUserStyles);
+                setUserStyles(nextUserStyles);
+            }
             const updated = await api.saveArtDirection(
                 currentProject.id,
                 finalConfig.id,
@@ -203,7 +235,6 @@ export default function ArtDirection() {
                 aiRecommendations
             );
             setSelectedStyle(finalConfig);
-            setCustomStyles(nextCustomStyles);
             updateProject(currentProject.id, updated);
             alert("风格配置已应用！");
         } catch (error) {
@@ -301,8 +332,8 @@ export default function ArtDirection() {
                                     accent="purple"
                                     badgeLabel="AI 推荐"
                                     footer={style.reason ? (
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3 mt-3">
-                                            <p className="text-sm text-gray-300 leading-relaxed">
+                                        <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 mt-2.5">
+                                            <p className="text-xs text-gray-300 leading-relaxed">
                                                 <span className="font-bold">推荐理由：</span>
                                                 {style.reason}
                                             </p>
@@ -321,13 +352,21 @@ export default function ArtDirection() {
                                 <Plus size={20} className="text-green-400" />
                                 自定义风格
                             </h3>
-                            <button
-                                onClick={handleCreateCustomStyle}
-                                className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm rounded-lg font-medium transition-all flex items-center gap-2"
-                            >
-                                <Plus size={14} />
-                                添加自定义风格
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    href="/studio/styles"
+                                    className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200 text-sm rounded-lg font-medium transition-all"
+                                >
+                                    管理风格库
+                                </Link>
+                                <button
+                                    onClick={handleCreateCustomStyle}
+                                    className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm rounded-lg font-medium transition-all flex items-center gap-2"
+                                >
+                                    <Plus size={14} />
+                                    添加自定义风格
+                                </button>
+                            </div>
                         </div>
 
                         {customStyles.length > 0 ? (
@@ -395,22 +434,29 @@ function StyleChoiceCard({ style, isSelected, onSelect, accent, badgeLabel, lead
         emerald: "border-emerald-300 bg-emerald-500",
     }[accent];
 
+    const accentGlowClass = {
+        blue: "from-blue-400/20 via-blue-400/5 to-transparent",
+        purple: "from-purple-400/20 via-purple-400/5 to-transparent",
+        emerald: "from-emerald-400/20 via-emerald-400/5 to-transparent",
+    }[accent];
+
     return (
         <motion.div
             layout
             onClick={onSelect}
-            className={`min-h-[140px] p-5 rounded-2xl border-2 cursor-pointer transition-all ${isSelected
+            className={`group relative overflow-hidden min-h-[118px] p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected
                 ? selectedAccentClass
-                : "bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10"
+                : "bg-white/[0.04] border-white/10 hover:border-white/25 hover:bg-white/[0.07]"
                 }`}
         >
+            <div className={`pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b ${accentGlowClass} ${isSelected ? "opacity-100" : "opacity-70"}`} />
             <div className="flex items-start gap-3">
                 <div className={`mt-0.5 h-6 w-6 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? selectedCircleClass : "border-slate-500/80 bg-slate-200/70 dark:border-slate-300/80 dark:bg-slate-700/30"}`}>
                     {isSelected ? <Check size={12} className="text-white" /> : null}
                 </div>
 
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-1.5">
                         <h4 className="font-bold text-white text-base truncate">{style.name}</h4>
                         {badgeLabel ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[11px] font-medium text-gray-300">
@@ -420,7 +466,7 @@ function StyleChoiceCard({ style, isSelected, onSelect, accent, badgeLabel, lead
                         ) : null}
                     </div>
 
-                    <p className="text-sm text-gray-400 leading-relaxed line-clamp-3">
+                    <p className="text-sm text-gray-400 leading-relaxed line-clamp-2">
                         {style.description || "暂无风格描述"}
                     </p>
 

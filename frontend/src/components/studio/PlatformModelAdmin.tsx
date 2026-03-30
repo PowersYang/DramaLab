@@ -188,6 +188,11 @@ export default function PlatformModelAdmin() {
     [catalog],
   );
 
+  const providerMap = useMemo(
+    () => new Map(providers.map((item) => [item.provider_key, item])),
+    [providers],
+  );
+
   const openCreateProviderModal = () => {
     setProviderMode("create");
     setProviderForm(DEFAULT_PROVIDER_FORM);
@@ -371,6 +376,11 @@ export default function PlatformModelAdmin() {
   const toggleModelStatus = async (item: ModelCatalogEntry) => {
     setError(null);
     setSuccessMessage(null);
+    const provider = providerMap.get(item.provider_key);
+    if (provider && !provider.enabled) {
+      setError(`厂商 ${provider.display_name} 当前已关闭，请先启用厂商后再操作模型。`);
+      return;
+    }
     const nextEnabled = !item.enabled;
     try {
       setBusyKey(`catalog:toggle:${item.model_id}`);
@@ -554,8 +564,10 @@ export default function PlatformModelAdmin() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sortedCatalog.map((item) => {
-                const provider = providers.find((entry) => entry.provider_key === item.provider_key);
+                {sortedCatalog.map((item) => {
+                const provider = providerMap.get(item.provider_key);
+                const effectivelyEnabled = Boolean(provider?.enabled) && item.enabled;
+                const providerDisabled = provider ? !provider.enabled : false;
                 return (
                   <tr key={item.model_id} className="text-slate-700">
                     <td className="px-4 py-3">{provider?.display_name || item.provider_key}</td>
@@ -567,19 +579,23 @@ export default function PlatformModelAdmin() {
                     <td className="px-4 py-3">
                       <button
                         onClick={() => void toggleModelStatus(item)}
-                        disabled={busyKey === `catalog:toggle:${item.model_id}`}
-                        aria-pressed={item.enabled}
+                        disabled={providerDisabled || busyKey === `catalog:toggle:${item.model_id}`}
+                        aria-pressed={effectivelyEnabled}
+                        title={providerDisabled ? "厂商关闭时，模型不可单独开启" : undefined}
                         className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-50 ${
-                          item.enabled ? "bg-emerald-500" : "bg-slate-300"
+                          effectivelyEnabled ? "bg-emerald-500" : "bg-slate-300"
                         }`}
                       >
                         <span
                           className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
-                            item.enabled ? "translate-x-6" : "translate-x-1"
+                            effectivelyEnabled ? "translate-x-6" : "translate-x-1"
                           }`}
                         />
-                        <span className="sr-only">{item.enabled ? "停用模型" : "启用模型"}</span>
+                        <span className="sr-only">{effectivelyEnabled ? "停用模型" : "启用模型"}</span>
                       </button>
+                      {providerDisabled ? (
+                        <p className="mt-1 text-xs text-slate-500">厂商已关闭，模型跟随关闭</p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <button
@@ -786,6 +802,7 @@ export default function PlatformModelAdmin() {
               <input
                 type="checkbox"
                 checked={catalogForm.enabled}
+                disabled={Boolean(catalogForm.provider_key) && !providerMap.get(catalogForm.provider_key)?.enabled}
                 onChange={(event) => setCatalogForm((prev) => ({ ...prev, enabled: event.target.checked }))}
               />
               启用
@@ -799,6 +816,11 @@ export default function PlatformModelAdmin() {
               对业务前台公开
             </label>
           </div>
+          {catalogForm.provider_key && !providerMap.get(catalogForm.provider_key)?.enabled ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              当前供应商已关闭，模型不能单独启用。请先开启供应商，再修改模型启用状态。
+            </div>
+          ) : null}
           <label className="text-sm text-slate-600">
             能力 JSON
             <textarea

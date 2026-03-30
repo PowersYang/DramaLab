@@ -295,6 +295,20 @@ class TenantAdminApiTest(unittest.TestCase):
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(deleted.json()["status"], "deleted")
 
+    def test_cannot_enable_model_when_provider_is_disabled(self):
+        disabled_provider = self.client.put(
+            "/model-providers/KLING",
+            json={"enabled": False},
+        )
+        self.assertEqual(disabled_provider.status_code, 200)
+
+        response = self.client.put(
+            "/model-catalog/kling-v3",
+            json={"enabled": True},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Cannot enable model under disabled provider", response.json()["detail"])
+
     def test_model_provider_and_catalog_full_crud(self):
         created_provider = self.client.post(
             "/model-providers",

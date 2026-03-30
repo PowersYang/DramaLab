@@ -82,6 +82,7 @@ class BillingTransactionRepository(BaseRepository[BillingTransaction]):
         *,
         transaction_type: str | None = None,
         direction: str | None = None,
+        operator_user_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[BillingTransaction]:
@@ -91,6 +92,8 @@ class BillingTransactionRepository(BaseRepository[BillingTransaction]):
                 query = query.filter(BillingTransactionRecord.transaction_type == transaction_type)
             if direction:
                 query = query.filter(BillingTransactionRecord.direction == direction)
+            if operator_user_id:
+                query = query.filter(BillingTransactionRecord.operator_user_id == operator_user_id)
             rows = (
                 query.order_by(BillingTransactionRecord.created_at.desc(), BillingTransactionRecord.id.desc())
                 .offset(offset)

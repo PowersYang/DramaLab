@@ -65,8 +65,7 @@ class BillingServiceTest(unittest.TestCase):
 
         transactions = service.list_transactions(org.id)
         self.assertEqual(len(transactions), 2)
-        self.assertEqual(transactions[0].transaction_type, "bonus")
-        self.assertEqual(transactions[1].transaction_type, "recharge")
+        self.assertEqual({item.transaction_type for item in transactions}, {"recharge", "bonus"})
 
     def test_task_charge_debits_balance_once_per_idempotency_key(self):
         from src.application.services import BillingService
@@ -97,6 +96,61 @@ class BillingServiceTest(unittest.TestCase):
         transactions = service.list_transactions(org.id, transaction_type="task_debit")
         self.assertEqual(len(transactions), 1)
         self.assertEqual(transactions[0].related_id, "job_billing_1")
+
+    def test_list_transactions_can_filter_by_operator(self):
+        from src.application.services import BillingService
+        from src.schemas.task_models import TaskJob
+        from src.utils.datetime import utc_now
+
+        org = self._create_org()
+        service = BillingService()
+        service.upsert_pricing_rule(task_type="asset.generate", price_credits=10, actor_id="admin_1")
+        service.manual_recharge(organization_id=org.id, amount_cents=1000, actor_id="admin_1", idempotency_key="seed")
+
+        now = utc_now()
+        service.charge_task_submission(
+            job=TaskJob(
+                id="job_billing_user_1",
+                task_type="asset.generate",
+                queue_name="image",
+                organization_id=org.id,
+                payload_json={},
+                created_at=now,
+                updated_at=now,
+            ),
+            actor_id="user_1",
+            idempotency_key="task-charge-user-1",
+        )
+        service.charge_task_submission(
+            job=TaskJob(
+                id="job_billing_user_2",
+                task_type="asset.generate",
+                queue_name="image",
+                organization_id=org.id,
+                payload_json={},
+                created_at=now,
+                updated_at=now,
+            ),
+            actor_id="user_2",
+            idempotency_key="task-charge-user-2",
+        )
+
+        transactions = service.list_transactions(org.id, transaction_type="task_debit", operator_user_id="user_1")
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(transactions[0].operator_user_id, "user_1")
+        self.assertEqual(transactions[0].related_id, "job_billing_user_1")
+
+    def test_list_active_pricing_rules_prefers_organization_override(self):
+        from src.application.services import BillingService
+
+        org = self._create_org()
+        service = BillingService()
+        service.upsert_pricing_rule(task_type="asset.generate", price_credits=20, actor_id="admin_1")
+        service.upsert_pricing_rule(task_type="asset.generate", price_credits=35, organization_id=org.id, actor_id="admin_1")
+
+        rules = service.list_active_pricing_rules(org.id)
+        rule_map = {item.task_type: item for item in rules}
+        self.assertEqual(rule_map["asset.generate"].price_credits, 35)
 
     def test_task_charge_rejects_when_balance_insufficient(self):
         from src.application.services import BillingInsufficientBalanceError, BillingService

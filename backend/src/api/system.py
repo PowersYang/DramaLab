@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from ..application.tasks import TaskService
 from ..application.services import SystemService
 from ..application.services.model_provider_service import ModelProviderService
-from ..auth.dependencies import get_request_context
+from ..auth.dependencies import RequestContext, get_request_context
 from src.settings.env_settings import (
     get_env,
     get_env_path,
@@ -32,6 +32,7 @@ from ..schemas.requests import (
     PolishR2VPromptRequest,
     PolishVideoPromptRequest,
     SaveArtDirectionRequest,
+    SaveUserArtStylesRequest,
 )
 from ..schemas.task_models import TaskReceipt
 
@@ -366,6 +367,32 @@ async def get_style_presets():
         # 风格预设现在统一走数据库读取，避免本地文件在不同部署节点之间不一致。
         presets = system_service.list_style_presets()
         return {"presets": [preset.model_dump(mode="json") for preset in presets]}
+    except Exception as exc:
+        logger.exception("An error occurred")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/art_direction/user-styles")
+async def get_user_art_styles(context: RequestContext = Depends(get_request_context)):
+    """读取当前登录用户保存过的自定义美术风格。"""
+    try:
+        styles = system_service.list_user_art_styles(context.user.id)
+        return signed_response({"styles": styles})
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.exception("An error occurred")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.put("/art_direction/user-styles")
+async def save_user_art_styles(request: SaveUserArtStylesRequest, context: RequestContext = Depends(get_request_context)):
+    """整体更新当前登录用户的自定义美术风格库。"""
+    try:
+        styles = system_service.save_user_art_styles(context.user.id, request.styles)
+        return signed_response({"styles": styles})
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(exc))

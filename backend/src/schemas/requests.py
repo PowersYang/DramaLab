@@ -548,6 +548,10 @@ class SaveArtDirectionRequest(BaseModel):
     ai_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class SaveUserArtStylesRequest(BaseModel):
+    styles: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class PolishVideoPromptRequest(BaseModel):
     draft_prompt: str
     feedback: str = Field("", max_length=2000)

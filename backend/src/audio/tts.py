@@ -99,8 +99,6 @@ class TTSProcessor:
         self.model = model
         self.voice = voice
 
-        logger.info(f"TTS Processor initialized with model={model}, voice={voice}")
-
     def synthesize(
         self,
         text: str,

@@ -11,6 +11,8 @@ import {
     Users,
     Film
 } from "lucide-react";
+import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 
 
 
@@ -37,6 +39,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
 
     const sortedFrames = useMemo(() => {
         if (!currentProject?.frames) {
@@ -103,6 +106,24 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null); // Selected frame for R2V
     const [generationMode, setGenerationMode] = useState<"i2v" | "r2v">("i2v"); // Local mode state
     const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
+    const submitTaskType = generationMode === "r2v" ? "video.generate.frame" : (selectedFrameId ? "video.generate.frame" : "video.generate.asset");
+    const videoPrice = getTaskPrice(submitTaskType);
+    // 视频生成接口一次提交可能拆成多条 job，这里按“选中素材数 x batchSize”估算总消耗，尽量和后端实际扣费口径对齐。
+    const estimatedTaskCount = useMemo(() => {
+        if (generationMode === "r2v") {
+            return Math.max(selectedImages.length, 1) * Math.max(params.batchSize || 1, 1);
+        }
+        if (selectedImages.length === 0) {
+            return 0;
+        }
+        return selectedImages.length * Math.max(params.batchSize || 1, 1);
+    }, [generationMode, params.batchSize, selectedImages.length]);
+    const estimatedVideoCost = videoPrice == null
+        ? null
+        : estimatedTaskCount > 0
+            ? videoPrice * estimatedTaskCount
+            : videoPrice;
+    const videoAffordable = estimatedVideoCost == null ? canAffordTask(submitTaskType) : (account?.balance_credits ?? 0) >= estimatedVideoCost;
 
     // Sync from parent params
     useEffect(() => {
@@ -336,6 +357,10 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                 return;
             }
             if (!prompt || !currentProject) return;
+        }
+        if (!videoAffordable) {
+            alert("当前组织算力豆余额不足，无法提交视频生成任务。");
+            return;
         }
 
         setIsSubmitting(true);
@@ -1087,18 +1112,19 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                         </AnimatePresence>
                     </div>
                 </div>
-            </div >
+            </div>
 
             {/* 4. Fixed Action Bar */}
-            < div className="p-6 border-t border-white/10 bg-black/40 backdrop-blur-md z-10" >
+            <div className="p-6 border-t border-white/10 bg-black/40 backdrop-blur-md z-10">
                 <div className="max-w-4xl mx-auto w-full">
                     <button
                         onClick={handleSubmit}
-                        disabled={(!prompt || isSubmitting) || (generationMode === 'i2v' && selectedImages.length === 0)}
+                        disabled={(!prompt || isSubmitting || !videoAffordable) || (generationMode === 'i2v' && selectedImages.length === 0)}
                         className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all transform active:scale-[0.99] ${submitSuccess
                             ? "bg-green-500 text-white"
                             : "bg-primary hover:bg-primary/90 text-white"
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        title={!videoAffordable ? `当前组织算力豆余额不足，预计需要 ${estimatedVideoCost ?? videoPrice ?? 0} 豆` : undefined}
                     >
                         {isSubmitting ? (
                             <>
@@ -1114,6 +1140,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                             </>
                         )}
                     </button>
+                    <BillingTaskHint priceCredits={estimatedVideoCost} balanceCredits={account?.balance_credits} className="mt-3 text-center" />
                     <div className="flex justify-center mt-3">
                         <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer hover:text-gray-400">
                             <input type="checkbox" className="rounded bg-white/10 border-white/20" />
@@ -1121,7 +1148,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                         </label>
                     </div>
                 </div>
-            </div >
-        </div >
+            </div>
+        </div>
     );
 }

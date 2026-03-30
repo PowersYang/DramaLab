@@ -71,6 +71,31 @@ class BillingPricingRuleRepository(BaseRepository[BillingPricingRule]):
             )
             return _to_domain(row) if row else None
 
+    def list_active_rules(self, organization_id: str | None = None, when=None) -> list[BillingPricingRule]:
+        current_time = when or utc_now()
+        with self._with_session() as session:
+            query = session.query(BillingPricingRuleRecord).filter(
+                BillingPricingRuleRecord.status == "active",
+                BillingPricingRuleRecord.effective_from <= current_time,
+                ((BillingPricingRuleRecord.effective_to.is_(None)) | (BillingPricingRuleRecord.effective_to > current_time)),
+            )
+            rows = query.order_by(BillingPricingRuleRecord.task_type.asc(), BillingPricingRuleRecord.effective_from.desc()).all()
+            selected: dict[str, BillingPricingRule] = {}
+            organization_candidates: dict[str, BillingPricingRule] = {}
+            platform_candidates: dict[str, BillingPricingRule] = {}
+            for row in rows:
+                item = _to_domain(row)
+                if organization_id and item.scope_type == "organization" and item.organization_id == organization_id:
+                    organization_candidates.setdefault(item.task_type, item)
+                    continue
+                if item.scope_type == "platform" and item.organization_id is None:
+                    platform_candidates.setdefault(item.task_type, item)
+            for task_type, item in platform_candidates.items():
+                selected[task_type] = item
+            for task_type, item in organization_candidates.items():
+                selected[task_type] = item
+            return list(selected.values())
+
     def upsert(
         self,
         *,

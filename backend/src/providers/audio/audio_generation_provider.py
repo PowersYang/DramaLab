@@ -27,13 +27,26 @@ class AudioGenerator:
         self.config = config or {}
         self.output_dir = self.config.get("output_dir", "output/audio")
         self.provider_service = ModelProviderService()
+        self._tts: TTSProcessor | None = None
+        self._tts_init_failed = False
 
+    @property
+    def tts(self) -> TTSProcessor | None:
+        """延迟初始化 TTS 处理器。
+
+        启动期不再默认创建具体厂商实例，避免日志表现成“应用已绑定某个固定 provider”。
+        """
+        if self._tts is not None:
+            return self._tts
+        if self._tts_init_failed:
+            return None
         try:
-            self.tts = TTSProcessor()
-            logger.info("TTS Processor initialized successfully")
+            self._tts = TTSProcessor()
         except Exception as exc:
-            logger.warning("Failed to initialize TTS Processor: %s. Using mock mode.", exc)
-            self.tts = None
+            self._tts_init_failed = True
+            logger.warning("Failed to initialize TTS Processor on demand: %s. Using mock mode.", exc)
+            return None
+        return self._tts
 
     def get_available_voices(self) -> List[Dict[str, str]]:
         """返回当前 TTS 厂商支持的语音列表。"""

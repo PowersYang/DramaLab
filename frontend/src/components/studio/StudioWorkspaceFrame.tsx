@@ -28,13 +28,21 @@ const STUDIO_SHELL_META: Record<string, { title: string; description: string }> 
     title: "任务中心",
     description: "聚合查看进行中、失败与已完成的生成任务，用业务语言理解异步生产链路。",
   },
+  "/studio/styles": {
+    title: "美术风格库",
+    description: "按用户统一管理历史保存过的自定义视觉风格，并直接复用到项目美术设定中。",
+  },
   "/studio/team": {
     title: "团队与角色",
     description: "按工作区角色管理成员、邀请协作者，并控制制作权限边界。",
   },
   "/studio/billing": {
-    title: "计费与套餐",
-    description: "为组织管理员提供套餐、额度、账单和企业升级视图。",
+    title: "算力豆账本",
+    description: "组织管理员可见所有算力豆数据，组织个人仅可见算力豆余额及自己的扣费记录。",
+  },
+  "/studio/billing-admin": {
+    title: "计费规则配置",
+    description: "仅平台超级管理员可配置任务扣费规则、充值赠送规则，并执行手工充值。",
   },
   "/studio/model-config": {
     title: "模型配置",

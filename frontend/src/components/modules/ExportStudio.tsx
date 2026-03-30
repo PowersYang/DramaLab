@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Download, Film, CheckCircle, FileVideo, Monitor, Captions } from "lucide-react";
 import clsx from "clsx";
+import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
@@ -20,6 +22,9 @@ export default function ExportStudio() {
     const [resolution, setResolution] = useState("1080p");
     const [format, setFormat] = useState("mp4");
     const [subtitles, setSubtitles] = useState("burn-in");
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
+    const exportPrice = getTaskPrice("project.export");
+    const exportAffordable = canAffordTask("project.export");
 
     // If project already has a merged video, show it immediately
     const effectiveUrl = exportUrl || currentProject?.merged_video_url || null;
@@ -142,11 +147,13 @@ export default function ExportStudio() {
 
                 <button
                     onClick={handleExport}
-                    disabled={isExporting}
+                    disabled={isExporting || !exportAffordable}
                     className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-8"
+                    title={!exportAffordable ? "当前组织算力豆余额不足，无法提交导出任务" : undefined}
                 >
                     {isExporting ? "正在导出..." : "开始导出"}
                 </button>
+                <BillingTaskHint priceCredits={exportPrice} balanceCredits={account?.balance_credits} className="mt-3 text-center" />
             </div>
 
             {/* Right: Preview & Status */}

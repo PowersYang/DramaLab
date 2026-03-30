@@ -103,6 +103,7 @@ class BillingService:
         *,
         transaction_type: str | None = None,
         direction: str | None = None,
+        operator_user_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[BillingTransaction]:
@@ -110,12 +111,16 @@ class BillingService:
             organization_id,
             transaction_type=transaction_type,
             direction=direction,
+            operator_user_id=operator_user_id,
             limit=limit,
             offset=offset,
         )
 
     def list_pricing_rules(self) -> list[BillingPricingRule]:
         return self.pricing_repository.list()
+
+    def list_active_pricing_rules(self, organization_id: str | None = None) -> list[BillingPricingRule]:
+        return self.pricing_repository.list_active_rules(organization_id=organization_id)
 
     def upsert_pricing_rule(
         self,

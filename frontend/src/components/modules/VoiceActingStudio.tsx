@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Mic, Play, Pause, Wand2, Headphones, Volume2, Check, Settings2, AlertCircle } from "lucide-react";
 import clsx from "clsx";
+import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
@@ -27,6 +29,11 @@ export default function VoiceActingStudio() {
     // Per-line settings override
     const [activeSettingsId, setActiveSettingsId] = useState<string | null>(null);
     const [lineSettings, setLineSettings] = useState<Record<string, { speed: number; pitch: number; volume: number }>>({});
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
+    const projectAudioPrice = getTaskPrice("audio.generate.project");
+    const lineAudioPrice = getTaskPrice("audio.generate.line");
+    const projectAudioAffordable = canAffordTask("audio.generate.project");
+    const lineAudioAffordable = canAffordTask("audio.generate.line");
 
     // Per-character voice params (defaults)
     const [charParams, setCharParams] = useState<Record<string, { speed: number; pitch: number; volume: number }>>({});
@@ -209,13 +216,15 @@ export default function VoiceActingStudio() {
                     <h2 className="font-display font-bold text-lg">对白脚本</h2>
                     <button
                         onClick={handleGenerateAll}
-                        disabled={isGenerating}
+                        disabled={isGenerating || !projectAudioAffordable}
                         className="bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap flex-shrink-0 transition-all disabled:opacity-50"
+                        title={!projectAudioAffordable ? "当前组织算力豆余额不足，无法提交整片音频生成任务" : undefined}
                     >
                         {isGenerating ? <Wand2 className="animate-spin" size={16} /> : <Mic size={16} />}
                         {isGenerating ? "生成中..." : "生成全部音频"}
                     </button>
                 </div>
+                <BillingTaskHint priceCredits={projectAudioPrice} balanceCredits={account?.balance_credits} compact className="px-6 pb-3" />
 
                 {/* Dialogue List */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-6">
@@ -304,10 +313,12 @@ export default function VoiceActingStudio() {
                                                             handleGenerateLine(frame.id, speakerId);
                                                             setActiveSettingsId(null);
                                                         }}
-                                                        className="w-full bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white text-xs py-2 rounded-lg font-bold transition-all"
+                                                        disabled={!lineAudioAffordable}
+                                                        className="w-full bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white text-xs py-2 rounded-lg font-bold transition-all disabled:opacity-50"
                                                     >
                                                         按当前设置重新生成
                                                     </button>
+                                                    <BillingTaskHint priceCredits={lineAudioPrice} balanceCredits={account?.balance_credits} compact />
                                                 </div>
                                             </div>
                                         )}
@@ -346,7 +357,9 @@ export default function VoiceActingStudio() {
                                                 ) : (
                                                     <button
                                                         onClick={() => handleGenerateLine(frame.id, speakerId)}
-                                                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400"
+                                                        disabled={!lineAudioAffordable}
+                                                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 disabled:opacity-40"
+                                                        title={!lineAudioAffordable ? "当前组织算力豆余额不足，无法提交单句配音任务" : undefined}
                                                     >
                                                         <Mic size={14} />
                                                     </button>
@@ -355,8 +368,11 @@ export default function VoiceActingStudio() {
                                         </div>
 
                                         {/* Metadata Footer */}
-                                        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-gray-500">
-                                            <span className="font-mono">镜头 {index + 1}</span>
+                                        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between gap-2 text-xs text-gray-500">
+                                            <div className="flex items-center gap-3">
+                                                <span className="font-mono">镜头 {index + 1}</span>
+                                                <BillingTaskHint priceCredits={lineAudioPrice} balanceCredits={account?.balance_credits} compact />
+                                            </div>
                                             {frame.status === "failed" ? (
                                                 <span className="flex items-center gap-1 text-red-400" title={frame.audio_error || "生成失败"}>
                                                     <AlertCircle size={12} /> {frame.audio_error || "音频生成失败"}

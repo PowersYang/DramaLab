@@ -399,8 +399,11 @@ class ModelProviderService:
 
     def create_model_catalog_entry(self, payload: dict, actor_id: str | None = None) -> ModelCatalogEntry:
         """创建新的模型目录项。"""
-        if self.provider_repository.get(payload["provider_key"]) is None:
+        provider = self.provider_repository.get(payload["provider_key"])
+        if provider is None:
             raise ValueError("Model provider not found")
+        if payload.get("enabled", True) and not provider.enabled:
+            raise ValueError(f"Cannot enable model under disabled provider: {payload['provider_key']}")
         now = utc_now()
         return self.catalog_repository.create(
             ModelCatalogEntry(
@@ -423,8 +426,16 @@ class ModelProviderService:
 
     def update_model_catalog_entry(self, model_id: str, payload: dict, actor_id: str | None = None) -> ModelCatalogEntry:
         """更新模型目录项。"""
-        if "provider_key" in payload and self.provider_repository.get(payload["provider_key"]) is None:
+        current = self.catalog_repository.get(model_id)
+        if current is None:
+            raise ValueError("Model catalog entry not found")
+        provider_key = payload.get("provider_key", current.provider_key)
+        provider = self.provider_repository.get(provider_key)
+        if provider is None:
             raise ValueError("Model provider not found")
+        next_enabled = payload.get("enabled", current.enabled)
+        if next_enabled and not provider.enabled:
+            raise ValueError(f"Cannot enable model under disabled provider: {provider_key}")
         payload = {**payload, "updated_by": actor_id}
         return self.catalog_repository.update(model_id, payload)
 

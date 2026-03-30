@@ -13,7 +13,7 @@ import uuid
 from typing import Any
 
 from ...providers import ScriptProcessor
-from ...repository import ProjectRepository, SeriesRepository, StylePresetRepository
+from ...repository import ProjectRepository, SeriesRepository, StylePresetRepository, UserRepository
 from ...schemas.models import ArtDirection, StylePreset
 from ...providers.text.default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
@@ -33,6 +33,7 @@ class SystemService:
         self.project_repository = ProjectRepository()
         self.series_repository = SeriesRepository()
         self.style_preset_repository = StylePresetRepository()
+        self.user_repository = UserRepository()
         self.text_provider = ScriptProcessor()
 
     def preview_import(self, text: str, suggested_episodes: int):
@@ -135,6 +136,27 @@ class SystemService:
             expected_version=script.version,
         )
         return self.project_repository.get(script_id)
+
+    def list_user_art_styles(self, user_id: str) -> list[dict[str, Any]]:
+        """返回当前用户保存过的自定义美术风格。"""
+        user = self.user_repository.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+        return user.user_art_styles or []
+
+    def save_user_art_styles(self, user_id: str, styles: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        """整体覆盖保存用户级风格库，便于前端做统一新增、编辑与删除。"""
+        user = self.user_repository.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+        updated = self.user_repository.update(
+            user_id,
+            {
+                "user_art_styles": styles or [],
+                "updated_at": utc_now(),
+            },
+        )
+        return updated.user_art_styles or []
 
     def get_effective_prompt(self, script_id: str, field: str) -> str:
         """按剧本、系列、默认值三级回退解析提示词字段。"""
