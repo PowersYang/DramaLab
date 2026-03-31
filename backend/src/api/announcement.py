@@ -13,7 +13,7 @@ repo = AnnouncementRepository()
 @router.get("", response_model=List[Announcement])
 async def list_announcements(context: RequestContext = Depends(get_request_context)):
     """List active announcements for current user."""
-    announcements = repo.list_active()
+    announcements = repo.list_active(user_id=context.user_id)
     return signed_response(announcements)
 
 @router.get("/all", response_model=List[Announcement])
@@ -34,10 +34,21 @@ async def create_announcement(
 @router.get("/{announcement_id}", response_model=Announcement)
 async def get_announcement(announcement_id: str, context: RequestContext = Depends(get_request_context)):
     """Get a specific announcement."""
-    announcement = repo.get(announcement_id)
+    announcement = repo.get(announcement_id, user_id=context.user_id)
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")
     return signed_response(announcement)
+
+@router.post("/{announcement_id}/read", status_code=status.HTTP_200_OK)
+async def mark_announcement_as_read(
+    announcement_id: str,
+    context: RequestContext = Depends(get_request_context)
+):
+    """Mark an announcement as read."""
+    success = repo.mark_as_read(announcement_id, user_id=context.user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    return {"status": "ok"}
 
 @router.patch("/{announcement_id}", response_model=Announcement)
 async def update_announcement(

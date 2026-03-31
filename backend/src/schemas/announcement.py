@@ -25,6 +25,7 @@ class Announcement(AnnouncementBase):
     created_at: datetime
     updated_at: datetime
     created_by: str | None = None
+    is_read: bool = False
 
     class Config:
         from_attributes = True

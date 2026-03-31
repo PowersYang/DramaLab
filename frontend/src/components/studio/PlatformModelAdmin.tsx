@@ -438,9 +438,12 @@ export default function PlatformModelAdmin() {
 
   if (loading) {
     return (
-      <section className="studio-panel p-6">
-        <p className="text-sm text-slate-500">正在加载模型配置...</p>
-      </section>
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+          <p className="text-sm font-bold text-slate-400">正在同步模型资源编排...</p>
+        </div>
+      </div>
     );
   }
 

@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, Boxes, CheckCheck, Clapperboard, FolderKanban, ScanLine, Workflow, Plus, Settings2, Clock3, Loader2 } from "lucide-react";
 
 import AdminSummaryStrip from "@/components/studio/admin/AdminSummaryStrip";
+import AnnouncementBoard from "@/components/studio/announcement/AnnouncementBoard";
+import AnnouncementManagerDialog from "@/components/studio/announcement/AnnouncementManagerDialog";
 import { api, type ProjectSummary, type SeriesSummary } from "@/lib/api";
 import {
   isStudioCacheFresh,
@@ -51,10 +53,14 @@ const scheduleDeferredRefresh = (task: () => void) => {
 export default function StudioDashboardPage() {
   const authStatus = useAuthStore((state) => state.authStatus);
   const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
+  const hasCapability = useAuthStore((state) => state.hasCapability);
+  const isAdmin = hasCapability("platform.manage");
+
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [seriesList, setSeriesList] = useState<SeriesSummary[]>([]);
   const [runningTasks, setRunningTasks] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showAnnouncementManager, setShowAnnouncementManager] = useState(false);
 
   useEffect(() => {
     const cachedProjects = readStudioCache<ProjectSummary[]>(STUDIO_PROJECT_SUMMARIES_CACHE_KEY);
@@ -229,19 +235,26 @@ export default function StudioDashboardPage() {
           </section>
 
           <section className="studio-panel p-6">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">系统公告</h3>
-            <div className="mt-4 space-y-4">
-              <div className="flex gap-4">
-                <div className="h-2 w-2 mt-1.5 shrink-0 rounded-full bg-blue-500" />
-                <div>
-                  <p className="text-sm font-medium text-slate-800">短剧生产工作台正式升级</p>
-                  <p className="mt-1 text-xs text-slate-500">采用工业化管理范式，聚焦生产效率与任务可观测性。</p>
-                </div>
-              </div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">系统公告</h3>
+              {isAdmin && (
+                <button 
+                  onClick={() => setShowAnnouncementManager(true)}
+                  className="text-[10px] font-bold text-blue-500 hover:text-blue-600 hover:underline"
+                >
+                  管理公告
+                </button>
+              )}
             </div>
+            <AnnouncementBoard />
           </section>
         </div>
       </div>
+
+      <AnnouncementManagerDialog 
+        isOpen={showAnnouncementManager} 
+        onClose={() => setShowAnnouncementManager(false)} 
+      />
     </div>
   );
 }

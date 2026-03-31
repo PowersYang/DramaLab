@@ -666,3 +666,12 @@ class SystemAnnouncementRecord(Base, GlobalAuditMixin, SoftDeleteMixin):
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SystemAnnouncementReadRecord(Base, GlobalAuditMixin):
+    __tablename__ = "system_announcement_reads"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    announcement_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -89,7 +89,7 @@ export default function StudioTeamRoutePage() {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-4">
         {summaryItems.map((item) => (
           <div key={item.label} className="admin-summary-card flex flex-col justify-between">
             <div>
@@ -106,24 +106,24 @@ export default function StudioTeamRoutePage() {
         ))}
 
         <div className="admin-summary-card flex flex-col justify-center">
-          <div className="flex flex-col items-center gap-4 py-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <MailPlus size={24} />
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <MailPlus size={20} />
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-bold text-slate-900">扩充你的团队</h3>
-              <p className="mt-1 text-xs text-slate-500">邀请新成员加入工作区协作</p>
+              <h3 className="text-sm font-bold text-slate-900">扩充你的团队</h3>
+              <p className="mt-0.5 text-[10px] text-slate-500">邀请新成员加入工作区协作</p>
             </div>
             {canManageMembers ? (
               <button
                 onClick={() => setInviteDialogOpen(true)}
-                className="studio-button studio-button-primary w-full max-w-[200px]"
+                className="studio-button studio-button-primary w-full !min-h-[2rem] !text-xs"
               >
-                <MailPlus size={16} />
+                <MailPlus size={14} />
                 邀请新成员
               </button>
             ) : (
-              <p className="text-xs text-slate-400">你没有管理成员的权限</p>
+              <p className="text-[10px] text-slate-400">无管理权限</p>
             )}
           </div>
         </div>

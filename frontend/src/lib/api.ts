@@ -779,6 +779,7 @@ export interface Announcement {
     created_at: string;
     updated_at: string;
     created_by?: string;
+    is_read: boolean;
 }
 
 export const api = {
@@ -1892,6 +1893,9 @@ export const api = {
     updateAnnouncement: async (id: string, data: Partial<Announcement>): Promise<Announcement> => {
         const res = await axios.patch(`${API_URL}/announcements/${id}`, data);
         return res.data;
+    },
+    markAnnouncementAsRead: async (id: string): Promise<void> => {
+        await axios.post(`${API_URL}/announcements/${id}/read`);
     },
     deleteAnnouncement: async (id: string): Promise<void> => {
         await axios.delete(`${API_URL}/announcements/${id}`);
