@@ -69,15 +69,6 @@ export default function HomePage() {
               <p className="mt-8 max-w-2xl text-base leading-8 text-white/68 md:text-lg">
                 DramaLab 把剧本分析、角色与场景资产、分镜生成、视频生产和导出交付收进同一个系统，让创作团队能像运营一条内容产线一样稳定推进项目。
               </p>
-              <div className="mt-10 flex flex-wrap gap-4">
-                <Link
-                  href="/studio"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/14 bg-white/[0.06] px-6 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/[0.1]"
-                >
-                  进入 Studio
-                  <ArrowRight size={16} />
-                </Link>
-              </div>
             </div>
           </div>
         </section>

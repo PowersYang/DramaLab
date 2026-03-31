@@ -4,7 +4,7 @@ from sqlalchemy import func
 
 from .base import BaseRepository
 from .mappers import _audit_time_kwargs, _soft_delete_project_graph, _insert_project_children, _tenant_kwargs, hydrate_project_map, replace_project_graph
-from ..db.models import CharacterRecord, ProjectRecord, SceneRecord, StoryboardFrameRecord
+from ..db.models import CharacterRecord, ProjectRecord, PropRecord, SceneRecord, StoryboardFrameRecord
 from ..schemas.models import Script
 from ..utils.datetime import utc_now
 
@@ -46,6 +46,16 @@ class ProjectRepository(BaseRepository[Script]):
                 .group_by(SceneRecord.owner_id)
                 .all()
             )
+            prop_counts = dict(
+                session.query(PropRecord.owner_id, func.count(PropRecord.id))
+                .filter(
+                    PropRecord.is_deleted.is_(False),
+                    PropRecord.owner_type == "project",
+                    PropRecord.owner_id.in_(project_ids),
+                )
+                .group_by(PropRecord.owner_id)
+                .all()
+            )
             frame_counts = dict(
                 session.query(StoryboardFrameRecord.project_id, func.count(StoryboardFrameRecord.id))
                 .filter(
@@ -64,6 +74,7 @@ class ProjectRepository(BaseRepository[Script]):
                     "episode_number": row.episode_number,
                     "character_count": int(character_counts.get(row.id, 0)),
                     "scene_count": int(scene_counts.get(row.id, 0)),
+                    "prop_count": int(prop_counts.get(row.id, 0)),
                     "frame_count": int(frame_counts.get(row.id, 0)),
                     "created_at": row.created_at,
                     "updated_at": row.updated_at,
@@ -154,6 +165,7 @@ class ProjectRepository(BaseRepository[Script]):
                     art_direction=project.art_direction.model_dump(mode="json") if project.art_direction else None,
                     model_settings=project.model_settings.model_dump(mode="json"),
                     prompt_config=project.prompt_config.model_dump(mode="json"),
+                    timeline_json=project.timeline.model_dump(mode="json") if project.timeline else None,
                     version=project.version,
                     is_deleted=False,
                     deleted_at=None,
@@ -182,6 +194,7 @@ class ProjectRepository(BaseRepository[Script]):
                     art_direction=project.art_direction.model_dump(mode="json") if project.art_direction else None,
                     model_settings=project.model_settings.model_dump(mode="json"),
                     prompt_config=project.prompt_config.model_dump(mode="json"),
+                    timeline_json=project.timeline.model_dump(mode="json") if project.timeline else None,
                     version=project.version,
                     is_deleted=False,
                     deleted_at=None,
@@ -203,6 +216,21 @@ class ProjectRepository(BaseRepository[Script]):
             patch = dict(patch)
             patch.setdefault("updated_at", utc_now())
             self._patch_record(record, patch)
+            return hydrate_project_map(session, {project_id})[project_id]
+
+    def save_timeline(self, project_id: str, timeline_json: dict, expected_version: int | None = None) -> Script:
+        """保存项目时间轴，并使旧的成片缓存失效。"""
+        with self._with_session() as session:
+            record = self._get_active(session, ProjectRecord, project_id)
+            if record is None:
+                raise ValueError(f"Project {project_id} not found")
+            if expected_version is not None and record.version != expected_version:
+                raise ValueError(f"Project {project_id} version conflict")
+
+            record.timeline_json = timeline_json
+            record.merged_video_url = None
+            record.updated_at = utc_now()
+            record.version += 1
             return hydrate_project_map(session, {project_id})[project_id]
 
     def touch(self, project_id: str, expected_version: int, session=None) -> int:

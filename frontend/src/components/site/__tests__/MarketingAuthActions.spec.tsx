@@ -3,17 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockBootstrapAuth = vi.fn();
 const mockSignOut = vi.fn();
-const mockReplace = vi.fn();
-
-vi.mock("next/link", () => ({
-  default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
-}));
-
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    replace: mockReplace,
-  }),
-}));
+const mockOpenAuthDialog = vi.fn();
 
 const authenticatedState = {
   authStatus: "authenticated",
@@ -48,8 +38,20 @@ const mockState = {
   ...authenticatedState,
 };
 
+type MockAuthState = typeof mockState;
+type MockMarketingAuthState = {
+  open: typeof mockOpenAuthDialog;
+};
+
 vi.mock("@/store/authStore", () => ({
-  useAuthStore: (selector: any) => selector(mockState),
+  useAuthStore: (selector: (state: MockAuthState) => unknown) => selector(mockState),
+}));
+
+vi.mock("@/store/marketingAuthStore", () => ({
+  useMarketingAuthStore: (selector: (state: MockMarketingAuthState) => unknown) =>
+    selector({
+      open: mockOpenAuthDialog,
+    }),
 }));
 
 import MarketingAuthActions from "../MarketingAuthActions";
@@ -81,6 +83,21 @@ describe("MarketingAuthActions", () => {
     expect(mockBootstrapAuth).toHaveBeenCalledTimes(1);
   });
 
+  it("opens modal state instead of changing route for logged-out actions", () => {
+    Object.assign(mockState, {
+      authStatus: "anonymous",
+      me: null,
+    });
+
+    render(<MarketingAuthActions />);
+
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "注册" }));
+
+    expect(mockOpenAuthDialog).toHaveBeenNthCalledWith(1, "signin");
+    expect(mockOpenAuthDialog).toHaveBeenNthCalledWith(2, "signup");
+  });
+
   it("signs out from the marketing dropdown menu", async () => {
     Object.assign(mockState, authenticatedState);
     render(<MarketingAuthActions />);
@@ -90,7 +107,7 @@ describe("MarketingAuthActions", () => {
 
     await waitFor(() => {
       expect(mockSignOut).toHaveBeenCalledTimes(1);
-      expect(mockReplace).toHaveBeenCalledWith("/signin");
+      expect(mockOpenAuthDialog).toHaveBeenCalledWith("signin");
     });
   });
 });

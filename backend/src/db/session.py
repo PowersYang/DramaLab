@@ -99,6 +99,7 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
     inspector = inspect(engine)
     user_columns = {column["name"] for column in inspector.get_columns("users", schema=schema)}
     billing_account_columns = {column["name"] for column in inspector.get_columns("billing_accounts", schema=schema)}
+    project_columns = {column["name"] for column in inspector.get_columns("projects", schema=schema)}
     statements: list[str] = []
 
     # 中文注释：当前仓库还没有正式 migration 基础设施，这里只为新增的认证列做一次幂等补齐，避免旧库启动后直接报错。
@@ -136,6 +137,14 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
             statements.append(f"ALTER TABLE {target} ADD COLUMN {column_name} {definition}")
         else:
             statements.append(f"ALTER TABLE billing_accounts ADD COLUMN {column_name} {definition}")
+
+    if "timeline_json" not in project_columns:
+        # 中文注释：Phase 1 先把时间轴工程落到 projects 表的 JSON 列，避免在没有正式 migration 体系前就引入一套新子表。
+        if engine.dialect.name == "postgresql":
+            target = f'"{schema}"."projects"' if schema else '"projects"'
+            statements.append(f"ALTER TABLE {target} ADD COLUMN timeline_json JSONB")
+        else:
+            statements.append("ALTER TABLE projects ADD COLUMN timeline_json JSON")
 
     if not statements:
         return

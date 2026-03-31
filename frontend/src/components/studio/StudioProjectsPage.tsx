@@ -12,10 +12,12 @@ import {
   FolderKanban,
   Play,
   Plus,
+  Search,
   Sparkles,
   Trash2,
 } from "lucide-react";
 
+import AdminSummaryStrip from "@/components/studio/admin/AdminSummaryStrip";
 import { api, type EpisodeBrief, type ProjectSummary, type SeriesSummary } from "@/lib/api";
 import {
   isStudioCacheFresh,
@@ -31,6 +33,7 @@ const ImportFileDialog = dynamic(() => import("@/components/series/ImportFileDia
 const CreateSeriesDialog = dynamic(() => import("@/components/studio/CreateSeriesDialog"));
 
 type FilterMode = "all" | "series" | "project";
+type LedgerTab = "all" | "recent" | "risk";
 
 const PROJECTS_DASHBOARD_LOG_PREFIX = "[projects-dashboard]";
 
@@ -45,6 +48,16 @@ const formatDate = (value?: string | number | null) => {
   const timestamp = parseTime(value);
   if (!timestamp) return "-";
   return new Date(timestamp).toLocaleDateString("zh-CN");
+};
+
+const getProjectStage = (project: ProjectSummary) => {
+  if ((project.frame_count || 0) > 0) {
+    return { label: "分镜生产中", tone: "accent" as const };
+  }
+  if ((project.character_count || 0) > 0 || (project.scene_count || 0) > 0) {
+    return { label: "资产筹备中", tone: "warning" as const };
+  }
+  return { label: "待推进", tone: "neutral" as const };
 };
 
 function SeriesLedgerRow({
@@ -88,181 +101,168 @@ function SeriesLedgerRow({
   };
 
   return (
-    <div className="studio-admin-block">
-      <div className="studio-admin-ledger-row">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <span className="studio-badge studio-badge-soft">系列</span>
-            <p className="truncate text-base font-semibold studio-strong">{series.title}</p>
+    <>
+      <tr>
+        <td>
+          <div className="admin-ledger-main">
+            <div className="flex items-center gap-2">
+              <span className="admin-status-badge admin-status-badge-neutral">系列</span>
+              <h4 className="truncate text-sm font-bold text-slate-800">{series.title}</h4>
+            </div>
+            <p className="truncate text-[11px] text-slate-400">
+              {series.description || "系列母体"}
+            </p>
           </div>
-          <p className="mt-2 line-clamp-2 text-sm leading-6 studio-muted">
-            {series.description || "适合多集内容的共享设定、系列角色与跨项目复用资产。"}
-          </p>
-        </div>
+        </td>
 
-        <div className="studio-admin-meta">
-          <div>
-            <div className="studio-admin-meta-label">集数</div>
-            <div className="studio-admin-meta-value">{series.episode_count || 0}</div>
-          </div>
-          <div>
-            <div className="studio-admin-meta-label">角色</div>
-            <div className="studio-admin-meta-value">{series.character_count || 0}</div>
-          </div>
-          <div>
-            <div className="studio-admin-meta-label">场景</div>
-            <div className="studio-admin-meta-value">{series.scene_count || 0}</div>
-          </div>
-          <div>
-            <div className="studio-admin-meta-label">更新</div>
-            <div className="studio-admin-meta-value">{formatDate(series.updated_at)}</div>
-          </div>
-        </div>
+        <td className="admin-table-cell-center admin-table-cell-text">{series.episode_count || 0}</td>
+        <td className="admin-table-cell-center admin-table-cell-text">{series.character_count || 0}</td>
+        <td className="admin-table-cell-center admin-table-cell-text">{series.scene_count || 0}</td>
+        <td className="admin-table-cell-center admin-table-cell-text">{series.prop_count || 0}</td>
+        <td className="admin-table-cell-center admin-table-cell-text">{series.frame_count || 0}</td>
+        <td className="admin-table-cell-center admin-table-cell-text text-slate-400">{formatDate(series.updated_at)}</td>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button onClick={() => onToggleExpand(series.id)} className="studio-button studio-button-secondary">
-            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            {expanded ? "收起分集" : "查看分集"}
-          </button>
-          <Link href={`/studio/series/${series.id}`} className="studio-button studio-button-primary">
-            <FolderKanban size={14} />
-            管理系列
-          </Link>
-          <button
-            onClick={() => {
-              if (confirm(`确定要删除系列"${series.title}"吗？这不会删除其中项目。`)) {
-                onDelete(series.id);
-              }
-            }}
-            className="studio-button studio-button-danger !min-h-[2.5rem] !px-3"
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
+        <td>
+          <div className="admin-ledger-actions">
+            <button onClick={() => onToggleExpand(series.id)} className="studio-button studio-button-secondary !h-7 !px-2 text-[11px]">
+              {expanded ? "收起" : "展开"}
+            </button>
+            <Link href={`/studio/series/${series.id}`} className="studio-button studio-button-primary !h-7 !px-2 text-[11px]">
+              管理
+            </Link>
+            <button
+              onClick={() => {
+                if (confirm(`确定要删除系列"${series.title}"吗？`)) {
+                  onDelete(series.id);
+                }
+              }}
+              className="studio-button studio-button-danger !h-7 !w-7 !p-0"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </td>
+      </tr>
 
       {expanded ? (
-        <div className="border-t px-5 py-5" style={{ borderColor: "var(--studio-shell-border)" }}>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {episodesLoading ? (
-              [1, 2, 3].map((item) => <div key={item} className="h-24 w-52 flex-shrink-0 rounded-[1.25rem] bg-slate-100 animate-pulse" />)
-            ) : (
-              <>
-                {sortedEpisodes.map((episode) => (
-                  <Link
-                    key={episode.id}
-                    href={`/studio/projects/${episode.id}?seriesId=${series.id}`}
-                    className="block min-h-[104px] w-56 flex-shrink-0 rounded-[1.3rem] border p-4 transition-colors hover:border-[rgba(166,75,42,0.24)] hover:bg-white"
-                    style={{ borderColor: "var(--studio-shell-border)", background: "rgba(255,255,255,0.82)" }}
-                  >
-                    <p className="text-[11px] font-semibold tracking-[0.12em]" style={{ color: "var(--studio-shell-accent)" }}>
-                      第 {episode.episode_number || "?"} 集
-                    </p>
-                    <p className="mt-2 line-clamp-1 text-sm font-semibold studio-strong">{episode.title}</p>
-                    <p className="mt-2 text-xs studio-muted">{episode.frame_count || 0} 分镜 · 进入单集编辑</p>
-                  </Link>
-                ))}
-
-                {showInlineInput ? (
-                  <div
-                    className="w-60 flex-shrink-0 rounded-[1.3rem] border p-4"
-                    style={{ borderColor: "color-mix(in srgb, var(--studio-shell-accent) 36%, transparent)", background: "var(--studio-shell-accent-soft)" }}
-                  >
-                    <input
-                      value={inlineTitle}
-                      onChange={(event) => setInlineTitle(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") void handleInlineAddEpisode(event);
-                        if (event.key === "Escape") {
-                          setShowInlineInput(false);
-                          setInlineTitle("");
-                        }
-                      }}
-                      placeholder="输入集数标题"
-                      className="w-full border-none bg-transparent text-sm font-medium studio-strong outline-none placeholder:text-slate-400"
-                    />
-                    <div className="mt-3 flex gap-3 text-xs">
-                      <button onClick={handleInlineAddEpisode} disabled={!inlineTitle.trim() || isAdding} className="font-semibold disabled:opacity-50" style={{ color: "var(--studio-shell-accent-strong)" }}>
-                        {isAdding ? "创建中..." : "确认创建"}
-                      </button>
-                      <button onClick={() => { setShowInlineInput(false); setInlineTitle(""); }} className="studio-muted">
-                        取消
-                      </button>
-                    </div>
-                  </div>
+        <tr className="admin-subledger-row">
+          <td colSpan={6}>
+            <div className="p-4 pl-12 bg-slate-50/50">
+              <div className="admin-subledger-header">
+                <span>分集台账</span>
+                <span>{sortedEpisodes.length || series.episode_count || 0} 集</span>
+              </div>
+              <div className="admin-episode-grid">
+                {episodesLoading ? (
+                  [1, 2, 3].map((item) => <div key={item} className="h-24 rounded-[1.25rem] bg-slate-100 animate-pulse" />)
                 ) : (
-                  <button
-                    onClick={() => setShowInlineInput(true)}
-                    className="flex min-h-[104px] w-52 flex-shrink-0 items-center justify-center rounded-[1.3rem] border border-dashed text-sm font-semibold transition-colors studio-muted hover:bg-slate-50"
-                    style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}
-                  >
-                    + 添加分集
-                  </button>
+                  <>
+                    {sortedEpisodes.map((episode) => (
+                      <Link key={episode.id} href={`/studio/projects/${episode.id}?seriesId=${series.id}`} className="admin-episode-card">
+                        <p className="admin-episode-kicker">第 {episode.episode_number || "?"} 集</p>
+                        <p className="mt-2 line-clamp-1 text-sm font-semibold studio-strong">{episode.title}</p>
+                        <p className="mt-2 text-xs studio-muted">{episode.frame_count || 0} 分镜 · 进入单集编辑</p>
+                      </Link>
+                    ))}
+
+                    {showInlineInput ? (
+                      <div className="admin-episode-card admin-episode-card-create">
+                        <input
+                          value={inlineTitle}
+                          onChange={(event) => setInlineTitle(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") void handleInlineAddEpisode(event);
+                            if (event.key === "Escape") {
+                              setShowInlineInput(false);
+                              setInlineTitle("");
+                            }
+                          }}
+                          placeholder="输入集数标题"
+                          className="w-full border-none bg-transparent text-sm font-medium studio-strong outline-none placeholder:text-slate-400"
+                        />
+                        <div className="mt-3 flex gap-3 text-xs">
+                          <button
+                            onClick={handleInlineAddEpisode}
+                            disabled={!inlineTitle.trim() || isAdding}
+                            className="font-semibold disabled:opacity-50"
+                            style={{ color: "var(--studio-shell-accent-strong)" }}
+                          >
+                            {isAdding ? "创建中..." : "确认创建"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowInlineInput(false);
+                              setInlineTitle("");
+                            }}
+                            className="studio-muted"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setShowInlineInput(true)} className="admin-episode-card admin-episode-card-add">
+                        + 添加分集
+                      </button>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </div>
-        </div>
+              </div>
+            </div>
+          </td>
+        </tr>
       ) : null}
-    </div>
+    </>
   );
 }
 
 function ProjectLedgerRow({ project, onDelete }: { project: ProjectSummary; onDelete: (id: string) => void }) {
+  const stage = getProjectStage(project);
+
   return (
-    <div className="studio-admin-ledger-row">
-      <div className="min-w-0">
-        <div className="flex items-center gap-3">
-          <span className="studio-badge studio-badge-soft">项目</span>
-          <p className="truncate text-base font-semibold studio-strong">{project.title}</p>
+    <tr>
+      <td>
+        <div className="admin-ledger-main">
+          <div className="flex items-center gap-2">
+            <span className="admin-status-badge admin-status-badge-neutral">项目</span>
+            <h4 className="truncate text-sm font-bold text-slate-800">{project.title}</h4>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-slate-400">
+            <span className="flex items-center gap-1">
+              <Calendar size={10} />
+              {formatDate(project.created_at)}
+            </span>
+          </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-4 text-xs studio-muted">
-          <span className="inline-flex items-center gap-1">
-            <Calendar size={12} />
-            创建于 {formatDate(project.created_at)}
-          </span>
-          <span>角色 {project.character_count || 0}</span>
-          <span>场景 {project.scene_count || 0}</span>
-          <span>分镜 {project.frame_count || 0}</span>
-        </div>
-      </div>
+      </td>
 
-      <div className="studio-admin-meta">
-        <div>
-          <div className="studio-admin-meta-label">角色</div>
-          <div className="studio-admin-meta-value">{project.character_count || 0}</div>
-        </div>
-        <div>
-          <div className="studio-admin-meta-label">场景</div>
-          <div className="studio-admin-meta-value">{project.scene_count || 0}</div>
-        </div>
-        <div>
-          <div className="studio-admin-meta-label">分镜</div>
-          <div className="studio-admin-meta-value">{project.frame_count || 0}</div>
-        </div>
-        <div>
-          <div className="studio-admin-meta-label">更新</div>
-          <div className="studio-admin-meta-value">{formatDate(project.updated_at)}</div>
-        </div>
-      </div>
+      <td className="admin-table-cell-center">
+        <span className={`text-[11px] admin-status-badge-${stage.tone}`}>{stage.label}</span>
+      </td>
+      <td className="admin-table-cell-center admin-table-cell-text">{project.character_count || 0}</td>
+      <td className="admin-table-cell-center admin-table-cell-text">{project.scene_count || 0}</td>
+      <td className="admin-table-cell-center admin-table-cell-text">{project.prop_count || 0}</td>
+      <td className="admin-table-cell-center admin-table-cell-text">{project.frame_count || 0}</td>
+      <td className="admin-table-cell-center admin-table-cell-text text-slate-400">{formatDate(project.updated_at)}</td>
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Link href={`/studio/projects/${project.id}`} className="studio-button studio-button-primary">
-          <Play size={14} />
-          打开项目
-        </Link>
-        <button
-          onClick={() => {
-            if (confirm(`确定要删除项目"${project.title}"吗？`)) {
-              onDelete(project.id);
-            }
-          }}
-          className="studio-button studio-button-danger !min-h-[2.5rem] !px-3"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
-    </div>
+      <td>
+        <div className="admin-ledger-actions">
+          <Link href={`/studio/projects/${project.id}`} className="studio-button studio-button-primary !h-7 !px-3 text-[11px]">
+            打开
+          </Link>
+          <button
+            onClick={() => {
+              if (confirm(`确定要删除项目"${project.title}"吗？`)) {
+                onDelete(project.id);
+              }
+            }}
+            className="studio-button studio-button-danger !h-7 !w-7 !p-0"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -271,6 +271,8 @@ export default function StudioProjectsPage() {
   const deleteSeries = useProjectStore((state) => state.deleteSeries);
 
   const [filter, setFilter] = useState<FilterMode>("all");
+  const [ledgerTab, setLedgerTab] = useState<LedgerTab>("all");
+  const [keyword, setKeyword] = useState("");
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreateSeriesOpen, setIsCreateSeriesOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -406,8 +408,51 @@ export default function StudioProjectsPage() {
   };
 
   const standaloneProjects = useMemo(() => projects.filter((project) => !project.series_id), [projects]);
-  const visibleSeries = filter === "project" ? [] : seriesList;
-  const visibleProjects = filter === "series" ? [] : standaloneProjects;
+  const keywordLower = keyword.trim().toLowerCase();
+
+  const filteredSeries = useMemo(() => {
+    let rows = filter === "project" ? [] : [...seriesList];
+    if (ledgerTab === "recent") {
+      rows = rows.sort((a, b) => parseTime(b.updated_at) - parseTime(a.updated_at)).slice(0, 8);
+    } else if (ledgerTab === "risk") {
+      rows = rows.filter((item) => (item.episode_count || 0) === 0 || ((item.character_count || 0) === 0 && (item.scene_count || 0) === 0));
+    }
+    if (keywordLower) {
+      rows = rows.filter((item) => `${item.title} ${item.description || ""}`.toLowerCase().includes(keywordLower));
+    }
+    return rows;
+  }, [filter, keywordLower, ledgerTab, seriesList]);
+
+  const filteredProjects = useMemo(() => {
+    let rows = filter === "series" ? [] : [...standaloneProjects];
+    if (ledgerTab === "recent") {
+      rows = rows.sort((a, b) => parseTime(b.updated_at) - parseTime(a.updated_at)).slice(0, 10);
+    } else if (ledgerTab === "risk") {
+      rows = rows.filter((item) => (item.frame_count || 0) === 0);
+    }
+    if (keywordLower) {
+      rows = rows.filter((item) => item.title.toLowerCase().includes(keywordLower));
+    }
+    return rows;
+  }, [filter, keywordLower, ledgerTab, standaloneProjects]);
+
+  const summaryItems = useMemo(
+    () => [
+      { label: "全部项目", value: projects.length, icon: FolderKanban },
+      { label: "系列总数", value: seriesList.length, icon: FileText },
+      {
+        label: "待推进",
+        value: projects.filter((item) => (item.frame_count || 0) === 0).length,
+        icon: Sparkles,
+      },
+      {
+        label: "已入分镜",
+        value: projects.filter((item) => (item.frame_count || 0) > 0).length,
+        icon: Play,
+      },
+    ],
+    [projects, seriesList.length],
+  );
 
   const handleDeleteProject = async (id: string) => {
     await deleteProject(id);
@@ -432,44 +477,78 @@ export default function StudioProjectsPage() {
         </section>
       ) : null}
 
-      <section className="studio-panel px-5 py-4 lg:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="studio-tab-strip flex flex-wrap items-center gap-1">
-            {[
-              { id: "all", label: "全部台账" },
-              { id: "series", label: "系列" },
-              { id: "project", label: "独立项目" },
-            ].map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setFilter(item.id as FilterMode)}
-                className={`studio-tab ${filter === item.id ? "studio-tab-active" : ""}`}
-              >
-                {item.label}
-              </button>
-            ))}
+      <AdminSummaryStrip items={summaryItems} />
+
+      <section className="studio-panel p-4">
+        <div className="admin-filter-shell">
+          <div className="admin-filter-bar">
+            <label className="admin-filter-search">
+              <Search size={14} className="admin-filter-search-icon" />
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="搜索系列、项目或关键词"
+                className="admin-filter-search-input"
+              />
+            </label>
+
+            <div className="admin-filter-divider" />
+
+            <div className="admin-filter-chip-group">
+              {[
+                { id: "all", label: "全部台账" },
+                { id: "series", label: "系列" },
+                { id: "project", label: "独立项目" },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setFilter(item.id as FilterMode)}
+                  className={`admin-filter-chip ${filter === item.id ? "admin-filter-chip-active" : ""}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="admin-filter-divider" />
+
+            <div className="admin-filter-chip-group">
+              {[
+                { id: "all", label: "全部" },
+                { id: "recent", label: "最近编辑" },
+                { id: "risk", label: "待推进" },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setLedgerTab(item.id as LedgerTab)}
+                  className={`admin-filter-chip ${ledgerTab === item.id ? "admin-filter-chip-active" : ""}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <button onClick={() => setIsImportOpen(true)} className="studio-button studio-button-secondary">
-              <FileUp size={16} />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsImportOpen(true)} className="studio-button studio-button-secondary !h-8 !px-3">
+              <FileUp size={14} />
               导入剧本
             </button>
 
             <div className="relative">
-              <button onClick={() => setShowCreateDropdown((value) => !value)} className="studio-button studio-button-primary">
-                <Plus size={16} />
+              <button onClick={() => setShowCreateDropdown((value) => !value)} className="studio-button studio-button-primary !h-8 !px-3">
+                <Plus size={14} />
                 新建资源
-                <ChevronDown size={16} />
+                <ChevronDown size={14} className="ml-1" />
               </button>
               {showCreateDropdown ? (
-                <div className="absolute right-0 top-full z-20 mt-2 w-52 rounded-[1.5rem] p-2 shadow-xl" style={{ border: "1px solid var(--studio-shell-border)", background: "var(--studio-shell-panel-strong)" }}>
-                  <button onClick={() => { setIsCreateSeriesOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold studio-muted hover:bg-slate-50">
-                    <FolderKanban size={16} style={{ color: "var(--studio-shell-accent)" }} />
+                <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  <button onClick={() => { setIsCreateSeriesOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    <FolderKanban size={14} className="text-blue-500" />
                     新建系列
                   </button>
-                  <button onClick={() => { setIsCreateProjectOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold studio-muted hover:bg-slate-50">
-                    <FileText size={16} style={{ color: "var(--studio-shell-accent)" }} />
+                  <button onClick={() => { setIsCreateProjectOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    <FileText size={14} className="text-blue-500" />
                     新建项目
                   </button>
                 </div>
@@ -479,48 +558,79 @@ export default function StudioProjectsPage() {
         </div>
       </section>
 
-      {visibleSeries.length > 0 ? (
+      {filteredSeries.length > 0 ? (
         <section className="studio-panel overflow-hidden">
-          <div className="border-b px-5 py-4 lg:px-6" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
-            <h3 className="text-xl font-semibold studio-strong">系列</h3>
+          <div className="admin-ledger-head">
+            <h3 className="text-sm font-bold text-slate-800">系列台账</h3>
+            <span className="text-[11px] font-medium text-slate-400">{filteredSeries.length} 条</span>
           </div>
-          <div className="divide-y" style={{ borderColor: "var(--studio-shell-border)" }}>
-            {visibleSeries.map((series) => (
-              <SeriesLedgerRow
-                key={series.id}
-                series={series}
-                episodes={seriesEpisodes[series.id]}
-                episodesLoading={episodesLoadingBySeries[series.id] ?? false}
-                expanded={expandedSeriesIds.includes(series.id)}
-                onDelete={handleDeleteSeries}
-                onToggleExpand={toggleSeriesExpand}
-                onEpisodesChange={refreshSeriesEpisodes}
-              />
-            ))}
+          <div className="admin-table-container">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "auto" }}>主信息</th>
+                  <th style={{ width: "80px" }} className="admin-table-cell-center">集数</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">角色</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">场景</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">道具</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">分镜</th>
+                  <th style={{ width: "120px" }} className="admin-table-cell-center">最后更新</th>
+                  <th style={{ width: "160px" }} className="admin-table-cell-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSeries.map((series) => (
+                  <SeriesLedgerRow
+                    key={series.id}
+                    series={series}
+                    episodes={seriesEpisodes[series.id]}
+                    episodesLoading={episodesLoadingBySeries[series.id] ?? false}
+                    expanded={expandedSeriesIds.includes(series.id)}
+                    onDelete={handleDeleteSeries}
+                    onToggleExpand={toggleSeriesExpand}
+                    onEpisodesChange={refreshSeriesEpisodes}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       ) : null}
 
-      {visibleProjects.length > 0 ? (
+      {filteredProjects.length > 0 ? (
         <section className="studio-panel overflow-hidden">
-          <div className="border-b px-5 py-4 lg:px-6" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
-            <h3 className="text-xl font-semibold studio-strong">独立项目</h3>
+          <div className="admin-ledger-head">
+            <h3 className="text-sm font-bold text-slate-800">独立项目台账</h3>
+            <span className="text-[11px] font-medium text-slate-400">{filteredProjects.length} 条</span>
           </div>
-          <div className="divide-y" style={{ borderColor: "var(--studio-shell-border)" }}>
-            {visibleProjects.map((project) => (
-              <ProjectLedgerRow key={project.id} project={project} onDelete={handleDeleteProject} />
-            ))}
+          <div className="admin-table-container">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "auto" }}>主信息</th>
+                  <th style={{ width: "80px" }} className="admin-table-cell-center">阶段</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">角色</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">场景</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">道具</th>
+                  <th style={{ width: "60px" }} className="admin-table-cell-center">分镜</th>
+                  <th style={{ width: "120px" }} className="admin-table-cell-center">最后更新</th>
+                  <th style={{ width: "160px" }} className="admin-table-cell-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProjects.map((project) => (
+                  <ProjectLedgerRow key={project.id} project={project} onDelete={handleDeleteProject} />
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       ) : null}
 
-      {visibleSeries.length === 0 && visibleProjects.length === 0 ? (
+      {filteredSeries.length === 0 && filteredProjects.length === 0 ? (
         <section className="studio-panel p-10 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "var(--studio-shell-accent-soft)", color: "var(--studio-shell-accent-strong)" }}>
-            <Sparkles size={24} />
-          </div>
-          <p className="mt-4 text-base font-semibold studio-strong">当前筛选条件下没有可展示的项目资源</p>
-          <p className="mt-2 text-sm leading-7 studio-muted">可以新建系列、导入剧本，或者切回“全部台账”查看完整项目母体。</p>
+          <Sparkles size={24} className="mx-auto opacity-10" />
+          <p className="mt-4 text-sm font-semibold studio-strong">暂无符合条件的项目</p>
         </section>
       ) : null}
 

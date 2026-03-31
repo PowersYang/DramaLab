@@ -1,17 +1,14 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 import AuthEntryPage from "@/components/site/AuthEntryPage";
-import { buildMarketingAuthHref, stripMarketingAuthHref, type MarketingAuthMode } from "@/components/site/marketingAuthHref";
+import { useMarketingAuthStore } from "@/store/marketingAuthStore";
 
 export default function MarketingAuthDialog() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const authMode = searchParams.get("auth");
-  const resolvedMode = authMode === "signin" || authMode === "signup" ? authMode : null;
+  const resolvedMode = useMarketingAuthStore((state) => state.mode);
+  const closeModal = useMarketingAuthStore((state) => state.close);
+  const switchMode = useMarketingAuthStore((state) => state.open);
 
   useEffect(() => {
     if (!resolvedMode) {
@@ -23,7 +20,7 @@ export default function MarketingAuthDialog() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        router.replace(stripMarketingAuthHref(pathname, searchParams.toString()), { scroll: false });
+        closeModal();
       }
     };
 
@@ -32,32 +29,21 @@ export default function MarketingAuthDialog() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [pathname, resolvedMode, router, searchParams]);
+  }, [closeModal, resolvedMode]);
 
   if (!resolvedMode) {
     return null;
   }
 
-  const closeModal = () => {
-    router.replace(stripMarketingAuthHref(pathname, searchParams.toString()), { scroll: false });
-  };
-
-  const switchMode = (mode: MarketingAuthMode) => {
-    router.replace(
-      buildMarketingAuthHref(pathname, searchParams.toString(), mode, searchParams.get("next") || undefined),
-      { scroll: false },
-    );
-  };
-
   return (
-    <div className="marketing-auth-backdrop fixed inset-0 z-[100] flex items-center justify-center px-4 py-6 sm:px-6">
+    <div className="marketing-auth-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(46,168,255,0.08),transparent_30%),radial-gradient(circle_at_18%_18%,rgba(241,216,171,0.07),transparent_26%),rgba(3,6,12,0.76)] backdrop-blur-[10px] px-4 py-6 sm:px-6">
       <button
         type="button"
         aria-label="关闭登录注册弹窗"
         className="absolute inset-0 cursor-default"
         onClick={closeModal}
       />
-      <div className="relative z-[101] w-full max-w-[1160px]">
+      <div className="relative z-[101] w-full max-w-[730px]">
         <AuthEntryPage mode={resolvedMode} onClose={closeModal} onModeChange={switchMode} />
       </div>
     </div>

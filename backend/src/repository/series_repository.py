@@ -4,7 +4,7 @@ from sqlalchemy import func
 
 from .base import BaseRepository
 from .mappers import _audit_time_kwargs, _soft_delete_series_graph, _insert_series_children, _tenant_kwargs, hydrate_series_map, replace_series_graph
-from ..db.models import CharacterRecord, ProjectRecord, SceneRecord, SeriesRecord
+from ..db.models import CharacterRecord, ProjectRecord, PropRecord, SceneRecord, SeriesRecord, StoryboardFrameRecord
 from ..schemas.models import Series
 from ..utils.datetime import utc_now
 
@@ -50,6 +50,27 @@ class SeriesRepository(BaseRepository[Series]):
                 .group_by(SceneRecord.owner_id)
                 .all()
             )
+            prop_counts = dict(
+                session.query(PropRecord.owner_id, func.count(PropRecord.id))
+                .filter(
+                    PropRecord.is_deleted.is_(False),
+                    PropRecord.owner_type == "series",
+                    PropRecord.owner_id.in_(series_ids),
+                )
+                .group_by(PropRecord.owner_id)
+                .all()
+            )
+            frame_counts = dict(
+                session.query(ProjectRecord.series_id, func.count(StoryboardFrameRecord.id))
+                .join(StoryboardFrameRecord, ProjectRecord.id == StoryboardFrameRecord.project_id)
+                .filter(
+                    ProjectRecord.is_deleted.is_(False),
+                    ProjectRecord.series_id.in_(series_ids),
+                    StoryboardFrameRecord.is_deleted.is_(False),
+                )
+                .group_by(ProjectRecord.series_id)
+                .all()
+            )
             return [
                 {
                     "id": row.id,
@@ -58,6 +79,8 @@ class SeriesRepository(BaseRepository[Series]):
                     "episode_count": int(episode_counts.get(row.id, 0)),
                     "character_count": int(character_counts.get(row.id, 0)),
                     "scene_count": int(scene_counts.get(row.id, 0)),
+                    "prop_count": int(prop_counts.get(row.id, 0)),
+                    "frame_count": int(frame_counts.get(row.id, 0)),
                     "created_at": row.created_at,
                     "updated_at": row.updated_at,
                 }

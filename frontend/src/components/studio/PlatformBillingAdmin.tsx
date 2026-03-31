@@ -384,411 +384,411 @@ export default function PlatformBillingAdmin() {
   }
 
   return (
-    <div className="space-y-6">
-      {error ? (
-        <section className="studio-panel p-4">
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-        </section>
-      ) : null}
-      {message ? (
-        <section className="studio-panel p-4">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>
-        </section>
-      ) : null}
-
-      <section className="studio-panel p-3">
-        <div className="flex flex-wrap gap-2">
-          {[
-            { key: "accounts", label: "组织账本与手工充值" },
-            { key: "pricing", label: "任务定价规则" },
-            { key: "bonus", label: "充值赠送规则" },
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setActiveTab(item.key as BillingAdminTab)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                activeTab === item.key
-                  ? "bg-slate-950 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-950"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+    <div className="mx-auto max-w-7xl space-y-8 pb-12">
+      {/* 页面头部：Tab 导航 */}
+      <section className="animate-in fade-in slide-in-from-top-4 duration-700">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] bg-white/50 backdrop-blur-xl p-2 border border-slate-100 shadow-sm">
+          <div className="flex gap-1">
+            {(["accounts", "pricing", "bonus"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition-all ${
+                  activeTab === tab
+                    ? "bg-slate-900 text-white shadow-lg shadow-slate-200"
+                    : "text-slate-500 hover:bg-white hover:text-slate-900"
+                }`}
+              >
+                {tab === "accounts" ? "组织账本与充值" : tab === "pricing" ? "任务计费标准" : "充值赠送策略"}
+              </button>
+            ))}
+          </div>
+          <div className="px-4 text-xs font-bold uppercase tracking-widest text-slate-400">
+            Billing Governance
+          </div>
         </div>
       </section>
 
+      {/* 组织账本与充值 */}
       {activeTab === "accounts" ? (
-      <section className="studio-panel p-6">
-        <div className="mb-5">
-          <h2 className="text-xl font-bold text-slate-950">组织账本与手工充值</h2>
-          <p className="mt-1 text-sm text-slate-500">充值金额以元为单位录入，系统会按 1 元 = 10 算力豆自动换算，并展示所选组织的充值统计和充值记录。</p>
-        </div>
+        <div className="grid gap-8 lg:grid-cols-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="space-y-8 lg:col-span-4">
+            <section className="studio-panel overflow-hidden border-none bg-white/60 backdrop-blur-xl shadow-sm transition-all hover:shadow-md">
+              <div className="border-b border-slate-100 bg-slate-50/30 px-6 py-5">
+                <h3 className="text-lg font-bold text-slate-900">手工充值</h3>
+                <p className="text-xs text-slate-500 mt-1">为选定组织执行算力豆入账</p>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 ml-1">选择目标组织</label>
+                  <select
+                    value={selectedOrganizationId}
+                    onChange={(event) => {
+                      const organizationId = event.target.value;
+                      setSelectedOrganizationId(organizationId);
+                      setRechargeForm((prev) => ({ ...prev, organization_id: organizationId }));
+                    }}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                  >
+                    {organizations.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-        <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-          <label className="space-y-2 text-sm text-slate-600">
-            选择组织
-            <select
-              value={selectedOrganizationId}
-              onChange={(event) => {
-                const organizationId = event.target.value;
-                setSelectedOrganizationId(organizationId);
-                setRechargeForm((prev) => ({ ...prev, organization_id: organizationId }));
-              }}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium text-slate-900 outline-none"
-            >
-              {organizations.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 ml-1">充值金额 (元)</label>
+                  <div className="relative">
+                    <input
+                      value={rechargeForm.amount_yuan}
+                      onChange={(event) =>
+                        setRechargeForm((prev) => ({ ...prev, amount_yuan: event.target.value }))
+                      }
+                      placeholder="0.00"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-8 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                    />
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">¥</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 text-[10px] font-bold text-indigo-600">
+                    换算算力豆: {baseCreditsPreview} 豆 (预计赠送 {bonusCreditsPreview} 豆)
+                  </div>
+                </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">当前余额</p>
-              <p className="mt-4 text-3xl font-black tracking-tight text-slate-950">{selectedAccount?.balance_credits ?? 0}</p>
-              <p className="mt-1 text-sm text-slate-500">算力豆</p>
-            </article>
-            <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">累计充值金额</p>
-              <p className="mt-4 text-3xl font-black tracking-tight text-slate-950">{centsToCurrency(selectedAccount?.total_recharged_cents)}</p>
-              <p className="mt-1 text-sm text-slate-500">数据库累计统计</p>
-            </article>
-            <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">累计赠送金额</p>
-              <p className="mt-4 text-3xl font-black tracking-tight text-slate-950">{creditsToCurrency(selectedAccount?.total_bonus_credits)}</p>
-              <p className="mt-1 text-sm text-slate-500">共赠送 {selectedAccount?.total_bonus_credits ?? 0} 豆</p>
-            </article>
-          </div>
-        </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 ml-1">备注说明</label>
+                  <textarea
+                    value={rechargeForm.remark}
+                    onChange={(event) => setRechargeForm((prev) => ({ ...prev, remark: event.target.value }))}
+                    placeholder="选填，如：线下转账单号"
+                    rows={2}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                  />
+                </div>
 
-        <div className="mt-6 grid gap-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(0,240px)_auto_minmax(0,1fr)_auto]">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">充值金额（元）</label>
-            <input
-              value={rechargeForm.amount_yuan}
-              onChange={(event) => setRechargeForm((prev) => ({ ...prev, amount_yuan: event.target.value }))}
-              placeholder="例如 100"
-              inputMode="decimal"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
-            />
-          </div>
-          <div className="flex items-end pb-3 text-sm font-semibold text-emerald-700">
-            预计基础入账 {baseCreditsPreview} 豆
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">备注</label>
-            <input
-              value={rechargeForm.remark}
-              onChange={(event) => setRechargeForm((prev) => ({ ...prev, remark: event.target.value }))}
-              placeholder="例如线下补款、商务赠送"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
-            />
-          </div>
-          <button
-            onClick={() => void submitManualRecharge()}
-            disabled={busyKey === "recharge"}
-            className="self-end rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {busyKey === "recharge" ? "充值中..." : "手工充值"}
-          </button>
-        </div>
-
-        <div className="mt-3 rounded-[1.25rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          <span className="font-semibold">
-            {rechargeForm.amount_yuan.trim() || "0"} 元 = {baseCreditsPreview} 算力豆
-          </span>
-          <span className="ml-3">
-            当前命中赠送规则：{bonusCreditsPreview} 豆
-          </span>
-          <span className="ml-3">
-            合计到账：{baseCreditsPreview + bonusCreditsPreview} 豆
-          </span>
-        </div>
-
-        <div className="mt-6 overflow-x-auto rounded-[1.5rem] border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-semibold">组织</th>
-                <th className="px-4 py-3 font-semibold">余额</th>
-                <th className="px-4 py-3 font-semibold">累计充值金额</th>
-                <th className="px-4 py-3 font-semibold">累计赠送金额</th>
-                <th className="px-4 py-3 font-semibold">累计赠送豆数</th>
-                <th className="px-4 py-3 font-semibold">累计消耗</th>
-                <th className="px-4 py-3 font-semibold">状态</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {accountsWithName.map((item) => (
-                <tr
-                  key={item.id}
-                  className={item.organization_id === selectedOrganizationId ? "bg-amber-50/60" : undefined}
+                <button
+                  disabled={rechargeAmountCents === null || rechargeAmountCents <= 0 || busyKey === "recharge"}
+                  onClick={() => void submitManualRecharge()}
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 disabled:opacity-30"
                 >
-                  <td className="px-4 py-3 font-semibold text-slate-900">{item.organization_name}</td>
-                  <td className="px-4 py-3 text-slate-700">{item.balance_credits} 豆</td>
-                  <td className="px-4 py-3 text-slate-700">{centsToCurrency(item.total_recharged_cents)}</td>
-                  <td className="px-4 py-3 text-slate-700">{creditsToCurrency(item.total_bonus_credits)}</td>
-                  <td className="px-4 py-3 text-slate-700">{item.total_bonus_credits} 豆</td>
-                  <td className="px-4 py-3 text-slate-700">{item.total_consumed_credits} 豆</td>
-                  <td className="px-4 py-3 text-slate-700">{item.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  {busyKey === "recharge" ? <Loader2 size={18} className="animate-spin" /> : "执行充值入账"}
+                </button>
+              </div>
+            </section>
 
-        <div className="mt-6 overflow-x-auto rounded-[1.5rem] border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-semibold">充值金额</th>
-                <th className="px-4 py-3 font-semibold">基础算力豆</th>
-                <th className="px-4 py-3 font-semibold">赠送算力豆</th>
-                <th className="px-4 py-3 font-semibold">合计到账</th>
-                <th className="px-4 py-3 font-semibold">充值人</th>
-                <th className="px-4 py-3 font-semibold">充值时间</th>
-                <th className="px-4 py-3 font-semibold">备注</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rechargeLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                    正在加载充值记录...
-                  </td>
-                </tr>
-              ) : rechargeRecords.length ? (
-                rechargeRecords.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-3 text-slate-700">{centsToCurrency(item.amount_cents)}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.base_credits} 豆</td>
-                    <td className="px-4 py-3 text-slate-700">{item.bonus_credits} 豆</td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{item.total_credits} 豆</td>
-                    <td className="px-4 py-3 text-slate-700">{item.operator_name}</td>
-                    <td className="px-4 py-3 text-slate-700">{formatDateTime(item.created_at)}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.remark || "-"}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                    当前组织还没有充值记录。
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      ) : null}
+            {selectedAccount && (
+              <section className="studio-panel border-none bg-indigo-600 p-8 shadow-xl shadow-indigo-500/20 text-white overflow-hidden relative">
+                <div className="relative z-10">
+                  <div className="text-xs font-bold uppercase tracking-widest text-indigo-200">当前余额</div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-4xl font-black">{selectedAccount.balance_credits}</span>
+                    <span className="text-sm font-bold text-indigo-200">算力豆</span>
+                  </div>
+                  <div className="mt-8 grid grid-cols-2 gap-4 border-t border-white/10 pt-6">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-200">累计充值</div>
+                      <div className="mt-1 text-lg font-bold">{centsToCurrency(selectedAccount.total_recharged_cents)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-200">累计赠送</div>
+                      <div className="mt-1 text-lg font-bold">{selectedAccount.total_bonus_credits} 豆</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
 
-      {activeTab === "pricing" ? (
-      <section className="studio-panel p-6">
-        <div className="mb-5">
-          <h2 className="text-xl font-bold text-slate-950">任务定价规则</h2>
-          <p className="mt-1 text-sm text-slate-500">默认列出全部异步任务类型。未配置的任务默认按 0 豆展示，可直接在表格中修改后保存。</p>
+          <div className="space-y-8 lg:col-span-8">
+            <section className="studio-panel overflow-hidden border-none bg-white/60 backdrop-blur-xl shadow-sm">
+              <div className="border-b border-slate-100 bg-slate-50/30 px-8 py-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">充值流水记录</h3>
+                  <p className="text-sm text-slate-500">展示最近 100 条组织充值与赠送明细</p>
+                </div>
+                {rechargeLoading && <Loader2 size={18} className="animate-spin text-slate-400" />}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      <th className="px-8 py-4">时间与操作人</th>
+                      <th className="px-8 py-4">充值金额</th>
+                      <th className="px-8 py-4">入账算力豆</th>
+                      <th className="px-8 py-4">备注</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100/50">
+                    {rechargeRecords.map((record) => (
+                      <tr key={record.id} className="group hover:bg-slate-50/50 transition-all">
+                        <td className="px-8 py-5">
+                          <div className="font-bold text-slate-900">{formatDateTime(record.created_at)}</div>
+                          <div className="mt-1 text-xs text-slate-400">{record.operator_name} 执行</div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="font-mono font-bold text-slate-900">{centsToCurrency(record.amount_cents)}</div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-indigo-600">+{record.total_credits} 豆</span>
+                            {record.bonus_credits > 0 && (
+                              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">
+                                含赠送 {record.bonus_credits}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-8 py-5 text-slate-500 text-xs max-w-[200px] truncate">{record.remark}</td>
+                      </tr>
+                    ))}
+                    {!rechargeRecords.length && !rechargeLoading && (
+                      <tr>
+                        <td colSpan={4} className="px-8 py-20 text-center">
+                          <div className="flex flex-col items-center gap-2 text-slate-400">
+                            <Plus size={32} className="opacity-20" />
+                            <p className="font-medium">当前组织暂无充值记录</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
         </div>
+      ) : activeTab === "pricing" ? (
+        <section className="studio-panel overflow-hidden border-none bg-white/60 backdrop-blur-xl shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="border-b border-slate-100 bg-slate-50/30 px-8 py-6 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">任务计费标准</h3>
+              <p className="text-sm text-slate-500">配置不同类型 AI 任务的算力豆消耗价格</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  <th className="px-8 py-4">任务类型</th>
+                  <th className="px-8 py-4">任务编码</th>
+                  <th className="px-8 py-4">当前价格 (豆)</th>
+                  <th className="px-8 py-4">设定新价格</th>
+                  <th className="px-8 py-4 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100/50">
+                {taskTypes.map((item) => {
+                  const savedRule = pricingRuleMap.get(item.task_type);
+                  const savedPrice = savedRule?.price_credits ?? 0;
+                  const draftPrice = pricingDrafts[item.task_type] ?? "0";
+                  const hasChanged = String(savedPrice) !== draftPrice;
 
-        <div className="overflow-x-auto rounded-[1.5rem] border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-semibold">任务类型名称</th>
-                <th className="px-4 py-3 font-semibold">任务编码</th>
-                <th className="px-4 py-3 font-semibold">默认消费算力豆</th>
-                <th className="px-4 py-3 font-semibold">当前状态</th>
-                <th className="px-4 py-3 font-semibold text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {taskTypes.map((item) => {
-                const savedRule = pricingRuleMap.get(item.task_type);
-                return (
-                  <tr key={item.task_type}>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{item.label}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.task_type}</td>
-                    <td className="px-4 py-3">
-                      <input
-                        value={pricingDrafts[item.task_type] || "0"}
-                        onChange={(event) => setPricingDrafts((prev) => ({ ...prev, [item.task_type]: event.target.value }))}
-                        inputMode="numeric"
-                        className="w-36 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-slate-900 outline-none"
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {savedRule ? `已配置 ${savedRule.price_credits} 豆` : "默认 0 豆"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end">
+                  return (
+                    <tr key={item.task_type} className="group hover:bg-slate-50/50 transition-all">
+                      <td className="px-8 py-5">
+                        <div className="font-bold text-slate-900">{item.label}</div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <code className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-500">
+                          {item.task_type}
+                        </code>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="font-bold text-slate-900">{savedPrice} 豆</div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-3">
+                          <input
+                            value={draftPrice}
+                            onChange={(event) =>
+                              setPricingDrafts((prev) => ({ ...prev, [item.task_type]: event.target.value }))
+                            }
+                            className={`w-32 rounded-xl border px-4 py-2 text-sm font-bold outline-none transition-all focus:ring-4 ${
+                              hasChanged
+                                ? "border-amber-200 bg-amber-50 text-amber-900 focus:ring-amber-500/10"
+                                : "border-slate-200 bg-white text-slate-900 focus:ring-indigo-500/10"
+                            }`}
+                          />
+                          {hasChanged && <span className="text-[10px] font-bold text-amber-600">待保存</span>}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 text-right">
                         <button
                           onClick={() => void handlePricingSave(item)}
                           disabled={busyKey === `pricing:${item.task_type}`}
-                          className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 disabled:opacity-30"
                         >
-                          {busyKey === `pricing:${item.task_type}` ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          {busyKey === `pricing:${item.task_type}` ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                           保存
                         </button>
-                      </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : (
+        <section className="studio-panel overflow-hidden border-none bg-white/60 backdrop-blur-xl shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="border-b border-slate-100 bg-slate-50/30 px-8 py-6 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">充值赠送策略</h3>
+              <p className="text-sm text-slate-500">配置阶梯充值赠送规则，激励用户预充值</p>
+            </div>
+            <button
+              onClick={() => setIsBonusModalOpen(true)}
+              className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white transition-all hover:bg-indigo-600 active:scale-95"
+            >
+              <Plus size={16} /> 新增策略规则
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  <th className="px-8 py-4">充值区间 (元)</th>
+                  <th className="px-8 py-4">额外赠送</th>
+                  <th className="px-8 py-4">策略描述</th>
+                  <th className="px-8 py-4 text-right">状态</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100/50">
+                {bonusRules
+                  .slice()
+                  .sort((left, right) => left.min_recharge_cents - right.min_recharge_cents)
+                  .map((rule) => (
+                    <tr key={rule.id} className="group hover:bg-slate-50/50 transition-all">
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-2 font-bold text-slate-900">
+                          <span>{centsToCurrency(rule.min_recharge_cents)}</span>
+                          <span className="text-slate-300">→</span>
+                          <span>{rule.max_recharge_cents ? centsToCurrency(rule.max_recharge_cents) : "不限"}</span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-600">
+                          <Plus size={12} /> {rule.bonus_credits} 豆
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 text-slate-500 text-xs">{rule.description || "-"}</td>
+                      <td className="px-8 py-5 text-right">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                          rule.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                        }`}>
+                          {rule.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                {!bonusRules.length && (
+                  <tr>
+                    <td colSpan={4} className="px-8 py-20 text-center text-slate-400 font-medium">
+                      当前未配置任何赠送策略
                     </td>
                   </tr>
-                );
-              })}
-              {!taskTypes.length ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">
-                    当前没有可配置的异步任务类型。
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      ) : null}
-
-      {activeTab === "bonus" ? (
-      <section className="studio-panel p-6">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-950">充值赠送规则</h2>
-            <p className="mt-1 text-sm text-slate-500">默认按 table 展示所有充值赠送规则，可通过右上角按钮新增规则。</p>
+                )}
+              </tbody>
+            </table>
           </div>
-          <button
-            onClick={() => setIsBonusModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
-          >
-            <Plus size={16} />
-            新建规则
-          </button>
-        </div>
+        </section>
+      )}
 
-        <div className="overflow-x-auto rounded-[1.5rem] border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-semibold">最小充值金额</th>
-                <th className="px-4 py-3 font-semibold">最大充值金额</th>
-                <th className="px-4 py-3 font-semibold">赠送算力豆</th>
-                <th className="px-4 py-3 font-semibold">等值金额</th>
-                <th className="px-4 py-3 font-semibold">说明</th>
-                <th className="px-4 py-3 font-semibold">状态</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {bonusRules
-                .slice()
-                .sort((left, right) => left.min_recharge_cents - right.min_recharge_cents)
-                .map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-3 text-slate-700">{centsToCurrency(item.min_recharge_cents)}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.max_recharge_cents == null ? "不限" : centsToCurrency(item.max_recharge_cents)}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{item.bonus_credits} 豆</td>
-                    <td className="px-4 py-3 text-slate-700">{creditsToCurrency(item.bonus_credits)}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.description || "-"}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.status}</td>
-                  </tr>
-                ))}
-              {!bonusRules.length ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                    当前还没有充值赠送规则。
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      ) : null}
+      {/* 全局消息提示 */}
+      <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 space-y-3 pointer-events-none">
+        {message && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 flex items-center gap-3 rounded-full bg-slate-900 px-6 py-3 text-sm font-medium text-white shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+              <svg size={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            {message}
+          </div>
+        )}
+        {error && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 flex items-center gap-3 rounded-full bg-rose-600 px-6 py-3 text-sm font-medium text-white shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-rose-600">
+              <X size={12} strokeWidth={3} />
+            </div>
+            {error}
+          </div>
+        )}
+      </div>
 
-      {isBonusModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-xl rounded-[1.75rem] border border-slate-200 bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
-              <div>
-                <h3 className="text-xl font-bold text-slate-950">新增充值赠送规则</h3>
-                <p className="mt-1 text-sm text-slate-500">填写充值区间和赠送算力豆数量，保存后立即生效。</p>
-              </div>
-              <button
-                onClick={() => {
-                  setIsBonusModalOpen(false);
-                  setBonusForm(DEFAULT_BONUS_FORM);
-                }}
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                aria-label="关闭"
-              >
-                <X size={18} />
-              </button>
+      {/* 新增赠送策略 Modal */}
+      {isBonusModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-md rounded-[2.5rem] bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="mb-8">
+              <h3 className="text-xl font-bold text-slate-900">新增赠送策略</h3>
+              <p className="mt-1 text-sm text-slate-500">配置充值金额区间与对应的算力豆奖励</p>
             </div>
 
-            <div className="space-y-4 px-6 py-6">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-sm text-slate-600">
-                  最小充值金额（元）
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 ml-1">最小金额 (元)</label>
                   <input
                     value={bonusForm.min_recharge_yuan}
                     onChange={(event) => setBonusForm((prev) => ({ ...prev, min_recharge_yuan: event.target.value }))}
-                    inputMode="decimal"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none"
+                    placeholder="0"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
                   />
-                </label>
-                <label className="space-y-2 text-sm text-slate-600">
-                  最大充值金额（元，可留空）
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 ml-1">最大金额 (元)</label>
                   <input
                     value={bonusForm.max_recharge_yuan}
                     onChange={(event) => setBonusForm((prev) => ({ ...prev, max_recharge_yuan: event.target.value }))}
-                    inputMode="decimal"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none"
+                    placeholder="不限请留空"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
                   />
-                </label>
+                </div>
               </div>
 
-              <label className="space-y-2 text-sm text-slate-600">
-                赠送算力豆
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 ml-1">赠送算力豆</label>
                 <input
                   value={bonusForm.bonus_credits}
                   onChange={(event) => setBonusForm((prev) => ({ ...prev, bonus_credits: event.target.value }))}
-                  inputMode="numeric"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none"
+                  placeholder="额外奖励的算力豆数量"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
                 />
-              </label>
+              </div>
 
-              <label className="space-y-2 text-sm text-slate-600">
-                规则说明
-                <input
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 ml-1">策略描述</label>
+                <textarea
                   value={bonusForm.description}
                   onChange={(event) => setBonusForm((prev) => ({ ...prev, description: event.target.value }))}
-                  placeholder="例如大额充值赠送"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none"
+                  placeholder="展示给用户的促销描述"
+                  rows={2}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
                 />
-              </label>
-            </div>
+              </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-5">
-              <button
-                onClick={() => {
-                  setIsBonusModalOpen(false);
-                  setBonusForm(DEFAULT_BONUS_FORM);
-                }}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => void submitBonusRule()}
-                disabled={busyKey === "bonus:create"}
-                className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {busyKey === "bonus:create" ? "保存中..." : "保存"}
-              </button>
+              <div className="mt-8 flex gap-3">
+                <button
+                  onClick={() => {
+                    setIsBonusModalOpen(false);
+                    setBonusForm(DEFAULT_BONUS_FORM);
+                  }}
+                  className="flex-1 rounded-2xl border border-slate-200 py-4 text-sm font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => void submitBonusRule()}
+                  disabled={!bonusForm.min_recharge_yuan || !bonusForm.bonus_credits || busyKey === "bonus:create"}
+                  className="flex-1 rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 disabled:opacity-30"
+                >
+                  {busyKey === "bonus:create" ? "保存中..." : "确认新增"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

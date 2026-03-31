@@ -50,6 +50,17 @@ class InvitationRepository(BaseRepository[Invitation]):
             )
             return [_to_invitation(record) for record in records]
 
+    def list_pending_by_workspace(self, workspace_id: str) -> list[Invitation]:
+        """列出特定工作区下的待处理邀请。"""
+        with self._with_session() as session:
+            records = (
+                session.query(InvitationRecord)
+                .filter(InvitationRecord.workspace_id == workspace_id, InvitationRecord.accepted_at.is_(None))
+                .order_by(InvitationRecord.created_at.desc())
+                .all()
+            )
+            return [_to_invitation(record) for record in records]
+
     def get(self, invitation_id: str) -> Invitation | None:
         with self._with_session() as session:
             record = session.get(InvitationRecord, invitation_id)
@@ -63,6 +74,13 @@ class InvitationRepository(BaseRepository[Invitation]):
             record.accepted_at = utc_now()
             record.updated_at = record.accepted_at
             return _to_invitation(record)
+
+    def delete(self, invitation_id: str) -> None:
+        """物理删除邀请记录（用于撤销）。"""
+        with self._with_session() as session:
+            record = session.get(InvitationRecord, invitation_id)
+            if record:
+                session.delete(record)
 
     def list_map(self):
         return {}

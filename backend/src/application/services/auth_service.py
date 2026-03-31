@@ -683,6 +683,14 @@ class AuthService:
                 for membership, user, role, workspace, organization in rows
             ]
 
+    def list_workspace_invitations(self, workspace_id: str) -> list[Invitation]:
+        """获取工作区下所有待处理的邀请。"""
+        return self.invitation_repository.list_pending_by_workspace(workspace_id)
+
+    def remove_workspace_invitation(self, invitation_id: str) -> None:
+        """撤销一个尚未接受的邀请。"""
+        self.invitation_repository.delete(invitation_id)
+
     def invite_workspace_member(self, organization_id: str, workspace_id: str, email: str, role_code: str, invited_by: str | None) -> Invitation:
         normalized_email = _normalize_email(email)
         role = self.role_repository.get_by_code(role_code)

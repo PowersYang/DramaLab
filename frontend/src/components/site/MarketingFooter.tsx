@@ -24,7 +24,6 @@ const footerSections: FooterSection[] = [
     links: [
       { label: "功能概览", href: "#product-overview" },
       { label: "工作流", href: "#workflow" },
-      { label: "Studio", href: "/studio" },
       { label: "价格方案", href: "/pricing" },
     ],
   },

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, ChevronRight, User, Check, Sliders } from "lucide-react";
 import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { api } from "@/lib/api";
@@ -616,157 +616,189 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="asset-surface-strong asset-workbench-shell relative flex h-[90vh] w-full max-w-[1520px] flex-col overflow-hidden rounded-[30px] border border-white/10 shadow-2xl"
             >
-                <div className="flex h-16 items-center justify-between border-b border-white/10 bg-black/15 px-6">
-                    <div className="flex min-w-0 items-center gap-4">
-                        <div className="flex min-w-0 items-center gap-3">
-                            <h2 className="text-xl font-bold text-white">{asset.name} <span className="text-gray-500 font-normal text-sm ml-2">角色工作台</span></h2>
-                            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
-                                <span className="text-xs text-gray-400">制作进度</span>
-                                <span className="text-xs font-semibold text-white">{completedPanels}/{panelConfigs.length}</span>
+                <div className="flex h-20 items-center justify-between border-b border-white/5 bg-white/[0.02] px-8">
+                    <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-4">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                <User size={20} />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-white tracking-tight">{asset.name}</h2>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-0.5">Character Studio</p>
                             </div>
                         </div>
-                        <div className="hidden items-center gap-2 rounded-full border border-sky-400/15 bg-sky-400/10 px-3 py-1 xl:flex">
-                            <span className="text-xs text-blue-400 font-medium">建议保持三张图风格一致，生成效果会更稳定</span>
+                        
+                        <div className="h-8 w-px bg-white/5" />
+                        
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">制作进度</span>
+                                <div className="flex gap-1">
+                                    {panelConfigs.map((p, i) => (
+                                        <div key={i} className={`h-1.5 w-4 rounded-full ${i < completedPanels ? 'bg-indigo-500' : 'bg-slate-800'}`} />
+                                    ))}
+                                </div>
+                            </div>
+                            <span className="text-xs font-bold text-slate-400">{completedPanels} / {panelConfigs.length} 已就绪</span>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
+                    <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
                         <X size={24} />
                     </button>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
-                    <aside className="asset-workbench-sidebar overflow-hidden border-r border-white/10">
-                        <div className="flex h-full flex-col px-5 pb-5 pt-4">
-                            <div className="asset-workbench-tab-strip grid grid-cols-3">
-                                {panelConfigs.map((panel, index) => {
-                                    const isActive = panel.key === activePanel;
-                                    return (
-                                        <button
-                                            key={panel.key}
-                                            type="button"
-                                            onClick={() => setActivePanel(panel.key)}
-                                            className={`asset-workbench-tab flex min-w-0 items-center justify-center gap-1.5 px-3 py-3 text-sm font-medium transition-all ${isActive
-                                                ? "asset-workbench-tab-active text-white"
-                                                : "text-gray-300 hover:text-white"
-                                                }`}
-                                        >
-                                            <span className="shrink-0 text-xs font-semibold text-gray-400">{index + 1}</span>
-                                            <span className="whitespace-nowrap">{panel.title}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] overflow-hidden">
+                    <aside className="bg-slate-900/40 border-r border-white/5 flex flex-col overflow-hidden">
+                        {/* Tab Navigation */}
+                        <div className="p-4 grid grid-cols-3 gap-2 border-b border-white/5 bg-black/20">
+                            {panelConfigs.map((panel, index) => {
+                                const isActive = panel.key === activePanel;
+                                const isLocked = panel.isLocked;
+                                return (
+                                    <button
+                                        key={panel.key}
+                                        type="button"
+                                        disabled={isLocked}
+                                        onClick={() => setActivePanel(panel.key)}
+                                        className={`flex flex-col items-center gap-2 py-3.5 rounded-2xl transition-all duration-300 ${
+                                            isActive 
+                                                ? "bg-indigo-600 text-white shadow-xl shadow-indigo-600/20 ring-1 ring-white/20" 
+                                                : isLocked
+                                                    ? "opacity-30 cursor-not-allowed grayscale"
+                                                    : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                                        }`}
+                                    >
+                                        <div className="relative">
+                                            <panel.icon size={20} />
+                                            {isLocked && <Lock size={10} className="absolute -top-1 -right-1 text-slate-400" />}
+                                        </div>
+                                        <span className="text-[10px] font-bold uppercase tracking-widest">{panel.title}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
 
-                            <div className="flex items-start justify-between gap-3 px-1 pb-3 pt-5">
-                                <div className="min-w-0">
-                                    <div className="text-[11px] uppercase tracking-[0.22em] text-gray-500">Selected</div>
-                                    <div className="mt-2 text-sm font-semibold text-white">{activePanelConfig?.title || "当前图片"}</div>
-                                    <p className="mt-1 text-xs leading-5 text-gray-400">{activePanelConfig?.hint || "右侧候选图单击后，这里会同步更新。"}</p>
+                        {/* Selected Preview Area */}
+                        <div className="flex-1 flex flex-col overflow-hidden p-6 space-y-6">
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                    <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Active Preview</span>
                                 </div>
+                                <h3 className="text-sm font-bold text-white mt-1">{activePanelConfig?.title}</h3>
                             </div>
 
-                            <div className="flex-1">
-                                <div className="asset-workbench-preview relative flex h-full min-h-0 flex-col overflow-hidden p-4">
-                                    {activeSelectedImageUrl ? (
+                            <div className="relative flex-1 rounded-[32px] overflow-hidden border border-white/10 bg-black/40 shadow-2xl group">
+                                {activeSelectedImageUrl ? (
+                                    <>
+                                        <img
+                                            src={activeSelectedImageUrl}
+                                            alt="Preview"
+                                            className="h-full w-full object-contain transition-transform duration-700 group-hover:scale-105"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                         <button
                                             type="button"
                                             onClick={() => setZoomedImageUrl(activeSelectedImageUrl)}
-                                            className="asset-workbench-preview-image h-full w-full overflow-hidden"
-                                            title="点击放大查看"
+                                            className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300"
                                         >
-                                            <img
-                                                src={activeSelectedImageUrl}
-                                                alt="当前选中的图片"
-                                                className="h-full w-full object-contain"
-                                            />
+                                            <div className="p-4 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white transform scale-90 group-hover:scale-100 transition-transform">
+                                                <Eye size={24} />
+                                            </div>
                                         </button>
-                                    ) : (
-                                        <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-gray-500">
-                                            <PhotoIcon size={28} className="opacity-50" />
-                                            <span className="text-sm">暂未选中图片</span>
+                                    </>
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center gap-4 text-slate-700">
+                                        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/[0.05]">
+                                            <PhotoIcon size={40} strokeWidth={1} />
                                         </div>
-                                    )}
-                                </div>
+                                        <p className="text-xs font-bold uppercase tracking-widest">Awaiting Generation</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
+                                <p className="text-[11px] leading-relaxed text-slate-500 italic">
+                                    {activePanelConfig?.hint}
+                                </p>
                             </div>
                         </div>
                     </aside>
 
-                    <div className="overflow-hidden flex flex-col">
-                        <div className="asset-workbench-toolbar px-6 pt-4 pb-3">
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="asset-workbench-toggle flex w-fit items-center gap-1 rounded-[16px] p-1">
+                    <main className="flex flex-col overflow-hidden bg-slate-950/40">
+                        {/* ── Top Control Bar ── */}
+                        <div className="h-20 flex items-center justify-between px-8 border-b border-white/5 bg-black/20">
+                            <div className="flex items-center gap-4">
+                                <div className="flex p-1 bg-black/40 rounded-xl border border-white/5">
                                     <button
                                         type="button"
                                         onClick={() => handleActiveModeChange("static")}
-                                        className={`flex items-center gap-1.5 rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${activeMode === "static"
-                                            ? "asset-workbench-toggle-active text-white"
-                                            : "text-gray-400 hover:bg-white/5 hover:text-white"
-                                            }`}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                                            activeMode === "static" 
+                                                ? "bg-white/10 text-white shadow-lg" 
+                                                : "text-slate-500 hover:text-slate-300"
+                                        }`}
                                     >
-                                        <PhotoIcon size={12} />
+                                        <PhotoIcon size={14} />
                                         静态
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => supportsActiveMotion && handleActiveModeChange("motion")}
                                         disabled={!supportsActiveMotion}
-                                        className={`flex items-center gap-1.5 rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${activeMode === "motion"
-                                            ? "asset-workbench-toggle-active asset-workbench-toggle-active-motion text-white"
-                                            : supportsActiveMotion
-                                                ? "text-gray-400 hover:bg-white/5 hover:text-white"
-                                                : "text-gray-600 cursor-not-allowed"
-                                            }`}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                                            activeMode === "motion" 
+                                                ? "bg-indigo-600 text-white shadow-lg" 
+                                                : !supportsActiveMotion 
+                                                    ? "opacity-30 grayscale cursor-not-allowed" 
+                                                    : "text-slate-500 hover:text-slate-300"
+                                        }`}
                                     >
-                                        <Video size={12} />
+                                        <Video size={14} />
                                         动态
                                     </button>
                                 </div>
-
-                                {activeMode === "static" && (
-                                    <div className="flex items-center gap-3">
-                                        <div className="variant-selector-batch flex items-center gap-1 rounded-[16px] p-1">
-                                            {[1, 2, 3, 4].map((size) => {
-                                                return (
-                                                    <button
-                                                        key={size}
-                                                        type="button"
-                                                        onClick={() => setActiveBatchSize(size)}
-                                                        className={`variant-selector-batch-button rounded-[12px] px-3 py-2 text-[11px] font-medium transition-all ${activeBatchSize === size
-                                                            ? "variant-selector-batch-button-active"
-                                                            : "text-gray-300 hover:text-white"
-                                                            }`}
-                                                    >
-                                                        x{size}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                        <BillingActionButton
-                                            type="button"
-                                            onClick={handleToolbarGenerate}
-                                            disabled={(activePanel === "full_body"
-                                                ? getGeneratingInfo("full_body").isGenerating
-                                                : activePanel === "three_view"
-                                                    ? getGeneratingInfo("three_view").isGenerating
-                                                    : getGeneratingInfo("headshot").isGenerating) || !assetGenerateAffordable}
-                                            className={`variant-selector-generate flex items-center gap-1.5 rounded-[14px] px-4 py-2 text-[11px] font-semibold transition-all ${((activePanel === "full_body"
-                                                ? getGeneratingInfo("full_body").isGenerating
-                                                : activePanel === "three_view"
-                                                    ? getGeneratingInfo("three_view").isGenerating
-                                                    : getGeneratingInfo("headshot").isGenerating) || !assetGenerateAffordable)
-                                                ? "bg-white/5 text-gray-400 cursor-not-allowed"
-                                                : "variant-selector-generate-active"
-                                                }`}
-                                            priceCredits={assetGeneratePrice}
-                                            balanceCredits={account?.balance_credits}
-                                            tooltipText={assetGeneratePrice == null ? undefined : `预计消耗${assetGeneratePrice}算力豆${!assetGenerateAffordable ? "，当前余额不足" : ""}`}
-                                        >
-                                            <PhotoIcon size={11} />
-                                            生成图片
-                                        </BillingActionButton>
-                                    </div>
-                                )}
                             </div>
+
+                            {activeMode === "static" && (
+                                <div className="flex items-center gap-6">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mr-2">批量</span>
+                                        <div className="flex p-1 bg-black/40 rounded-xl border border-white/5">
+                                            {[1, 2, 3, 4].map((size) => (
+                                                <button
+                                                    key={size}
+                                                    type="button"
+                                                    onClick={() => setActiveBatchSize(size)}
+                                                    className={`w-10 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                                                        activeBatchSize === size 
+                                                            ? "bg-white/10 text-white" 
+                                                            : "text-slate-500 hover:text-slate-300"
+                                                    }`}
+                                                >
+                                                    {size}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <BillingActionButton
+                                        type="button"
+                                        onClick={handleToolbarGenerate}
+                                        disabled={getGeneratingInfo(activePanel).isGenerating || !assetGenerateAffordable}
+                                        className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                                            getGeneratingInfo(activePanel).isGenerating || !assetGenerateAffordable
+                                                ? "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed"
+                                                : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
+                                        }`}
+                                        priceCredits={assetGeneratePrice}
+                                        balanceCredits={account?.balance_credits}
+                                    >
+                                        <Sparkles size={14} className={getGeneratingInfo(activePanel).isGenerating ? "animate-spin" : ""} />
+                                        {getGeneratingInfo(activePanel).isGenerating ? "正在生成" : "生成参考图"}
+                                    </BillingActionButton>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-hidden px-2 pb-2">
@@ -850,8 +882,8 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                 />
                             )}
                         </div>
+                    </main>
                     </div>
-                </div>
 
                 {zoomedImageUrl && (
                     <div
@@ -943,230 +975,196 @@ function WorkbenchPanel({
     const latestVariants = getRecentVariants(Array.isArray(asset?.variants) ? asset.variants : []);
     const latestMotionVideo = getRecentVideoVariants(motionRefVideos)[0];
     const railRef = useRef<HTMLDivElement | null>(null);
-    const aspectRatioClass = getAspectRatioCardClass(aspectRatio);
-    const candidateCardBasis = latestVariants.length <= 1
-        ? "min(100%, 540px)"
-        : latestVariants.length === 2
-            ? "clamp(240px, calc((100% - 16px) / 2), 420px)"
-            : latestVariants.length === 3
-                ? "clamp(220px, calc((100% - 32px) / 3), 320px)"
-                : "clamp(200px, calc((100% - 48px) / 4), 280px)";
-    const candidateHeightClass = aspectRatio === "1:1"
-        ? "h-[220px] sm:h-[240px] lg:h-[260px]"
-        : aspectRatio === "16:9"
-            ? "h-[200px] sm:h-[220px] lg:h-[240px]"
-            : "h-[220px] sm:h-[250px] lg:h-[280px]";
-    const showCarouselControls = latestVariants.length >= 4;
-    const scrollCandidates = (direction: "prev" | "next") => {
-        if (!railRef.current) return;
-        const viewportWidth = railRef.current.clientWidth;
-        railRef.current.scrollBy({
-            left: direction === "next" ? viewportWidth * 0.72 : -viewportWidth * 0.72,
-            behavior: "smooth",
-        });
-    };
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     return (
-        <div className="h-full overflow-y-auto">
-            <div className="grid h-full min-w-0 grid-cols-1 gap-4 p-4 pt-0">
-                <div className="asset-workbench-stage relative min-h-0 overflow-hidden rounded-[28px] p-4 md:p-5">
-                    {isLocked && (
-                        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-6 text-center">
-                            <div className="flex flex-col items-center gap-2 text-gray-500">
-                                <Lock size={32} />
-                                <span className="text-sm">请先完成主素材，再继续当前板块</span>
-                            </div>
+        <div className="h-full flex flex-col overflow-hidden relative">
+            {isLocked && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-6 text-center">
+                    <div className="flex flex-col items-center gap-4 text-slate-500 max-w-sm">
+                        <div className="p-6 rounded-full bg-white/5 border border-white/10">
+                            <Lock size={40} strokeWidth={1.5} />
+                        </div>
+                        <h3 className="text-lg font-bold text-white">板块已锁定</h3>
+                        <p className="text-sm leading-relaxed">请先生成“主素材”，确保角色核心特征确立后，再继续当前板块的创作。</p>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar p-8 space-y-12">
+                {/* ── Variant Grid Section ── */}
+                <section>
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+                                {mode === 'static' ? '生成结果' : '动态参考'}
+                                <span className="ml-3 px-2 py-0.5 rounded-full bg-white/5 text-[9px] text-slate-600 font-bold border border-white/5">
+                                    {mode === 'static' ? latestVariants.length : motionRefVideos.length} RECORDS
+                                </span>
+                            </h3>
+                        </div>
+                    </div>
+
+                    {mode === 'static' ? (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
+                            {latestVariants.map((variant) => (
+                                <motion.div
+                                    key={variant.id}
+                                    layout
+                                    onClick={() => onSelect(variant.id)}
+                                    onDoubleClick={() => onZoomImage?.(getAssetUrl(variant.url))}
+                                    className={`group relative aspect-[3/4] rounded-2xl overflow-hidden border-2 transition-all duration-300 cursor-pointer ${
+                                        selectedVariantId === variant.id 
+                                            ? "border-indigo-500 shadow-xl shadow-indigo-500/20 scale-[1.02]" 
+                                            : "border-white/5 hover:border-white/20 hover:bg-white/5"
+                                    }`}
+                                >
+                                    <img src={getAssetUrl(variant.url)} alt="Variant" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                                    <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-all" />
+                                    {selectedVariantId === variant.id && (
+                                        <div className="absolute top-2 right-2 p-1.5 rounded-full bg-indigo-600 text-white shadow-lg ring-2 ring-white/20">
+                                            <Check size={12} />
+                                        </div>
+                                    )}
+                                </motion.div>
+                            ))}
+                            
+                            {isGenerating && Array.from({ length: generatingBatchSize }).map((_, i) => (
+                                <div key={`gen-${i}`} className="aspect-[3/4] rounded-2xl bg-white/[0.02] border border-dashed border-white/10 flex flex-col items-center justify-center gap-4 animate-pulse">
+                                    <RefreshCw size={24} className="text-indigo-500/50 animate-spin" />
+                                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">Generating</span>
+                                </div>
+                            ))}
+
+                            {latestVariants.length === 0 && !isGenerating && (
+                                <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-600 border border-dashed border-white/5 rounded-3xl">
+                                    <Sparkles size={40} strokeWidth={1} className="mb-4 opacity-20" />
+                                    <p className="text-xs font-bold uppercase tracking-widest">No Variants Generated Yet</p>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                            {motionRefVideos.map((video) => (
+                                <div key={video.id} className="group relative aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 bg-black/40">
+                                    <video src={getAssetUrl(video.url || video.video_url)} className="h-full w-full object-cover" controls />
+                                    <div className="absolute top-3 right-3 p-2 rounded-lg bg-black/60 backdrop-blur-md text-white/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Video size={14} />
+                                    </div>
+                                </div>
+                            ))}
+                            {isGeneratingMotion && (
+                                <div className="aspect-[3/4] rounded-2xl bg-white/[0.02] border border-dashed border-white/10 flex flex-col items-center justify-center gap-4 animate-pulse">
+                                    <RefreshCw size={24} className="text-indigo-500/50 animate-spin" />
+                                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">Rendering</span>
+                                </div>
+                            )}
                         </div>
                     )}
+                </section>
 
-                    {reverseGenerationMode && (
-                        <div className="absolute inset-x-5 top-5 z-10 rounded-2xl border border-primary/30 bg-black/70 p-4 backdrop-blur-md">
+                {/* ── Prompt Editor Section ── */}
+                <section className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                                    <RefreshCw size={18} />
-                                </div>
-                                <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-white">检测到已上传参考图</div>
-                                    <p className="mt-1 text-xs text-gray-400">可以基于现有上传图继续反推完整主素材，不需要重头开始。</p>
-                                </div>
-                                {reverseReferenceUrl && (
-                                    <img
-                                        src={getAssetUrl(reverseReferenceUrl)}
-                                        alt="Reference"
-                                        className="h-14 w-14 rounded-xl border border-white/20 object-cover"
-                                    />
-                                )}
+                                <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+                                    {mode === 'static' ? '提示词' : '动态描述'}
+                                </h3>
                             </div>
                         </div>
-                    )}
+                        
+                        <div className="relative">
+                            <textarea
+                                value={mode === 'static' ? prompt : motionPrompt}
+                                onChange={(e) => mode === 'static' ? setPrompt(e.target.value) : setMotionPrompt?.(e.target.value)}
+                                className="w-full h-48 bg-black/40 border border-white/10 rounded-[24px] p-6 text-[13px] leading-relaxed text-slate-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all custom-scrollbar"
+                                placeholder={mode === 'static' ? "描述角色外貌、服饰、姿态..." : "描述动作幅度、运镜方式..."}
+                            />
+                        </div>
+                    </div>
 
-                    {mode === "motion" && supportsMotion ? (
-                        <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
-                            <div className="flex items-start justify-between gap-4">
-                                <div className="min-w-0">
-                                    <div className="text-[11px] uppercase tracking-[0.22em] text-gray-500">Motion</div>
-                                    <div className="mt-2 text-sm font-semibold text-white">动态视频预览</div>
-                                </div>
-                                <div className="flex items-center gap-3">
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="h-1.5 w-1.5 rounded-full bg-slate-700" />
+                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">控制与设置</h3>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            {mode === 'static' ? (
+                                <>
+                                    <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-xs font-bold text-slate-300">艺术指导风格</span>
+                                            <span className="text-[10px] text-slate-500">自动应用全局项目视觉定调</span>
+                                        </div>
+                                        <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <button
+                                            onClick={() => setShowAdvanced(!showAdvanced)}
+                                            className="flex items-center justify-between w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-all"
+                                        >
+                                            <div className="flex items-center gap-2 text-slate-400">
+                                                <Sliders size={14} />
+                                                <span className="text-xs font-bold uppercase tracking-widest">负向提示词</span>
+                                            </div>
+                                            <ChevronRight size={16} className={`text-slate-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
+                                        </button>
+
+                                        <AnimatePresence>
+                                            {showAdvanced && (
+                                                <motion.div
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: "auto", opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    className="overflow-hidden"
+                                                >
+                                                    <textarea
+                                                        value={negativePrompt}
+                                                        onChange={(e) => setNegativePrompt(e.target.value)}
+                                                        className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-slate-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all custom-scrollbar"
+                                                        placeholder="排除不想要的特征..."
+                                                    />
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="p-6 rounded-3xl bg-indigo-600/10 border border-indigo-500/20">
+                                        <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-[0.2em] mb-4">动态生成设置</h4>
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-slate-400 font-medium">生成时长</span>
+                                            <span className="font-bold text-white">5.0s</span>
+                                        </div>
+                                    </div>
+                                    
                                     <BillingActionButton
                                         onClick={() => onGenerateMotionRef?.(motionPrompt, motionNegativePrompt)}
                                         disabled={isGeneratingMotion || !motionRefAffordable}
-                                        priceCredits={motionRefPrice ?? null}
+                                        className={`w-full py-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                                            isGeneratingMotion || !motionRefAffordable
+                                                ? "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed"
+                                                : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
+                                        }`}
+                                        priceCredits={motionRefPrice}
                                         balanceCredits={balanceCredits}
-                                        className={`variant-selector-generate flex items-center gap-1.5 rounded-[14px] px-4 py-2 text-[11px] font-semibold transition-all ${isGeneratingMotion || !motionRefAffordable
-                                            ? 'bg-white/5 text-gray-500 cursor-not-allowed'
-                                            : 'variant-selector-generate-active'
-                                            }`}
-                                        tooltipText={motionRefPrice == null ? undefined : `预计消耗${motionRefPrice}算力豆${!motionRefAffordable ? "，当前余额不足" : ""}`}
                                     >
-                                        <Video size={14} />
-                                        生成视频
+                                        <Sparkles size={16} className={isGeneratingMotion ? "animate-spin" : ""} />
+                                        {isGeneratingMotion ? "正在制作动态参考..." : "立即生成动态参考"}
                                     </BillingActionButton>
                                 </div>
-                            </div>
-
-                            <div className={`relative flex min-h-[220px] items-center justify-center overflow-hidden border border-white/10 bg-black/20 p-4 ${aspectRatioClass}`}>
-                                {isGeneratingMotion ? (
-                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/60 backdrop-blur-md">
-                                        <div className="relative">
-                                            <RefreshCw size={48} className="animate-spin text-amber-300" />
-                                            <div className="absolute inset-0 animate-pulse bg-amber-400/20 blur-xl"></div>
-                                        </div>
-                                        <div className="flex flex-col items-center">
-                                            <span className="text-sm font-bold tracking-widest text-white">正在生成视频</span>
-                                            <span className="mt-1 text-[10px] text-amber-100/70">AI 正在处理动态内容...</span>
-                                        </div>
-                                    </div>
-                                ) : isVideoLoading && motionRefVideos?.length > 0 ? (
-                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-sm">
-                                        <RefreshCw size={32} className="animate-spin text-gray-300" />
-                                        <span className="text-xs font-medium text-gray-300">正在加载视频文件...</span>
-                                    </div>
-                                ) : null}
-
-                                {latestMotionVideo ? (
-                                    <video
-                                        key={latestMotionVideo.id || latestMotionVideo.url || latestMotionVideo.video_url}
-                                        src={getAssetUrl(latestMotionVideo.url || latestMotionVideo.video_url)}
-                                        onCanPlay={() => setIsVideoLoading?.(false)}
-                                        onLoadStart={() => setIsVideoLoading?.(true)}
-                                        className="h-full w-full object-contain"
-                                        controls
-                                        loop
-                                        autoPlay
-                                        muted
-                                    />
-                                ) : !isGeneratingMotion && (
-                                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500">
-                                        <Video size={40} className="opacity-50" />
-                                        <span className="text-sm">暂无动态参考</span>
-                                        <span className="text-xs opacity-70">可在下方生成</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            <PromptField
-                                label="正向提示词"
-                                value={motionPrompt}
-                                onChange={(value: string) => setMotionPrompt?.(value)}
-                                placeholder="请输入动态视频正向提示词..."
-                                disabled={isLocked}
-                            />
-
-                            <PromptField
-                                label="负向提示词"
-                                value={motionNegativePrompt}
-                                onChange={(value: string) => setMotionNegativePrompt?.(value)}
-                                placeholder="请输入动态视频负向提示词..."
-                                disabled={isLocked}
-                            />
+                            )}
                         </div>
-                    ) : (
-                        <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
-                            <div className="relative">
-                                {showCarouselControls && (
-                                    <div className="mb-3 flex items-center justify-end gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => scrollCandidates("prev")}
-                                            className="asset-workbench-carousel-button"
-                                            title="查看上一张候选图"
-                                        >
-                                            <ChevronLeft size={16} />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => scrollCandidates("next")}
-                                            className="asset-workbench-carousel-button"
-                                            title="查看下一张候选图"
-                                        >
-                                            <ChevronRight size={16} />
-                                        </button>
-                                    </div>
-                                )}
-                                {latestVariants.length > 0 ? (
-                                    <div ref={railRef} className="asset-workbench-candidate-rail flex gap-4 overflow-x-auto pb-2 pr-1">
-                                        {latestVariants.map((variant, index) => {
-                                            const imageUrl = getAssetUrl(variant.url);
-                                            const isSelected = selectedVariantId === variant.id;
-                                            return (
-                                                <button
-                                                    key={variant.id}
-                                                    type="button"
-                                                    onClick={() => onSelect(variant.id)}
-                                                    onDoubleClick={() => onZoomImage?.(imageUrl)}
-                                                    className={`asset-workbench-candidate group flex min-w-0 shrink-0 snap-start flex-col overflow-hidden text-left transition-all ${isSelected
-                                                        ? 'asset-workbench-candidate-active'
-                                                        : ''
-                                                        }`}
-                                                    style={{ flexBasis: candidateCardBasis }}
-                                                    title="单击设为当前图片，双击放大查看"
-                                                >
-                                                    <div className={`relative w-full overflow-hidden ${candidateHeightClass}`}>
-                                                        <img
-                                                            src={imageUrl}
-                                                            alt={`候选图${index + 1}`}
-                                                            className="h-full w-full object-contain"
-                                                        />
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="flex min-h-[240px] items-center justify-center rounded-[22px] border border-dashed border-white/12 bg-white/[0.03] text-sm text-gray-500">
-                                        暂无候选图
-                                    </div>
-                                )}
-
-                                {isGenerating && (
-                                    <div className="variant-selector-loading absolute inset-0 z-10 flex items-center justify-center rounded-[1.5rem] bg-black/45 backdrop-blur-sm">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <div className="variant-selector-spinner h-10 w-10 animate-spin rounded-full border-b-2"></div>
-                                            <span className="font-medium text-white">正在生成 {generatingBatchSize} 个候选版本...</span>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <PromptField
-                                label="正向提示词"
-                                value={prompt}
-                                onChange={setPrompt}
-                                placeholder="请输入正向提示词..."
-                                disabled={isLocked}
-                            />
-
-                            <PromptField
-                                label="负向提示词"
-                                value={negativePrompt}
-                                onChange={setNegativePrompt}
-                                placeholder="请输入负向提示词..."
-                                disabled={isLocked}
-                            />
-                        </div>
-                    )}
-                </div>
+                    </div>
+                </section>
             </div>
         </div>
     );
@@ -1188,16 +1186,16 @@ function PromptField({
     action?: ReactNode;
 }) {
     return (
-        <div className="asset-workbench-inspector border border-white/10 p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold text-gray-300">{label}</span>
+        <div className="bg-black/40 border border-white/10 rounded-[24px] p-6 space-y-4">
+            <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</span>
                 {action}
             </div>
             <textarea
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
                 disabled={disabled}
-                className="asset-workbench-textarea min-h-[156px] w-full resize-none px-0 py-2 text-sm leading-7 text-white shadow-none outline-none"
+                className="w-full h-32 bg-transparent border-none text-[13px] leading-relaxed text-slate-200 resize-none focus:outline-none custom-scrollbar"
                 placeholder={placeholder}
             />
         </div>

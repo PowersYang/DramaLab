@@ -1,8 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, RefreshCw, Search, Workflow } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Filter,
+  Loader2,
+  RefreshCw,
+  Search,
+  Workflow,
+} from "lucide-react";
 
+import AdminSummaryStrip from "@/components/studio/admin/AdminSummaryStrip";
 import { api, type ProjectSummary, type SeriesSummary, type TaskJob } from "@/lib/api";
 import {
   isStudioCacheFresh,
@@ -43,15 +55,15 @@ const TASK_COPY: Record<string, string> = {
 };
 
 const STATUS_META = {
-  running: { label: "进行中", tone: { background: "rgba(245, 158, 11, 0.16)", color: "#fbbf24" }, dot: "bg-amber-500", icon: Clock3 },
-  queued: { label: "排队中", tone: { background: "rgba(148, 163, 184, 0.14)", color: "var(--studio-shell-text-soft)" }, dot: "bg-slate-400", icon: Clock3 },
-  claimed: { label: "已领取", tone: { background: "rgba(148, 163, 184, 0.14)", color: "var(--studio-shell-text-soft)" }, dot: "bg-slate-500", icon: Clock3 },
-  succeeded: { label: "已完成", tone: { background: "rgba(34, 197, 94, 0.14)", color: "#4ade80" }, dot: "bg-emerald-500", icon: CheckCircle2 },
-  failed: { label: "失败", tone: { background: "rgba(244, 63, 94, 0.14)", color: "#fb7185" }, dot: "bg-rose-500", icon: AlertTriangle },
-  cancelled: { label: "已取消", tone: { background: "rgba(148, 163, 184, 0.14)", color: "var(--studio-shell-text-soft)" }, dot: "bg-slate-400", icon: AlertTriangle },
-  timed_out: { label: "超时", tone: { background: "rgba(244, 63, 94, 0.14)", color: "#fb7185" }, dot: "bg-rose-500", icon: AlertTriangle },
-  retry_waiting: { label: "等待重试", tone: { background: "rgba(249, 115, 22, 0.16)", color: "#fb923c" }, dot: "bg-orange-500", icon: Clock3 },
-  cancel_requested: { label: "取消中", tone: { background: "rgba(148, 163, 184, 0.14)", color: "var(--studio-shell-text-soft)" }, dot: "bg-slate-500", icon: Clock3 },
+  running: { label: "进行中", tone: "warning" as const, dot: "bg-amber-500", icon: Clock3 },
+  queued: { label: "排队中", tone: "neutral" as const, dot: "bg-slate-400", icon: Clock3 },
+  claimed: { label: "已领取", tone: "neutral" as const, dot: "bg-slate-500", icon: Clock3 },
+  succeeded: { label: "已完成", tone: "success" as const, dot: "bg-emerald-500", icon: CheckCircle2 },
+  failed: { label: "失败", tone: "danger" as const, dot: "bg-rose-500", icon: AlertTriangle },
+  cancelled: { label: "已取消", tone: "neutral" as const, dot: "bg-slate-400", icon: AlertTriangle },
+  timed_out: { label: "超时", tone: "danger" as const, dot: "bg-rose-500", icon: AlertTriangle },
+  retry_waiting: { label: "等待重试", tone: "warning" as const, dot: "bg-orange-500", icon: Clock3 },
+  cancel_requested: { label: "取消中", tone: "neutral" as const, dot: "bg-slate-500", icon: Clock3 },
 } as const;
 
 const ACTIVE_STATUSES = ["queued", "claimed", "running", "retry_waiting", "cancel_requested"];
@@ -76,7 +88,6 @@ const mergeTaskLists = (...lists: TaskJob[][]): TaskJob[] => {
   for (const list of lists) {
     for (const task of list) {
       const existing = merged.get(task.id);
-      // 中文注释：任务页既吃远端全量列表，也吃 taskStore 里的即时 receipt；相同任务要以后写覆盖前写。
       merged.set(task.id, existing ? { ...existing, ...task } : task);
     }
   }
@@ -110,7 +121,6 @@ const getScopeMeta = (
   projectMap: Map<string, ProjectSummary>,
   seriesMap: Map<string, SeriesSummary>
 ): Pick<TaskTableRow, "scopeName" | "scopeType"> => {
-  // 任务中心优先展示业务名称，而不是裸 ID，便于运营和排障快速定位上下文。
   if (task.project_id) {
     return {
       scopeName: projectMap.get(task.project_id)?.title || `项目 ${task.project_id}`,
@@ -175,13 +185,13 @@ export default function StudioTasksPage() {
           durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
         });
         return result;
-      } catch (error) {
+      } catch (loadError) {
         console.error(TASK_DASHBOARD_LOG_PREFIX, "init-request:error", {
           label,
           durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
-          detail: error instanceof Error ? error.message : String(error),
+          detail: loadError instanceof Error ? loadError.message : String(loadError),
         });
-        throw error;
+        throw loadError;
       }
     };
 
@@ -224,11 +234,6 @@ export default function StudioTasksPage() {
         if (cancelled) return;
         const message = loadError instanceof Error ? loadError.message : "任务中心加载失败";
         console.error("Failed to load tasks dashboard:", loadError);
-        console.error(TASK_DASHBOARD_LOG_PREFIX, "init-batch:error", {
-          refreshMode: showLoading ? "initial" : "polling",
-          durationMs: Math.round((performance.now() - totalStartedAt) * 100) / 100,
-          detail: message,
-        });
         setError(message);
       } finally {
         if (!cancelled) {
@@ -251,10 +256,7 @@ export default function StudioTasksPage() {
     };
   }, [upsertJobs]);
 
-  const mergedTasks = useMemo(
-    () => mergeTaskLists(tasks, Object.values(jobsById)),
-    [jobsById, tasks]
-  );
+  const mergedTasks = useMemo(() => mergeTaskLists(tasks, Object.values(jobsById)), [jobsById, tasks]);
 
   const activeTaskIds = useMemo(
     () => mergedTasks.filter((task) => ACTIVE_STATUSES.includes(task.status)).map((task) => task.id),
@@ -385,93 +387,12 @@ export default function StudioTasksPage() {
 
   const summary = useMemo(
     () => [
-      { label: "总任务数", value: rows.length },
-      { label: "进行中", value: rows.filter((item) => ACTIVE_STATUSES.includes(item.status)).length },
-      { label: "已完成", value: rows.filter((item) => item.status === "succeeded").length },
-      { label: "需关注", value: rows.filter((item) => ["failed", "timed_out"].includes(item.status)).length },
+      { label: "总任务", value: rows.length, icon: Workflow },
+      { label: "已完成", value: rows.filter((item) => item.status === "succeeded").length, icon: CheckCircle2 },
+      { label: "执行中", value: rows.filter((item) => item.status === "running").length, icon: Clock3 },
+      { label: "积压中", value: rows.filter((item) => ["queued", "claimed"].includes(item.status)).length, icon: AlertTriangle },
     ],
     [rows]
-  );
-
-  const attentionRows = useMemo(
-    () =>
-      rows
-        .filter((item) => ["failed", "timed_out", "retry_waiting", "cancel_requested"].includes(item.status))
-        .sort((a, b) => getTimestamp(b.created_at) - getTimestamp(a.created_at))
-        .slice(0, 5),
-    [rows]
-  );
-
-  const taskTypeLeaders = useMemo(() => {
-    const counts = new Map<string, number>();
-    rows.forEach((row) => {
-      counts.set(row.task_type, (counts.get(row.task_type) || 0) + 1);
-    });
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
-      .map(([taskType, count]) => ({
-        taskType,
-        label: TASK_COPY[taskType] || taskType,
-        count,
-      }));
-  }, [rows]);
-
-  const oldestActiveMinutes = useMemo(() => {
-    const activeCreatedAt = rows
-      .filter((row) => ACTIVE_STATUSES.includes(row.status))
-      .map((row) => getTimestamp(row.created_at))
-      .filter(Boolean);
-    if (activeCreatedAt.length === 0) return 0;
-    const oldestTimestamp = Math.min(...activeCreatedAt);
-    return Math.max(1, Math.round((Date.now() - oldestTimestamp) / 60000));
-  }, [rows]);
-
-  const signalCards = useMemo(
-    () => [
-      {
-        label: "排队积压",
-        value: rows.filter((item) => ["queued", "claimed"].includes(item.status)).length,
-        note: "尚未进入执行器的任务数量",
-      },
-      {
-        label: "执行中",
-        value: rows.filter((item) => item.status === "running").length,
-        note: oldestActiveMinutes > 0 ? `最老活跃任务已运行 ${formatDurationMinutes(oldestActiveMinutes)}` : "当前无长跑任务",
-      },
-      {
-        label: "等待重试",
-        value: rows.filter((item) => item.status === "retry_waiting").length,
-        note: "通常意味着供应商波动、限流或阶段性失败",
-      },
-      {
-        label: "失败 / 超时",
-        value: rows.filter((item) => ["failed", "timed_out"].includes(item.status)).length,
-        note: attentionRows[0] ? `最近异常：${attentionRows[0].taskLabel}` : "最近没有异常任务",
-      },
-    ],
-    [attentionRows, oldestActiveMinutes, rows]
-  );
-
-  const dispatchBoard = useMemo(
-    () => [
-      {
-        label: "当前队列负载",
-        value: rows.filter((item) => ["queued", "claimed", "running"].includes(item.status)).length,
-        note: "用于判断执行器是否繁忙，以及是否存在积压。",
-      },
-      {
-        label: "异常关注项",
-        value: attentionRows.length,
-        note: "失败、超时、等待重试和取消中的任务会集中暴露在这里。",
-      },
-      {
-        label: "最高频任务",
-        value: taskTypeLeaders[0]?.label || "暂无",
-        note: "帮助判断当前工作区主要在推进哪类 AI 生产环节。",
-      },
-    ],
-    [attentionRows.length, rows, taskTypeLeaders]
   );
 
   if (loading) {
@@ -493,285 +414,157 @@ export default function StudioTasksPage() {
 
   return (
     <div className="space-y-6">
-      <section className="studio-panel overflow-hidden">
-        <div
-          className="border-b px-6 py-6 lg:px-8"
-          style={{
-            borderColor: "var(--studio-shell-border)",
-            background:
-              "radial-gradient(circle at top left, rgba(244, 162, 97, 0.16), transparent 36%), linear-gradient(135deg, color-mix(in srgb, var(--studio-shell-panel-strong) 96%, transparent) 0%, color-mix(in srgb, var(--studio-shell-panel) 96%, transparent) 100%)",
-          }}
-        >
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
-            <div>
-              <div className="studio-eyebrow">Task Dispatch</div>
-              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] studio-strong">任务调度总览与异常聚焦</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-7 studio-muted">
-                任务中心不只展示列表，而是优先把积压、执行中、重试和异常任务直接暴露出来，帮助后台快速判断 AI 生产链路是否健康。
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <span className="studio-status-pill"><span className="studio-status-dot" />生产调度后台</span>
-                <span className="studio-status-pill"><Workflow size={14} />排队 / 执行 / 重试</span>
-              </div>
+      <AdminSummaryStrip items={summary} />
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {summary.map((item) => (
-                  <div key={item.label} className="studio-kpi min-w-[148px]">
-                    <p className="text-sm font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</p>
-                    <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
-                  </div>
+      <section className="studio-panel p-5 lg:p-6">
+        <div className="admin-filter-shell">
+          <div className="admin-filter-bar">
+            <label className="admin-filter-search">
+              <Search size={16} className="admin-filter-search-icon" />
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="搜索项目名、系列名、任务类型或任务 ID"
+                className="admin-filter-search-input"
+              />
+            </label>
+
+            <label className="studio-control-chip">
+              <Filter size={16} className="studio-faint" />
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+                className="studio-select border-none bg-transparent py-0 pr-6 text-sm font-medium shadow-none"
+              >
+                <option value="all">全部状态</option>
+                {ALL_STATUS_OPTIONS.filter((item) => item !== "all").map((status) => (
+                  <option key={status} value={status}>
+                    {STATUS_META[status as keyof typeof STATUS_META].label}
+                  </option>
                 ))}
-              </div>
+              </select>
+            </label>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {dispatchBoard.map((item) => (
-                  <div key={item.label} className="studio-console-strip">
-                    <div className="studio-console-label">{item.label}</div>
-                    <div className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</div>
-                    <p className="mt-2 text-sm leading-6 studio-muted">{item.note}</p>
-                  </div>
+            <label className="studio-control-chip">
+              <select
+                value={ownerFilter}
+                onChange={(event) => setOwnerFilter(event.target.value as OwnerFilter)}
+                className="studio-select border-none bg-transparent py-0 pr-6 text-sm font-medium shadow-none"
+              >
+                <option value="all">全部归属</option>
+                <option value="project">项目任务</option>
+                <option value="series">系列任务</option>
+                <option value="system">系统任务</option>
+              </select>
+            </label>
+
+            <label className="studio-control-chip">
+              <select
+                value={taskTypeFilter}
+                onChange={(event) => setTaskTypeFilter(event.target.value)}
+                className="studio-select max-w-[220px] border-none bg-transparent py-0 pr-6 text-sm font-medium shadow-none"
+              >
+                <option value="all">全部任务类型</option>
+                {taskTypeOptions.filter((item) => item !== "all").map((taskType) => (
+                  <option key={taskType} value={taskType}>
+                    {TASK_COPY[taskType] || taskType}
+                  </option>
                 ))}
-              </div>
+              </select>
+            </label>
+          </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {signalCards.map((item) => (
-                  <div key={item.label} className="studio-kpi">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</p>
-                    <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
-                    <p className="mt-2 text-xs leading-6 studio-muted">{item.note}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="studio-kpi">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="studio-eyebrow">Attention Queue</div>
-                  <h3 className="mt-2 text-xl font-semibold studio-strong">最近需关注任务</h3>
-                </div>
-                {refreshing ? (
-                  <span className="studio-badge studio-badge-soft">
-                    <RefreshCw size={14} className="animate-spin" style={{ color: "var(--studio-shell-accent)" }} />
-                    刷新中
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {attentionRows.length === 0 ? (
-                  <div
-                    className="rounded-[1.2rem] border border-dashed px-4 py-6 text-sm studio-muted"
-                    style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}
-                  >
-                    当前没有失败、超时或等待重试的任务。
-                  </div>
-                ) : (
-                  attentionRows.map((row) => {
-                    const meta = STATUS_META[row.status as keyof typeof STATUS_META] ?? STATUS_META.queued;
-                    return (
-                      <div
-                        key={row.id}
-                        className="rounded-[1.2rem] border px-4 py-3"
-                        style={{ borderColor: "var(--studio-shell-border)", background: "color-mix(in srgb, var(--studio-shell-panel-strong) 96%, transparent)" }}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold studio-strong">{row.scopeName}</p>
-                            <p className="mt-1 text-xs studio-muted">{row.taskLabel}</p>
-                          </div>
-                          <span className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold" style={meta.tone}>
-                            <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
-                            {row.statusLabel}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs studio-muted">创建时间 {formatTime(row.created_at)}</p>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--studio-shell-border)" }}>
-                <div className="studio-eyebrow">Top Task Types</div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {taskTypeLeaders.map((item) => (
-                    <span key={item.taskType} className="studio-mini-chip">
-                      {item.label} · {item.count}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center gap-3 text-sm studio-muted">
+            <span className="admin-status-badge admin-status-badge-neutral">
+              {filteredRows.length} / {rows.length} 条
+            </span>
+            {refreshing ? (
+              <span className="admin-status-badge admin-status-badge-neutral">
+                <RefreshCw size={14} className="animate-spin" />
+                刷新中
+              </span>
+            ) : null}
           </div>
         </div>
+      </section>
 
-        <div className="px-6 py-5 lg:px-8">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-col gap-3 md:flex-row md:flex-wrap">
-                <label className="relative block min-w-[240px]">
-                  <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 studio-faint" />
-                  <input
-                    value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
-                    placeholder="搜索项目名、系列名、任务类型或任务 ID"
-                    className="studio-input rounded-full py-3 pl-11 pr-4 text-sm"
-                  />
-                </label>
-
-                <label className="studio-control-chip">
-                  <Filter size={16} className="studio-faint" />
-                  <select
-                    value={statusFilter}
-                    onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                    className="studio-select border-none bg-transparent py-0 pr-6 text-sm font-medium shadow-none"
-                  >
-                    <option value="all">全部状态</option>
-                    {ALL_STATUS_OPTIONS.filter((item) => item !== "all").map((status) => (
-                      <option key={status} value={status}>
-                        {STATUS_META[status as keyof typeof STATUS_META].label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="studio-control-chip">
-                  <select
-                    value={ownerFilter}
-                    onChange={(event) => setOwnerFilter(event.target.value as OwnerFilter)}
-                    className="studio-select border-none bg-transparent py-0 pr-6 text-sm font-medium shadow-none"
-                  >
-                    <option value="all">全部归属</option>
-                    <option value="project">项目任务</option>
-                    <option value="series">系列任务</option>
-                    <option value="system">系统任务</option>
-                  </select>
-                </label>
-
-                <label className="studio-control-chip">
-                  <select
-                    value={taskTypeFilter}
-                    onChange={(event) => setTaskTypeFilter(event.target.value)}
-                    className="studio-select max-w-[220px] border-none bg-transparent py-0 pr-6 text-sm font-medium shadow-none"
-                  >
-                    <option value="all">全部任务类型</option>
-                    {taskTypeOptions.filter((item) => item !== "all").map((taskType) => (
-                      <option key={taskType} value={taskType}>
-                        {TASK_COPY[taskType] || taskType}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="flex items-center gap-3 text-sm studio-muted">
-                <span className="studio-badge studio-badge-soft">
-                  {filteredRows.length} / {rows.length} 条
-                </span>
-                {refreshing && (
-                  <span className="studio-badge studio-badge-soft">
-                    <RefreshCw size={14} className="animate-spin" style={{ color: "var(--studio-shell-accent)" }} />
-                    刷新中
-                  </span>
-                )}
-              </div>
+      <section>
+        <div className="studio-panel overflow-hidden">
+          <div className="admin-ledger-head">
+            <div>
+              <h3 className="text-xl font-semibold studio-strong">任务台账</h3>
             </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                disabled={currentPage === 1}
+                className="studio-button studio-button-secondary disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                disabled={currentPage === totalPages}
+                className="studio-button studio-button-secondary disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
 
-            <div className="studio-table-wrap">
-              <div className="overflow-x-auto">
-                <table className="studio-table">
-                  <thead>
-                    <tr>
-                      <th className="w-[240px]">归属对象</th>
-                      <th className="w-[110px]">归属类型</th>
-                      <th>生产任务</th>
-                      <th className="w-[176px]">创建时间</th>
-                      <th className="w-[176px]">结束时间</th>
-                      <th className="w-[160px]">执行状态</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-16">
-                          <div className="flex flex-col items-center justify-center rounded-[1.5rem] border border-dashed px-6 py-10 text-center" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
-                            <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: "var(--studio-shell-accent-soft)", color: "var(--studio-shell-accent-strong)" }}>
-                              <Workflow size={22} />
-                            </div>
-                            <p className="mt-4 text-base font-semibold studio-strong">当前筛选条件下没有任务</p>
-                            <p className="mt-2 max-w-md text-sm leading-7 studio-muted">可以尝试切换状态、归属或任务类型筛选，也可以清空关键词查看最近任务全貌。</p>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      pagedRows.map((row) => {
-                        const meta = STATUS_META[row.status as keyof typeof STATUS_META] ?? STATUS_META.queued;
-                        const Icon = meta.icon;
-
-                        return (
-                          <tr key={row.id} className="group transition-colors">
-                            <td className="w-[240px]">
-                              <div className="w-[240px]">
-                                <p className="truncate text-sm font-semibold studio-strong" title={row.scopeName}>{row.scopeName}</p>
-                              </div>
-                            </td>
-                            <td className="w-[110px] whitespace-nowrap text-sm">
-                              {row.scopeType}
-                            </td>
-                            <td>
-                              <div className="min-w-[180px]">
-                                <p className="text-sm font-semibold studio-strong">{row.taskLabel}</p>
-                              </div>
-                            </td>
-                            <td className="w-[176px] whitespace-nowrap text-sm">
-                              {formatTime(row.created_at)}
-                            </td>
-                            <td className="w-[176px] whitespace-nowrap text-sm">
-                              {formatTime(row.finished_at)}
-                            </td>
-                            <td className="w-[160px]">
-                              <span className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold" style={meta.tone}>
-                                <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
-                                <Icon size={14} />
-                                {row.statusLabel}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {filteredRows.length > 0 && (
-                <div className="flex flex-col gap-3 border-t px-6 py-4 md:flex-row md:items-center md:justify-between" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
-                  <p className="text-sm studio-muted">
-                    第 {currentPage} / {totalPages} 页，当前展示 {pagedRows.length} 条
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPage((value) => Math.max(1, value - 1))}
-                      disabled={currentPage === 1}
-                      className="studio-button studio-button-secondary disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      <ChevronLeft size={16} />
-                      上一页
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-                      disabled={currentPage === totalPages}
-                      className="studio-button studio-button-secondary disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      下一页
-                      <ChevronRight size={16} />
-                    </button>
+          <div className="admin-table-wrap">
+            <div className="admin-task-table-head">
+              <span>任务</span>
+              <span>归属</span>
+              <span>创建时间</span>
+              <span>结束时间</span>
+              <span>状态</span>
+            </div>
+            {filteredRows.length === 0 ? (
+              <div className="px-6 py-16">
+                <div className="flex flex-col items-center justify-center rounded-[1.5rem] border border-dashed px-6 py-10 text-center" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: "var(--studio-shell-accent-soft)", color: "var(--studio-shell-accent-strong)" }}>
+                    <Workflow size={22} />
                   </div>
+                  <p className="mt-4 text-base font-semibold studio-strong">当前筛选条件下没有任务</p>
+                  <p className="mt-2 max-w-md text-sm leading-7 studio-muted">可以切换状态、归属或任务类型筛选，也可以清空关键词查看最近任务全貌。</p>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="admin-task-table-body">
+                {pagedRows.map((row) => {
+                  const meta = STATUS_META[row.status as keyof typeof STATUS_META] ?? STATUS_META.queued;
+                  return (
+                    <div
+                      key={row.id}
+                      className="admin-task-table-row"
+                    >
+                      <span className="min-w-0">
+                        <strong className="block truncate text-sm font-semibold studio-strong">{row.taskLabel}</strong>
+                        <span className="block truncate text-xs studio-muted">{row.id}</span>
+                      </span>
+                      <span className="min-w-0">
+                        <strong className="block truncate text-sm font-semibold studio-strong">{row.scopeName}</strong>
+                        <span className="block text-xs studio-muted">{row.scopeType}</span>
+                      </span>
+                      <span className="text-sm studio-muted">{formatTime(row.created_at)}</span>
+                      <span className="text-sm studio-muted">{formatTime(row.finished_at)}</span>
+                      <span>
+                        <span className={`admin-status-badge admin-status-badge-${meta.tone}`}>{row.statusLabel}</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {filteredRows.length > 0 ? (
+              <div className="admin-ledger-footer">
+                <p className="text-sm studio-muted">第 {currentPage} / {totalPages} 页，当前展示 {pagedRows.length} 条</p>
+              </div>
+            ) : null}
           </div>
         </div>
       </section>

@@ -1,13 +1,12 @@
 "use client";
 
 import axios from "axios";
-import Link from "next/link";
+import Image from "next/image";
 import { X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AuthCaptchaField from "@/components/site/AuthCaptchaField";
-import { buildMarketingAuthHref, type MarketingAuthMode } from "@/components/site/marketingAuthHref";
+import type { MarketingAuthMode } from "@/components/site/marketingAuthHref";
 import { useAuthStore } from "@/store/authStore";
 
 interface AuthEntryPageProps {
@@ -16,45 +15,13 @@ interface AuthEntryPageProps {
   onModeChange?: (mode: MarketingAuthMode) => void;
 }
 
-const AUTH_COPY = {
-  signin: {
-    eyebrow: "Studio Access",
-    title: "登录 DramaLab 控制台",
-    description: "支持邮箱或手机号登录，并且都可以选择验证码或密码方式。超级管理员、团队成员和受邀用户都不需要再次填写显示名称。",
-    codeAction: "发送登录验证码",
-    verifyAction: "验证并进入工作台",
-    loadingAction: "登录中...",
-    resendAction: "重新发送验证码",
-    switchPrompt: "还没有账号？",
-    switchAction: "去注册",
-    switchMode: "signup" as const,
-    notice: "登录即表示你同意接收与账号安全、登录提醒和工作区邀请相关的通知邮件。",
-  },
-  signup: {
-    eyebrow: "Create Workspace",
-    title: "注册 DramaLab 账号",
-    description: "支持邮箱或手机号注册，且都可以选择验证码或密码方式。首次注册会创建你的个人空间。",
-    codeAction: "发送注册验证码",
-    verifyAction: "验证并创建账号",
-    loadingAction: "注册中...",
-    resendAction: "重新发送验证码",
-    switchPrompt: "已经有账号？",
-    switchAction: "去登录",
-    switchMode: "signin" as const,
-    notice: "注册即表示你同意接收与账号、安全验证和工作区邀请相关的通知邮件。",
-  },
-} as const;
-
-const AUTH_HIGHLIGHTS = [
-  "统一管理项目、系列、资产和分镜生产任务",
-  "支持个人创作者快速启动，也支持团队工作区协作",
-  "验证码与密码双链路并行，兼顾安全性和进入效率",
-] as const;
-
 type AuthMethod = "password" | "email_code";
 type PasswordStage = "signin" | "forgot";
 type AuthChannel = "email" | "phone";
+
 const SEND_CODE_COOLDOWN_SECONDS = 60;
+const PHONE_IDENTIFIER_PATTERN = /^\+?\d{11,15}$/;
+const AUTH_SUCCESS_REDIRECT = "/studio";
 
 const normalizeAuthError = (error: unknown, isSignUp: boolean) => {
   const detail =
@@ -74,7 +41,7 @@ const normalizeAuthError = (error: unknown, isSignUp: boolean) => {
     return "该邮箱属于系统管理保留账号，不能通过公开入口注册。";
   }
   if (message.includes("Account not found")) {
-    return "该账号尚未注册，请先完成注册或确认邮箱是否填写正确。";
+    return "该账号尚未注册，请先完成注册或确认账号是否填写正确。";
   }
   if (message.includes("Email delivery is not configured")) {
     return "当前环境还没有配置验证码邮件发送，请先补齐 SMTP 配置后再登录。";
@@ -113,8 +80,15 @@ const normalizeAuthError = (error: unknown, isSignUp: boolean) => {
   return isSignUp ? "注册失败，请稍后重试。" : "登录失败，请稍后重试。";
 };
 
-export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntryPageProps) {
-  const searchParams = useSearchParams();
+const inferAuthChannel = (identifier: string): AuthChannel => {
+  return PHONE_IDENTIFIER_PATTERN.test(identifier.trim()) ? "phone" : "email";
+};
+
+const isVerificationMethod = (authMethod: AuthMethod, passwordStage: PasswordStage) => {
+  return authMethod === "email_code" || passwordStage === "forgot";
+};
+
+export default function AuthEntryPage({ mode, onClose }: AuthEntryPageProps) {
   const sendEmailCode = useAuthStore((state) => state.sendEmailCode);
   const getAuthCaptcha = useAuthStore((state) => state.getAuthCaptcha);
   const verifyEmailCode = useAuthStore((state) => state.verifyEmailCode);
@@ -122,9 +96,7 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
   const signUpWithPassword = useAuthStore((state) => state.signUpWithPassword);
   const resetPasswordWithCode = useAuthStore((state) => state.resetPasswordWithCode);
 
-  const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [organizationName, setOrganizationName] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [code, setCode] = useState("");
@@ -134,27 +106,18 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
   const [captchaCode, setCaptchaCode] = useState("");
   const [captchaLoading, setCaptchaLoading] = useState(false);
   const [sendCooldown, setSendCooldown] = useState(0);
-  const [step, setStep] = useState<"email" | "verify">("email");
+  const [step, setStep] = useState<"input" | "verify">("input");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [signupKind, setSignupKind] = useState<"individual_creator" | "org_admin">("individual_creator");
   const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
   const [passwordStage, setPasswordStage] = useState<PasswordStage>("signin");
-  const [authChannel, setAuthChannel] = useState<AuthChannel>("email");
 
-  const nextPath = searchParams.get("next") || "/studio";
   const isSignUp = mode === "signup";
-  const copy = AUTH_COPY[mode];
-  const isOrgSignup = isSignUp && signupKind === "org_admin";
-  const identifierLabel = authChannel === "email" ? "邮箱" : "手机号";
-  const identifierPlaceholder = authChannel === "email" ? "you@studio.com" : "例如：13800138000";
-  const methodPasswordLabel = authChannel === "email" ? "邮箱密码" : "手机号密码";
-  const methodCodeLabel = authChannel === "email" ? "邮箱验证码" : "手机验证码";
-
-  const switchHref = useMemo(
-    () => buildMarketingAuthHref("/", `next=${encodeURIComponent(nextPath)}`, copy.switchMode),
-    [copy.switchMode, nextPath],
-  );
+  const channel = useMemo(() => inferAuthChannel(identifier), [identifier]);
+  const usingVerificationFlow = isVerificationMethod(authMethod, passwordStage);
+  const shouldSubmitVerifyCode = authMethod === "email_code";
+  const primaryActionText = isSignUp ? "注册" : passwordStage === "forgot" ? "重置密码" : "登录";
+  const primaryActionLabel = isSignUp ? "主注册按钮" : "主登录按钮";
 
   const refreshCaptcha = useCallback(async () => {
     setCaptchaLoading(true);
@@ -175,12 +138,14 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
   }, [refreshCaptcha]);
 
   useEffect(() => {
-    setStep("email");
-    setError(null);
-    setDebugCode(null);
+    // 中文注释：切换登录/注册后直接回到最简弹窗状态，避免把另一种模式的输入残留带过来。
     setPassword("");
     setNewPassword("");
     setCode("");
+    setError(null);
+    setDebugCode(null);
+    setStep("input");
+    setAuthMethod("password");
     setPasswordStage("signin");
   }, [mode]);
 
@@ -197,11 +162,12 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
   const handlePasswordSubmit = async () => {
     setSubmitting(true);
     setError(null);
+
     try {
       if (!isSignUp && passwordStage === "forgot") {
         await resetPasswordWithCode({
-          channel: authChannel,
-          identifier: email,
+          channel,
+          identifier,
           code,
           newPassword,
           captchaId,
@@ -209,38 +175,24 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
         });
       } else if (isSignUp) {
         await signUpWithPassword({
-          channel: authChannel,
-          identifier: email,
+          channel,
+          identifier,
           password,
           captchaId,
           captchaCode,
-          displayName: displayName || undefined,
-          signupKind,
-          organizationName: isOrgSignup ? organizationName || undefined : undefined,
         });
       } else {
-        await signInWithPassword({ channel: authChannel, identifier: email, password, captchaId, captchaCode });
+        await signInWithPassword({
+          channel,
+          identifier,
+          password,
+          captchaId,
+          captchaCode,
+        });
       }
-      window.location.assign(nextPath);
+      window.location.assign(AUTH_SUCCESS_REDIRECT);
     } catch (err) {
       setError(normalizeAuthError(err, isSignUp));
-      await refreshCaptcha();
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleSendResetCode = async () => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const result = await sendEmailCode(email, "reset_password", authChannel, { captchaId, captchaCode });
-      setDebugCode(result.debug_code || null);
-      setStep("verify");
-      setSendCooldown(SEND_CODE_COOLDOWN_SECONDS);
-      await refreshCaptcha();
-    } catch (err) {
-      setError(normalizeAuthError(err, false));
       await refreshCaptcha();
     } finally {
       setSubmitting(false);
@@ -250,8 +202,10 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
   const handleSendCode = async () => {
     setSubmitting(true);
     setError(null);
+
     try {
-      const result = await sendEmailCode(email, mode, authChannel, { captchaId, captchaCode });
+      const purpose = passwordStage === "forgot" ? "reset_password" : mode;
+      const result = await sendEmailCode(identifier, purpose, channel, { captchaId, captchaCode });
       setDebugCode(result.debug_code || null);
       setStep("verify");
       setSendCooldown(SEND_CODE_COOLDOWN_SECONDS);
@@ -267,15 +221,13 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
   const handleVerify = async () => {
     setSubmitting(true);
     setError(null);
+
     try {
-      await verifyEmailCode(email, code, {
-        channel: authChannel,
+      await verifyEmailCode(identifier, code, {
+        channel,
         purpose: mode,
-        displayName: isSignUp ? displayName || undefined : undefined,
-        signupKind: isSignUp ? signupKind : undefined,
-        organizationName: isOrgSignup ? organizationName || undefined : undefined,
       });
-      window.location.assign(nextPath);
+      window.location.assign(AUTH_SUCCESS_REDIRECT);
     } catch (err) {
       setError(normalizeAuthError(err, isSignUp));
     } finally {
@@ -284,186 +236,154 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
   };
 
   return (
-    <div className="marketing-auth-shell overflow-hidden rounded-[2rem] border border-white/12 bg-[#05070d]/95 text-white shadow-[0_40px_120px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-      <div className="grid min-h-[740px] lg:grid-cols-[0.92fr_1.08fr]">
-        <aside className="relative overflow-hidden border-b border-white/10 px-6 py-6 lg:border-b-0 lg:border-r lg:px-8 lg:py-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(34,211,238,0.18),transparent_30%),radial-gradient(circle_at_78%_24%,rgba(245,158,11,0.16),transparent_26%),linear-gradient(180deg,rgba(11,15,25,0.82)_0%,rgba(7,9,14,0.94)_100%)]" />
-          <div className="relative flex h-full flex-col">
-            <div className="flex items-start justify-between gap-4">
-              <div className="inline-flex rounded-full border border-white/12 bg-white/5 p-1 text-sm font-semibold text-slate-300">
-                <button
-                  type="button"
-                  onClick={() => onModeChange?.("signin")}
-                  className={`rounded-full px-4 py-2 transition-colors ${!isSignUp ? "bg-white text-slate-950 shadow-sm" : "hover:text-white"}`}
-                >
-                  登录
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onModeChange?.("signup")}
-                  className={`rounded-full px-4 py-2 transition-colors ${isSignUp ? "bg-white text-slate-950 shadow-sm" : "hover:text-white"}`}
-                >
-                  注册
-                </button>
-              </div>
-              {onClose ? (
-                <button
-                  type="button"
-                  aria-label="关闭弹窗"
-                  onClick={onClose}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-white/5 text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
-                >
-                  <X size={18} />
-                </button>
-              ) : null}
-            </div>
+    <div className="relative mx-auto h-[380px] w-full max-w-[730px] overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,#080b11_0%,#0d1320_100%)] text-[#f8f4ea] shadow-[0_32px_110px_rgba(0,0,0,0.55)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(241,216,171,0.16),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(46,168,255,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]" />
+      <div className="grid h-full grid-cols-[214px_minmax(0,1fr)]">
+        <div className="relative h-full overflow-hidden border-r border-white/8 bg-[radial-gradient(circle_at_42%_18%,rgba(241,216,171,0.22),transparent_24%),radial-gradient(circle_at_76%_20%,rgba(71,132,255,0.18),transparent_26%),linear-gradient(180deg,#070a11_0%,#0c111c_56%,#111927_100%)]">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0)),radial-gradient(circle_at_50%_95%,rgba(241,216,171,0.16),transparent_30%)]" />
+          <Image
+            src="/images/auth/login-character.png"
+            alt="登录弹窗角色立绘"
+            fill
+            priority
+            sizes="214px"
+            className="object-contain object-bottom"
+          />
+        </div>
 
-            <div className="mt-10">
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-200/80">{copy.eyebrow}</p>
-              <h1 className="mt-4 max-w-xl text-balance text-4xl leading-tight text-white sm:text-[3.3rem]">
-                {copy.title}
-              </h1>
-              <p className="mt-5 max-w-xl text-sm leading-7 text-slate-300">{copy.description}</p>
-            </div>
+        <div className="relative flex h-full flex-col bg-[linear-gradient(180deg,rgba(13,18,29,0.9)_0%,rgba(10,15,25,0.96)_100%)] px-5 py-4">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(46,168,255,0.09),transparent_28%),radial-gradient(circle_at_88%_22%,rgba(241,216,171,0.07),transparent_24%)]" />
+          <div className="flex items-center justify-between gap-3">
+            <div />
 
-            <div className="mt-8 space-y-3">
-              {AUTH_HIGHLIGHTS.map((item) => (
-                <div
-                  key={item}
-                  className="rounded-[1.4rem] border border-white/10 bg-white/[0.05] px-4 py-4 text-sm leading-6 text-slate-200 backdrop-blur-sm"
-                >
-                  <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-cyan-400/15 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
-                    Flow
-                  </span>
-                  <p className="mt-3">{item}</p>
-                </div>
-              ))}
-            </div>
+            {onClose ? (
+              <button
+                type="button"
+                aria-label="关闭弹窗"
+                onClick={onClose}
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/8 bg-white/[0.03] text-[#93a6bf] transition-[color,background-color,border-color] hover:border-[#29405b] hover:bg-[#101a28] hover:text-[#f8f4ea]"
+              >
+                <X size={18} />
+              </button>
+            ) : null}
+          </div>
 
-            <div className="mt-auto rounded-[1.6rem] border border-white/12 bg-black/30 p-5 backdrop-blur-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Workspace Flow</div>
-              <div className="mt-4 grid gap-3 text-sm text-slate-200/90">
-                <div className="flex items-start gap-3">
-                  <span className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-300" />
-                  <p>进入工作台后继续管理项目、系列和任务结果。</p>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="mt-1 h-2.5 w-2.5 rounded-full bg-amber-300" />
-                  <p>注册时可直接创建个人空间，团队管理员也能一步起盘。</p>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-300" />
-                  <p>后续可邀请成员加入统一工作区，持续复用角色与资产。</p>
-                </div>
-              </div>
+          <div className="relative mt-3 flex justify-center">
+            <div className="inline-flex items-center rounded-full border border-white/8 bg-[#101723]/95 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMethod("password");
+                  setPasswordStage("signin");
+                  setStep("input");
+                  setError(null);
+                }}
+                className={`rounded-full px-5 py-2 text-[13px] font-semibold transition-colors ${
+                  authMethod === "password"
+                    ? "border border-[#64c6ff]/50 bg-[linear-gradient(135deg,#47b6ff_0%,#1d89f0_55%,#1666d7_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_28px_rgba(46,168,255,0.36)]"
+                    : "text-[#9eabc0] hover:text-[#f8f4ea]"
+                }`}
+              >
+                密码登录
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMethod("email_code");
+                  setPasswordStage("signin");
+                  setStep("input");
+                  setError(null);
+                }}
+                className={`rounded-full px-5 py-2 text-[13px] font-semibold transition-colors ${
+                  authMethod === "email_code"
+                    ? "border border-[#64c6ff]/50 bg-[linear-gradient(135deg,#47b6ff_0%,#1d89f0_55%,#1666d7_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_28px_rgba(46,168,255,0.36)]"
+                    : "text-[#9eabc0] hover:text-[#f8f4ea]"
+                }`}
+              >
+                短信登录
+              </button>
             </div>
           </div>
-        </aside>
 
-        <div className="bg-[linear-gradient(180deg,#f8fafc_0%,#eff4fb_100%)] px-6 py-6 text-slate-900 lg:px-8 lg:py-8">
-          <div className="space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8b5e3c]">
-                  {isSignUp ? "Create Workspace" : "Access Studio"}
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-950">{isSignUp ? "完成账号创建" : "继续进入工作台"}</h2>
-              </div>
-              <div className="rounded-full border border-slate-200/90 bg-white/80 p-1 text-sm font-semibold text-slate-500 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod("password");
-                    setError(null);
-                    setDebugCode(null);
-                    setStep("email");
-                  }}
-                  className={`rounded-full px-4 py-2 transition-colors ${authMethod === "password" ? "bg-slate-950 text-white shadow-sm" : "hover:text-slate-950"}`}
-                >
-                  {methodPasswordLabel}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod("email_code");
-                    setError(null);
-                    setPasswordStage("signin");
-                  }}
-                  className={`rounded-full px-4 py-2 transition-colors ${authMethod === "email_code" ? "bg-slate-950 text-white shadow-sm" : "hover:text-slate-950"}`}
-                >
-                  {methodCodeLabel}
-                </button>
-              </div>
-            </div>
+          <div className="mt-3 flex-1 space-y-2.5">
+            <input
+              type="text"
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              placeholder="请输入邮箱 / 手机号"
+              className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+            />
 
-            <div className="rounded-[1.5rem] border border-slate-200/90 bg-white/80 p-5 shadow-[0_16px_36px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-sm font-semibold text-slate-500">
-                <button
-                  type="button"
-                  onClick={() => setAuthChannel("email")}
-                  className={`rounded-full px-4 py-2 transition-colors ${authChannel === "email" ? "bg-slate-950 text-white shadow-sm" : "hover:text-slate-950"}`}
-                >
-                  邮箱
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAuthChannel("phone")}
-                  className={`rounded-full px-4 py-2 transition-colors ${authChannel === "phone" ? "bg-slate-950 text-white shadow-sm" : "hover:text-slate-950"}`}
-                >
-                  手机号
-                </button>
-              </div>
-
-              <p className="mt-4 text-sm leading-6 text-slate-600">
-                {isSignUp
-                  ? "默认推荐使用邮箱 + 密码注册；如果需要无密码体验，仍可切换到邮箱验证码。"
-                  : "默认推荐使用邮箱 + 密码登录；验证码登录继续保留，方便临时免密进入。"}
-              </p>
-            </div>
-
-            {isSignUp ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setSignupKind("individual_creator")}
-                  className={`rounded-[1.5rem] border px-4 py-4 text-left transition-colors ${
-                    signupKind === "individual_creator"
-                      ? "border-slate-950 bg-slate-950 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  }`}
-                >
-                  <div className="text-sm font-semibold">注册个人创作空间</div>
-                  <div className={`mt-2 text-xs leading-6 ${signupKind === "individual_creator" ? "text-slate-200" : "text-slate-500"}`}>
-                    适合个人 AI 短剧创作者，注册后自动创建个人组织和默认工作区。
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSignupKind("org_admin")}
-                  className={`rounded-[1.5rem] border px-4 py-4 text-left transition-colors ${
-                    signupKind === "org_admin"
-                      ? "border-slate-950 bg-slate-950 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  }`}
-                >
-                  <div className="text-sm font-semibold">创建团队空间</div>
-                  <div className={`mt-2 text-xs leading-6 ${signupKind === "org_admin" ? "text-slate-200" : "text-slate-500"}`}>
-                    适合公司负责人或管理员，注册后自动成为团队管理员，可邀请制作成员加入。
-                  </div>
-                </button>
+            {authMethod === "password" && passwordStage === "signin" ? (
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="请输入密码"
+                  className="h-10 min-w-0 rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+                />
+                {!isSignUp ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordStage("forgot");
+                      setStep("input");
+                      setCode("");
+                      setNewPassword("");
+                      setError(null);
+                    }}
+                    className="px-1 text-[12px] font-semibold text-[#f1d8ab] transition-colors hover:text-[#ffe7ba]"
+                  >
+                    忘记密码?
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-slate-800">{identifierLabel}</span>
+            {usingVerificationFlow ? (
+              <>
+                {step === "verify" || passwordStage === "forgot" ? (
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    placeholder="请输入验证码"
+                    className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] tracking-[0.12em] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:tracking-normal placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+                  />
+                ) : (
+                  <div className="grid grid-cols-[minmax(0,1fr)_124px] gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={code}
+                      onChange={(event) => setCode(event.target.value)}
+                      placeholder="请输入验证码"
+                      className="h-10 min-w-0 rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] tracking-[0.12em] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:tracking-normal placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleSendCode()}
+                      disabled={submitting || sendCooldown > 0}
+                      className="h-10 rounded-[14px] border border-[#365273] bg-[linear-gradient(180deg,#132235_0%,#0d1826_100%)] text-[13px] font-semibold text-[#d9e3f2] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,color,box-shadow,background-color] hover:border-[#5f83ad] hover:bg-[linear-gradient(180deg,#182b40_0%,#102032_100%)] hover:text-[#f1d8ab] hover:shadow-[0_12px_24px_rgba(10,22,38,0.28)] disabled:cursor-not-allowed disabled:border-[#223246] disabled:bg-[linear-gradient(180deg,#111926_0%,#0d1520_100%)] disabled:text-[#5d7188]"
+                    >
+                      {sendCooldown > 0 ? `${sendCooldown}s 后重试` : passwordStage === "forgot" ? "发送重置码" : "获取验证码"}
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : null}
+
+            {passwordStage === "forgot" ? (
               <input
-                type={authChannel === "email" ? "email" : "tel"}
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder={identifierPlaceholder}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary/50"
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                placeholder="设置新密码"
+                className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
               />
-            </label>
+            ) : null}
 
             <AuthCaptchaField
               captchaSvg={captchaSvg}
@@ -472,202 +392,28 @@ export default function AuthEntryPage({ mode, onClose, onModeChange }: AuthEntry
               onRefresh={() => void refreshCaptcha()}
               disabled={submitting}
               loading={captchaLoading}
+              variant="compact"
             />
 
-            {authMethod === "password" ? (
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-slate-800">密码</span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={isSignUp ? "至少 6 位，建议包含字母和数字" : "输入你的登录密码"}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary/50"
-                />
-              </label>
-            ) : null}
-
-            {authMethod === "password" && !isSignUp && passwordStage === "forgot" ? (
-              <>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-800">验证码</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    placeholder="输入 6 位验证码"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm tracking-[0.28em] text-slate-900 outline-none transition-colors focus:border-primary/50"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-800">新密码</span>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    placeholder="至少 6 位，重置后立即生效"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary/50"
-                  />
-                </label>
-              </>
-            ) : null}
-
-            {isSignUp ? (
-              <>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-800">显示名称</span>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(event) => setDisplayName(event.target.value)}
-                    placeholder={isOrgSignup ? "例如：王制片，团队内会显示这个名称" : "例如：Will，首次注册时会用于创建个人空间"}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary/50"
-                  />
-                </label>
-
-                {isOrgSignup ? (
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-slate-800">团队 / 公司名称</span>
-                    <input
-                      type="text"
-                      value={organizationName}
-                      onChange={(event) => setOrganizationName(event.target.value)}
-                      placeholder="例如：银河短剧工作室"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary/50"
-                    />
-                  </label>
-                ) : null}
-              </>
-            ) : null}
-
-            {authMethod === "email_code" && step === "verify" ? (
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-slate-800">验证码</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
-                  placeholder="输入 6 位验证码"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm tracking-[0.28em] text-slate-900 outline-none transition-colors focus:border-primary/50"
-                />
-              </label>
+            {error ? (
+              <div className="rounded-[12px] border border-[#6a2a32] bg-[rgba(84,22,26,0.42)] px-3 py-2 text-[12px] text-[#ffb8a0]">{error}</div>
             ) : null}
 
             {debugCode ? (
-              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-                当前环境开启了调试验证码回显：<span className="font-semibold">{debugCode}</span>
-              </div>
+              <div className="text-[11px] text-[#5f7188]">测试验证码：{debugCode}</div>
             ) : null}
-
-            {error ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-            ) : null}
-
-            <div className="flex flex-wrap gap-3 pt-2">
-              {authMethod === "password" ? (
-                <>
-                  <button
-                    disabled={
-                      !email.trim() ||
-                      (
-                        !isSignUp &&
-                        passwordStage === "forgot"
-                          ? !code.trim() || !newPassword.trim()
-                          : !password.trim()
-                      ) ||
-                      !captchaId.trim() ||
-                      !captchaCode.trim() ||
-                      (isSignUp && (!displayName.trim() || (isOrgSignup && !organizationName.trim()))) ||
-                      submitting
-                    }
-                    onClick={() => void handlePasswordSubmit()}
-                    className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.16)] disabled:opacity-50"
-                  >
-                    {submitting ? copy.loadingAction : isSignUp ? "创建账号并进入工作台" : passwordStage === "forgot" ? "重置密码并登录" : "登录并进入工作台"}
-                  </button>
-                  {!isSignUp ? (
-                    <>
-                      <button
-                        type="button"
-                        disabled={!email.trim() || sendCooldown > 0 || submitting}
-                        onClick={() => void handleSendResetCode()}
-                        className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
-                      >
-                        {sendCooldown > 0 ? `${sendCooldown}s 后重发重置码` : "发送重置验证码"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => {
-                          setPasswordStage(passwordStage === "forgot" ? "signin" : "forgot");
-                          setError(null);
-                          setDebugCode(null);
-                          setCode("");
-                          setNewPassword("");
-                        }}
-                        className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
-                      >
-                        {passwordStage === "forgot" ? "返回密码登录" : "忘记密码"}
-                      </button>
-                    </>
-                  ) : null}
-                </>
-              ) : step === "email" ? (
-                <button
-                  disabled={!email.trim() || !captchaId.trim() || !captchaCode.trim() || sendCooldown > 0 || (isSignUp && (!displayName.trim() || (isOrgSignup && !organizationName.trim()))) || submitting}
-                  onClick={() => void handleSendCode()}
-                  className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.16)] disabled:opacity-50"
-                >
-                  {submitting ? "发送中..." : sendCooldown > 0 ? `${sendCooldown}s 后可重发` : copy.codeAction}
-                </button>
-              ) : (
-                <>
-                  <button
-                    disabled={!email.trim() || !code.trim() || !captchaId.trim() || !captchaCode.trim() || (isSignUp && (!displayName.trim() || (isOrgSignup && !organizationName.trim()))) || submitting}
-                    onClick={() => void handleVerify()}
-                    className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.16)] disabled:opacity-50"
-                  >
-                    {submitting ? copy.loadingAction : copy.verifyAction}
-                  </button>
-                  <button
-                    disabled={sendCooldown > 0 || submitting}
-                    onClick={() => void handleSendCode()}
-                    className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
-                  >
-                    {sendCooldown > 0 ? `${sendCooldown}s 后可重发` : copy.resendAction}
-                  </button>
-                </>
-              )}
-            </div>
           </div>
 
-          <div className="mt-8 border-t border-slate-200/80 pt-6 text-sm text-slate-500">{copy.notice}</div>
-          {authMethod === "password" && !isSignUp && passwordStage === "forgot" ? (
-            <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-              忘记密码时，先发送验证码，再输入验证码和新密码完成重置。已有老账号如果从未设置过密码，可先尝试默认初始密码 `123456`。
-            </div>
-          ) : null}
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-            <span className="text-slate-500">{copy.switchPrompt}</span>
-            {onModeChange ? (
-              <button
-                type="button"
-                onClick={() => onModeChange(copy.switchMode)}
-                className="font-semibold text-primary"
-              >
-                {copy.switchAction}
-              </button>
-            ) : (
-              <Link href={switchHref} className="font-semibold text-primary">
-                {copy.switchAction}
-              </Link>
-            )}
-            <Link href="/" className="font-semibold text-slate-600">
-              返回官网
-            </Link>
+          <div className="mt-3">
+            <button
+              type="button"
+              aria-label={primaryActionLabel}
+              onClick={() => void (shouldSubmitVerifyCode ? handleVerify() : handlePasswordSubmit())}
+              disabled={submitting}
+              className="h-11 w-full rounded-[14px] border border-[#72ccff]/45 bg-[linear-gradient(135deg,#47b6ff_0%,#1e84f2_45%,#0f58be_100%)] text-[14px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_20px_40px_rgba(18,93,196,0.36)] transition-[transform,box-shadow,filter,border-color] hover:-translate-y-[1px] hover:border-[#9fdcff]/60 hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_24px_46px_rgba(31,112,232,0.42)] disabled:cursor-not-allowed disabled:border-[#2a3b50] disabled:bg-[linear-gradient(135deg,#22344a_0%,#1b2b3f_100%)] disabled:text-[#7f94ac] disabled:shadow-none"
+            >
+              {submitting ? "提交中..." : primaryActionText}
+            </button>
           </div>
         </div>
       </div>

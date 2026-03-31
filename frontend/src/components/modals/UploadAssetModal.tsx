@@ -125,153 +125,156 @@ export default function UploadAssetModal({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8"
                 onClick={handleClose}
             >
                 <motion.div
-                    initial={{ scale: 0.95, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.95, opacity: 0 }}
-                    className="asset-surface-strong rounded-xl p-6 w-full max-w-lg mx-4 shadow-2xl border border-white/10"
+                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                    className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-xl overflow-hidden shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-bold text-white">
-                            上传资产 - {assetName}
-                        </h2>
-                        <button
-                            onClick={handleClose}
-                            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                        >
-                            <X size={20} className="text-gray-400" />
+                    {/* ── Header ── */}
+                    <div className="flex h-20 items-center justify-between border-b border-white/5 bg-white/[0.02] px-8">
+                        <div className="flex items-center gap-4">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                <Upload size={20} />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-white tracking-tight">上传资产</h2>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-0.5">{assetName}</p>
+                            </div>
+                        </div>
+                        <button onClick={handleClose} className="p-2.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
+                            <X size={24} />
                         </button>
                     </div>
 
-                    {/* Upload Type Selector (only for Character) */}
-                    {assetType === "character" && (
-                        <div className="mb-6">
-                            <label className="block text-sm font-medium text-gray-400 mb-3">
-                                选择资产类型
-                            </label>
-                            <div className="grid grid-cols-3 gap-3">
-                                {uploadTypes.map((type) => {
-                                    const Icon = type.icon;
-                                    return (
-                                        <button
-                                            key={type.id}
-                                            onClick={() => setUploadType(type.id)}
-                                            className={`p-4 rounded-lg border-2 transition-all ${uploadType === type.id
-                                                ? "border-primary bg-primary/10"
-                                                : "border-white/10 bg-white/5 hover:border-white/20"
-                                                }`}
-                                        >
-                                            <Icon
-                                                size={24}
-                                                className={`mx-auto mb-2 ${uploadType === type.id ? "text-primary" : "text-gray-400"
-                                                    }`}
-                                            />
-                                            <div className="text-sm font-medium text-white">{type.label}</div>
-                                            <div className="text-xs text-gray-500 mt-1">{type.description}</div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* File Upload Area */}
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-400 mb-3">
-                            选择图片
-                        </label>
-                        <div
-                            onDrop={handleDrop}
-                            onDragOver={(e) => e.preventDefault()}
-                            onClick={() => fileInputRef.current?.click()}
-                            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${previewUrl
-                                ? "border-primary bg-primary/5"
-                                : "border-white/20 hover:border-white/40"
-                                }`}
-                        >
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                onChange={handleFileSelect}
-                                className="hidden"
-                            />
-                            {previewUrl ? (
-                                <div className="relative">
-                                    <img
-                                        src={previewUrl}
-                                        alt="Preview"
-                                        className="max-h-48 mx-auto rounded-lg object-contain"
-                                    />
-                                    <div className="mt-3 text-sm text-gray-400">
-                                        点击更换图片
-                                    </div>
+                    <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                        {/* ── Type Selector ── */}
+                        {assetType === "character" && (
+                            <section className="space-y-4">
+                                <div className="flex items-center gap-2 text-slate-400">
+                                    <Layout size={14} />
+                                    <h3 className="text-[10px] font-bold uppercase tracking-widest">资产类型</h3>
                                 </div>
-                            ) : (
-                                <>
-                                    <Upload size={32} className="mx-auto text-gray-500 mb-3" />
-                                    <div className="text-gray-400">拖拽图片到此处或点击选择</div>
-                                    <div className="text-xs text-gray-500 mt-2">
-                                        支持 JPG、PNG、WebP，最大 10MB
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                                <div className="grid grid-cols-3 gap-3">
+                                    {uploadTypes.map((type) => {
+                                        const Icon = type.icon;
+                                        const isActive = uploadType === type.id;
+                                        return (
+                                            <button
+                                                key={type.id}
+                                                onClick={() => setUploadType(type.id)}
+                                                className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all duration-300 ${
+                                                    isActive 
+                                                        ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20" 
+                                                        : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10 hover:text-slate-300"
+                                                }`}
+                                            >
+                                                <Icon size={20} />
+                                                <span className="text-[11px] font-bold">{type.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        )}
+
+                        {/* ── File Upload ── */}
+                        <section className="space-y-4">
+                            <div className="flex items-center gap-2 text-slate-400">
+                                <ImageIcon size={14} />
+                                <h3 className="text-[10px] font-bold uppercase tracking-widest">参考图文件</h3>
+                            </div>
+                            <div
+                                onDrop={handleDrop}
+                                onDragOver={(e) => e.preventDefault()}
+                                onClick={() => fileInputRef.current?.click()}
+                                className={`group relative aspect-video rounded-3xl border-2 border-dashed transition-all duration-500 cursor-pointer overflow-hidden flex flex-col items-center justify-center gap-4 ${
+                                    previewUrl 
+                                        ? "border-indigo-500/50 bg-indigo-500/5" 
+                                        : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/5"
+                                }`}
+                            >
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleFileSelect}
+                                    className="hidden"
+                                />
+                                {previewUrl ? (
+                                    <>
+                                        <img src={previewUrl} alt="Preview" className="h-full w-full object-contain" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <div className="px-4 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs font-bold">更换图片</div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="p-5 rounded-2xl bg-white/5 text-slate-500 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all">
+                                            <Upload size={32} strokeWidth={1.5} />
+                                        </div>
+                                        <div className="text-center px-6">
+                                            <p className="text-sm font-bold text-slate-400 group-hover:text-white transition-colors">拖拽或点击上传</p>
+                                            <p className="text-[10px] text-slate-600 mt-1 uppercase tracking-wider">JPG, PNG, WebP · Max 10MB</p>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </section>
+
+                        {/* ── Description ── */}
+                        <section className="space-y-4">
+                            <div className="flex items-center gap-2 text-slate-400">
+                                <Layout size={14} />
+                                <h3 className="text-[10px] font-bold uppercase tracking-widest">素材特征描述</h3>
+                            </div>
+                            <textarea
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                className="w-full h-32 bg-black/40 border border-white/10 rounded-[24px] p-5 text-[13px] leading-relaxed text-slate-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all custom-scrollbar"
+                                placeholder="描述素材的核心视觉特征..."
+                            />
+                        </section>
+
+                        {/* Error Message */}
+                        {error && (
+                            <motion.div 
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-xs font-medium"
+                            >
+                                {error}
+                            </motion.div>
+                        )}
                     </div>
 
-                    {/* Description Editor */}
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-400 mb-2">
-                            角色描述 <span className="text-xs text-gray-500">(用于后续生成)</span>
-                        </label>
-                        <textarea
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            rows={3}
-                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm resize-none focus:outline-none focus:border-primary/50"
-                            placeholder="描述角色的外观特征..."
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                            💡 请确保描述与上传图片一致，这将用于生成其他类型的资产
-                        </div>
-                    </div>
-
-                    {/* Error Message */}
-                    {error && (
-                        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-                            {error}
-                        </div>
-                    )}
-
-                    {/* Actions */}
-                    <div className="flex gap-3">
+                    {/* ── Footer Actions ── */}
+                    <div className="p-8 border-t border-white/5 bg-white/[0.02] flex gap-4">
                         <button
                             onClick={handleClose}
-                            className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors"
+                            className="flex-1 py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold text-sm hover:bg-white/10 transition-all"
                         >
                             取消
                         </button>
                         <button
                             onClick={handleUpload}
                             disabled={!selectedFile || isUploading}
-                            className="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            className={`flex-1 py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                                !selectedFile || isUploading 
+                                    ? "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed" 
+                                    : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
+                            }`}
                         >
                             {isUploading ? (
-                                <>
-                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    上传中...
-                                </>
+                                <RefreshCw size={18} className="animate-spin" />
                             ) : (
-                                <>
-                                    <Upload size={16} />
-                                    确认上传
-                                </>
+                                <Check size={18} />
                             )}
+                            {isUploading ? "正在上传" : "确认上传"}
                         </button>
                     </div>
                 </motion.div>

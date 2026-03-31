@@ -152,7 +152,6 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
     }
 
     const segments = breadcrumbSegments || [{ label: "项目中心", href: homeHref }, { label: currentProject.title }];
-
     return (
         <main
             data-studio-theme={theme}

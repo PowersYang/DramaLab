@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Copy, MailPlus, RefreshCw, Search, Trash2, Users2, Clock, X } from "lucide-react";
 
-import { api, type MembershipWithRole } from "@/lib/api";
+import { api, type MembershipWithRole, type InvitationCreateResponse } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
+import InviteMemberDialog from "@/components/studio/InviteMemberDialog";
 
 const ROLE_OPTIONS = [
   { code: "org_admin", label: "组织管理员" },
@@ -16,35 +18,67 @@ export default function StudioTeamRoutePage() {
   const canManageMembers = hasCapability("workspace.manage_members");
 
   const [members, setMembers] = useState<MembershipWithRole[]>([]);
+  const [invitations, setInvitations] = useState<InvitationCreateResponse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRoleCode, setInviteRoleCode] = useState("producer");
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [keyword, setKeyword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
-  const loadMembers = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
       setError(null);
-      const result = await api.listWorkspaceMembers();
-      setMembers(result);
+      const [membersResult, invitationsResult] = await Promise.all([
+        api.listWorkspaceMembers(),
+        api.listWorkspaceInvitations(),
+      ]);
+      setMembers(membersResult);
+      setInvitations(invitationsResult);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "团队成员加载失败");
+      setError(err instanceof Error ? err.message : "团队信息加载失败");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadMembers();
+    void loadData();
   }, []);
+
+  const filteredMembers = useMemo(() => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (!normalizedKeyword) return members;
+    return members.filter((member) =>
+      [member.display_name || "", member.email || "", member.role_name || "", member.workspace_name || ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedKeyword),
+    );
+  }, [keyword, members]);
+
+  const summaryItems = useMemo(
+    () => [
+      { label: "总成员数", value: members.length, note: "当前工作区全部可见成员", icon: Users2 },
+      {
+        label: "待处理邀请",
+        value: invitations.length,
+        note: "已发送但尚未接受的邀请",
+        icon: Clock,
+      },
+      {
+        label: "制作人员数",
+        value: members.filter((item) => item.role_code === "producer").length,
+        note: "负责项目、资产、分镜和生成任务",
+        icon: MailPlus,
+      },
+    ],
+    [members, invitations],
+  );
 
   if (!canManageMembers && me?.current_role_code !== "producer") {
     return (
       <section className="studio-panel p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Team</p>
+        <p className="admin-block-kicker">Team</p>
         <h2 className="mt-4 text-3xl font-bold text-slate-950">个人空间当前不开放团队管理</h2>
         <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">
           个人用户会自动拥有自己的默认工作区。后续如果需要协作，可以升级到企业工作区或接受 MCN / 短剧公司的邀请。
@@ -54,154 +88,211 @@ export default function StudioTeamRoutePage() {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-      <section className="studio-panel p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Invite</p>
-        <h2 className="mt-4 text-2xl font-bold text-slate-950">邀请成员加入当前工作区</h2>
-        <p className="mt-3 text-sm leading-7 text-slate-600">
-          被邀请成员会使用受邀邮箱通过验证码完成加入，不需要单独注册企业成员身份。手机号登录已预留，后续会补短信验证码链路。
-        </p>
+    <div className="space-y-6">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+        {summaryItems.map((item) => (
+          <div key={item.label} className="admin-summary-card flex flex-col justify-between">
+            <div>
+              <div className="admin-summary-head">
+                <div className="admin-summary-label">{item.label}</div>
+                <span className="admin-summary-icon">
+                  <item.icon size={16} />
+                </span>
+              </div>
+              <div className="admin-summary-value">{item.value}</div>
+            </div>
+            <p className="admin-summary-note mt-2">{item.note}</p>
+          </div>
+        ))}
 
-        {canManageMembers ? (
-          <div className="mt-6 space-y-4">
-            <input
-              value={inviteEmail}
-              onChange={(event) => setInviteEmail(event.target.value)}
-              placeholder="team@company.com"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
-            />
-            <select
-              value={inviteRoleCode}
-              onChange={(event) => setInviteRoleCode(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
-            >
-              {ROLE_OPTIONS.map((role) => (
-                <option key={role.code} value={role.code}>
-                  {role.label}
-                </option>
-              ))}
-            </select>
-            <button
-              disabled={!inviteEmail.trim()}
-              onClick={async () => {
-                try {
-                  setError(null);
-                  setCopyMessage(null);
-                  const invitation = await api.inviteWorkspaceMember(inviteEmail, inviteRoleCode);
-                  setInviteEmail("");
-                  setInviteLink(invitation.invite_url);
-                  setInviteMessage(`邀请已创建。若邮件未送达，可直接使用邀请链接：${invitation.invite_url}`);
-                  await loadMembers();
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : "邀请发送失败");
-                }
-              }}
-              className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              发送邀请
+        <div className="admin-summary-card flex flex-col justify-center">
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <MailPlus size={24} />
+            </div>
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-slate-900">扩充你的团队</h3>
+              <p className="mt-1 text-xs text-slate-500">邀请新成员加入工作区协作</p>
+            </div>
+            {canManageMembers ? (
+              <button
+                onClick={() => setInviteDialogOpen(true)}
+                className="studio-button studio-button-primary w-full max-w-[200px]"
+              >
+                <MailPlus size={16} />
+                邀请新成员
+              </button>
+            ) : (
+              <p className="text-xs text-slate-400">你没有管理成员的权限</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <InviteMemberDialog
+        isOpen={inviteDialogOpen}
+        onClose={() => setInviteDialogOpen(false)}
+        onSuccess={() => void loadData()}
+      />
+
+      {invitations.length > 0 && (
+        <section className="studio-panel overflow-hidden">
+          <div className="admin-ledger-head">
+            <div>
+              <h2 className="text-xl font-bold text-slate-950">待处理邀请</h2>
+              <p className="mt-1 text-sm text-slate-500">这些邀请已发出，正在等待对方接受。</p>
+            </div>
+          </div>
+          <div className="admin-governance-table border-0 rounded-none">
+            <table className="bg-white text-sm">
+              <thead>
+                <tr>
+                  <th>受邀邮箱</th>
+                  <th>分配角色</th>
+                  <th>有效期至</th>
+                  <th className="text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invitations.map((invite) => (
+                  <tr key={invite.id}>
+                    <td className="font-semibold text-slate-900">{invite.email}</td>
+                    <td>
+                      <span className="admin-status-badge admin-status-badge-neutral">
+                        {ROLE_OPTIONS.find(r => r.code === invite.role_code)?.label || invite.role_code}
+                      </span>
+                    </td>
+                    <td className="text-slate-500">
+                      {new Date(invite.expires_at).toLocaleString("zh-CN")}
+                    </td>
+                    <td>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`确定要撤销对 ${invite.email} 的邀请吗？`)) return;
+                            try {
+                              await api.deleteWorkspaceInvitation(invite.id);
+                              await loadData();
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "撤销邀请失败");
+                            }
+                          }}
+                          className="studio-button studio-button-secondary !min-h-[2.25rem] !px-3 !text-rose-600 hover:!bg-rose-50 hover:!border-rose-100"
+                        >
+                          <X size={14} />
+                          撤销邀请
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <section className="studio-panel overflow-hidden">
+        <div className="admin-ledger-head">
+          <div>
+            <h2 className="text-xl font-bold text-slate-950">当前工作区成员</h2>
+            <p className="mt-1 text-sm text-slate-500">按后台台账管理成员身份、角色与协作边界。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="admin-filter-search">
+              <Search size={16} className="admin-filter-search-icon" />
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="搜索成员、邮箱或角色"
+                className="admin-filter-search-input"
+              />
+            </label>
+            <button onClick={() => void loadData()} className="studio-button studio-button-secondary">
+              <RefreshCw size={16} />
+              刷新
             </button>
           </div>
-        ) : (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-            你当前是制作人员，可查看团队成员，但不能邀请或修改角色。
-          </div>
-        )}
-      </section>
-
-      <section className="studio-panel p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Members</p>
-            <h2 className="mt-3 text-2xl font-bold text-slate-950">当前工作区成员</h2>
-          </div>
-          <button onClick={() => void loadMembers()} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
-            刷新
-          </button>
         </div>
 
-        {inviteMessage ? (
-          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            <div>{inviteMessage}</div>
-            {inviteLink ? (
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(inviteLink);
-                      setCopyMessage("邀请链接已复制");
-                    } catch {
-                      setCopyMessage("复制失败，请手动复制");
-                    }
-                  }}
-                  className="rounded-full border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700"
-                >
-                  复制邀请链接
-                </button>
-                {copyMessage ? <span className="text-xs text-emerald-700">{copyMessage}</span> : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {error ? <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+        {error ? <div className="m-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
-        <div className="mt-6 space-y-3">
-          {loading ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">正在加载成员列表...</div>
-          ) : members.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">当前工作区还没有成员。</div>
-          ) : (
-            members.map((member) => (
-              <div key={member.membership_id} className="flex flex-wrap items-center justify-between gap-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{member.display_name || member.email || member.user_id}</p>
-                  <p className="mt-1 text-xs text-slate-500">{member.email || "未配置邮箱"} · {member.workspace_name || "工作区"}</p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {canManageMembers ? (
-                    <select
-                      value={member.role_code || "producer"}
-                      onChange={async (event) => {
-                        try {
-                          await api.updateWorkspaceMemberRole(member.membership_id, event.target.value);
-                          await loadMembers();
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "角色更新失败");
-                        }
-                      }}
-                      className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-                    >
-                      {ROLE_OPTIONS.map((role) => (
-                        <option key={role.code} value={role.code}>
-                          {role.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
-                      {member.role_name || member.role_code || "成员"}
-                    </div>
-                  )}
-                  {canManageMembers ? (
-                    <button
-                      onClick={async () => {
-                        try {
-                          await api.deleteWorkspaceMember(member.membership_id);
-                          await loadMembers();
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "成员移除失败");
-                        }
-                      }}
-                      className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600"
-                    >
-                      移除
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))
-          )}
+        <div className="admin-governance-table border-0 rounded-none">
+          <table className="bg-white text-sm">
+            <thead>
+              <tr>
+                <th>成员</th>
+                <th>邮箱 / 工作区</th>
+                <th>角色</th>
+                <th>状态</th>
+                <th className="text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">正在加载成员列表...</td>
+                </tr>
+              ) : filteredMembers.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">当前筛选条件下没有成员。</td>
+                </tr>
+              ) : (
+                filteredMembers.map((member) => (
+                  <tr key={member.membership_id}>
+                    <td className="font-semibold text-slate-900">{member.display_name || member.email || member.user_id}</td>
+                    <td className="text-slate-700">{member.email || "未配置邮箱"} · {member.workspace_name || "工作区"}</td>
+                    <td>
+                      {canManageMembers ? (
+                        <select
+                          value={member.role_code || "producer"}
+                          onChange={async (event) => {
+                            try {
+                              await api.updateWorkspaceMemberRole(member.membership_id, event.target.value);
+                              await loadData();
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "角色更新失败");
+                            }
+                          }}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+                        >
+                          {ROLE_OPTIONS.map((role) => (
+                            <option key={role.code} value={role.code}>
+                              {role.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="admin-status-badge admin-status-badge-neutral">{member.role_name || member.role_code || "成员"}</span>
+                      )}
+                    </td>
+                    <td><span className="admin-status-badge admin-status-badge-neutral">{member.status}</span></td>
+                    <td>
+                      <div className="flex justify-end">
+                        {canManageMembers ? (
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`确定要移除成员 ${member.display_name || member.email} 吗？`)) return;
+                              try {
+                                await api.deleteWorkspaceMember(member.membership_id);
+                                await loadData();
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : "成员移除失败");
+                              }
+                            }}
+                            className="studio-button studio-button-danger !min-h-[2.25rem] !px-3"
+                          >
+                            <Trash2 size={14} />
+                            移除
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>

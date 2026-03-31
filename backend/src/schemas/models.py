@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 from pydantic import BaseModel, Field
 from ..utils.datetime import epoch_start, utc_now
@@ -234,7 +234,8 @@ class StoryboardFrame(BaseModel):
     audio_url: Optional[str] = Field(None, description="生成的对白音频地址")
     audio_error: Optional[str] = Field(None, description="音频生成错误信息")
     sfx_url: Optional[str] = Field(None, description="生成的音效地址")
-    
+    bgm_url: Optional[str] = Field(None, description="生成的背景音乐地址")
+
     selected_video_id: Optional[str] = Field(None, description="该帧当前选中的 VideoTask ID")
     locked: bool = Field(False, description="该帧是否锁定，锁定后不再重新生成")
     status: GenerationStatus = GenerationStatus.PENDING
@@ -303,6 +304,63 @@ class PromptConfig(BaseModel):
     video_polish: str = Field("", description="视频 I2V 润色阶段的自定义系统提示词（Prompt D）")
     r2v_polish: str = Field("", description="视频 R2V 润色阶段的自定义系统提示词（Prompt E）")
 
+
+TimelineTrackType = Literal["video", "dialogue", "sfx", "bgm"]
+TimelineAssetKind = Literal["video", "audio"]
+
+
+class TimelineAsset(BaseModel):
+    """时间轴引用的媒体资产快照。"""
+    id: str = Field(..., description="时间轴资产 ID")
+    kind: TimelineAssetKind = Field(..., description="资产类型：视频或音频")
+    source_url: str = Field(..., description="资产源地址，通常为 OSS 对象键")
+    label: str = Field("", description="显示名称")
+    source_duration: float = Field(0, description="源媒体时长（秒）")
+    frame_id: Optional[str] = Field(None, description="关联的分镜帧 ID")
+    video_task_id: Optional[str] = Field(None, description="关联的 VideoTask ID")
+    role: Optional[str] = Field(None, description="在时间轴中的角色，如 main/dialogue/sfx/bgm")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="预留的元数据扩展字段")
+
+
+class TimelineTrack(BaseModel):
+    """时间轴轨道定义。"""
+    id: str = Field(..., description="轨道 ID")
+    track_type: TimelineTrackType = Field(..., description="轨道类型")
+    label: str = Field(..., description="轨道名称")
+    order: int = Field(0, description="轨道排序")
+    enabled: bool = Field(True, description="轨道是否启用")
+    locked: bool = Field(False, description="轨道是否锁定")
+    gain: float = Field(1.0, description="轨道级音量倍率")
+    solo: bool = Field(False, description="是否独奏该轨道")
+
+
+class TimelineClip(BaseModel):
+    """时间轴片段。"""
+    id: str = Field(..., description="片段 ID")
+    asset_id: str = Field(..., description="引用的时间轴资产 ID")
+    track_id: str = Field(..., description="所属轨道 ID")
+    clip_order: int = Field(0, description="同轨排序序号")
+    timeline_start: float = Field(0, description="片段在时间轴中的开始时间（秒）")
+    timeline_end: float = Field(0, description="片段在时间轴中的结束时间（秒）")
+    source_start: float = Field(0, description="源媒体入点（秒）")
+    source_end: float = Field(0, description="源媒体出点（秒）")
+    volume: float = Field(1.0, description="片段音量倍率")
+    fade_in_duration: float = Field(0.0, description="片段淡入时长（秒）")
+    fade_out_duration: float = Field(0.0, description="片段淡出时长（秒）")
+    lane_index: int = Field(0, description="轨道内分层索引，后续支持多 lane 时复用")
+    linked_clip_id: Optional[str] = Field(None, description="关联片段 ID，例如视频与对白联动")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="预留的片段级扩展字段")
+
+
+class ProjectTimeline(BaseModel):
+    """项目级时间轴工程。"""
+    project_id: str = Field(..., description="所属项目 ID")
+    version: int = Field(1, description="时间轴版本号")
+    tracks: List[TimelineTrack] = Field(default_factory=list, description="轨道列表")
+    assets: List[TimelineAsset] = Field(default_factory=list, description="媒体资产快照列表")
+    clips: List[TimelineClip] = Field(default_factory=list, description="时间轴片段列表")
+    updated_at: datetime = Field(default_factory=utc_now, description="最近一次更新时间")
+
 class Script(BaseModel):
     id: str = Field(..., description="脚本项目的唯一标识")
     title: str = Field(..., description="漫画或视频标题")
@@ -329,6 +387,9 @@ class Script(BaseModel):
 
     # 合并后成片的视频地址
     merged_video_url: Optional[str] = Field(None, description="最终合并视频的地址")
+
+    # 项目时间轴工程（Phase 1 先落在 projects 表的 JSON 列里）
+    timeline: Optional[ProjectTimeline] = Field(None, description="项目级时间轴工程")
 
     # 剧集关联信息
     series_id: Optional[str] = Field(None, description="所属 Series 的 ID；独立项目时为 None")

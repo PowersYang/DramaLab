@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { Boxes, ChevronDown, Clapperboard, CreditCard, FolderKanban, LayoutDashboard, Library, Palette, Settings2, SlidersHorizontal, Users2, WalletCards, Workflow } from "lucide-react";
+import { AlertCircle, Boxes, ChevronDown, Clapperboard, CreditCard, FolderKanban, LayoutDashboard, Library, Palette, Settings2, SlidersHorizontal, Users2, WalletCards, Workflow, Menu } from "lucide-react";
 
+import AdminBreadcrumbs from "@/components/studio/admin/AdminBreadcrumbs";
+import TagsView from "@/components/studio/TagsView";
 import DramaLabBranding from "@/components/layout/DramaLabBranding";
 import { api } from "@/lib/api";
 import {
@@ -19,6 +21,9 @@ interface StudioShellProps {
   children: ReactNode;
   title: string;
   description: string;
+  breadcrumbs: Array<{ label: string; href?: string }>;
+  sectionLabel?: string;
+  sectionHint?: string;
   actions?: ReactNode;
 }
 
@@ -55,7 +60,15 @@ const SECTION_LABELS: Record<StudioNavItem["section"], string> = {
   governance: "平台治理",
 };
 
-export default function StudioShell({ children, title, description, actions }: StudioShellProps) {
+export default function StudioShell({
+  children,
+  title,
+  description,
+  breadcrumbs,
+  sectionLabel,
+  sectionHint,
+  actions,
+}: StudioShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const me = useAuthStore((state) => state.me);
@@ -65,6 +78,8 @@ export default function StudioShell({ children, title, description, actions }: S
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const visibleNavItems = useMemo(
     () =>
@@ -133,43 +148,45 @@ export default function StudioShell({ children, title, description, actions }: S
   }, []);
 
   return (
-    <div
-      data-studio-theme="light"
-      className="studio-theme-root studio-shell-root flex min-h-screen text-slate-900"
-    >
-      <aside className="studio-app-sidebar hidden w-[248px] flex-col px-4 py-5 lg:flex">
-        <div className="studio-app-brand-wrap">
-          <Link href="/studio" className="block">
-            <DramaLabBranding size="sm" showSlogan={false} />
+    <div className="flex h-screen w-full overflow-hidden bg-[#f0f2f5] text-slate-900">
+      {/* Sidebar - Dark theme like vue-element-admin */}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-[210px] flex-col bg-[#304156] shadow-xl transition-all duration-300 lg:static lg:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className="flex h-[50px] items-center px-4">
+          <Link href="/studio" className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white">
+              <Clapperboard size={20} />
+            </div>
+            <span className="text-sm font-bold tracking-tight text-white">DramaLab Console</span>
           </Link>
         </div>
 
-        <div className="mt-6 space-y-5">
+        <div className="no-scrollbar flex-1 overflow-y-auto py-2">
           {navSections.map((group) => (
-            <div key={group.section}>
-              <div className="px-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] studio-faint">{group.label}</p>
+            <div key={group.section} className="mb-4">
+              <div className="px-5 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>
               </div>
-              <nav className="mt-3 space-y-2">
+              <nav className="space-y-0.5">
                 {group.items.map((item) => {
                   const isActive = pathname === item.href || (item.href !== "/studio" && pathname.startsWith(`${item.href}/`));
-                  const isPending = pendingPath === item.href && !isActive;
                   const Icon = item.icon;
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
-                      onClick={() => setPendingPath(item.href)}
-                      className={`studio-nav-item ${
-                        isActive ? "studio-nav-item-active" : "studio-nav-item-idle"
+                      onClick={() => {
+                        setPendingPath(item.href);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`group flex items-center gap-3 px-5 py-3 text-[13px] transition-all ${
+                        isActive
+                          ? "bg-[#263445] text-[#409eff]"
+                          : "text-[#bfcbd9] hover:bg-[#263445] hover:text-white"
                       }`}
                     >
-                      <span className={`studio-nav-icon ${isActive ? "studio-nav-icon-active" : ""}`}>
-                        <Icon size={16} />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      {isActive ? <span className="studio-nav-pill">{item.shortLabel}</span> : null}
-                      {isPending ? <span className="studio-nav-pending-dot" aria-hidden="true" /> : null}
+                      <Icon size={16} className={isActive ? "text-[#409eff]" : "group-hover:text-white"} />
+                      <span className="font-medium">{item.label}</span>
+                      {isActive && <div className="ml-auto h-1 w-1 rounded-full bg-[#409eff]" />}
                     </Link>
                   );
                 })}
@@ -178,97 +195,115 @@ export default function StudioShell({ children, title, description, actions }: S
           ))}
         </div>
 
-        <div className="studio-side-footer mt-auto">
-          <div className="studio-side-footer-label">当前工作区</div>
-          <div className="mt-2 text-sm font-semibold studio-strong">
-            {currentWorkspace?.workspace_name || "未选择工作区"}
-          </div>
-          <div className="mt-1 text-xs studio-muted">
-            {currentWorkspace?.organization_name || "DramaLab"}
-          </div>
-          <div className="mt-4 grid gap-2">
-            <div className="rounded-[1rem] border border-slate-200/80 bg-white/70 px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] studio-faint">Console Mode</div>
-              <div className="mt-2 flex items-center gap-2 text-sm font-semibold studio-strong">
-                <Clapperboard size={14} />
-                Production Console
-              </div>
-            </div>
-            <div className="rounded-[1rem] border border-slate-200/80 bg-white/70 px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] studio-faint">Focus</div>
-              <div className="mt-2 text-sm studio-muted">让项目编排、任务执行与异常处理在同一套后台节奏里完成。</div>
-            </div>
+        <div className="border-t border-white/5 bg-[#263445] p-4">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Workspace</div>
+          <div className="truncate text-xs font-semibold text-slate-300">
+            {currentWorkspace?.workspace_name || "DramaLab"}
           </div>
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col">
-        <header className="studio-app-topbar">
-          <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-[-0.04em] studio-strong lg:text-[2.2rem]">{title}</h1>
-            </div>
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Topbar - Fixed height, clean, professional */}
+        <header className="z-20 flex h-[50px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-slate-100 lg:hidden"
+            >
+              <Menu size={20} />
+            </button>
+            <AdminBreadcrumbs items={breadcrumbs} />
+          </div>
 
-            <div className="flex flex-wrap items-center gap-3 self-start lg:justify-end">
-              {me?.workspaces?.length ? (
-                <label className="studio-control-chip">
-                  <span className="studio-faint">工作区</span>
-                  <select
-                    value={me.current_workspace_id || ""}
-                    disabled={isSwitchingWorkspace}
-                    onChange={async (event) => {
-                      if (!event.target.value || event.target.value === me.current_workspace_id) return;
-                      setIsSwitchingWorkspace(true);
-                      try {
-                        await switchWorkspace(event.target.value);
-                        router.refresh();
-                      } finally {
-                        setIsSwitchingWorkspace(false);
-                      }
-                    }}
-                    className="studio-select min-w-[320px] border-none bg-transparent px-0 py-0 font-semibold shadow-none"
-                  >
-                    {me.workspaces.map((workspace) => (
-                      <option key={workspace.workspace_id} value={workspace.workspace_id}>
-                        {workspace.organization_name || "组织"} / {workspace.workspace_name || "工作区"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+          <div className="flex items-center gap-4">
+            {me?.workspaces?.length ? (
+              <div className="relative flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 pr-1">
+                <span className="mr-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">WS</span>
+                <select
+                  value={me.current_workspace_id || ""}
+                  disabled={isSwitchingWorkspace}
+                  onChange={async (event) => {
+                    if (!event.target.value || event.target.value === me.current_workspace_id) return;
+                    setIsSwitchingWorkspace(true);
+                    try {
+                      await switchWorkspace(event.target.value);
+                      router.refresh();
+                    } finally {
+                      setIsSwitchingWorkspace(false);
+                    }
+                  }}
+                  className="bg-transparent text-xs font-semibold text-slate-700 outline-none"
+                >
+                  {me.workspaces.map((workspace) => (
+                    <option key={workspace.workspace_id} value={workspace.workspace_id}>
+                      {workspace.workspace_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
 
-              {me ? (
-                <div className="relative">
-                  <button type="button" onClick={() => setIsUserMenuOpen((value) => !value)} className="studio-control-chip">
-                    <span className="font-semibold studio-strong">{me.user.display_name || me.user.email || "DramaLab 用户"}</span>
-                    <span className="studio-faint">{me.current_role_name || "成员"}</span>
-                    <ChevronDown size={14} className="studio-faint" />
-                  </button>
-                  {isUserMenuOpen ? (
-                    <div
-                      className="absolute right-0 top-full z-20 mt-2 min-w-[180px] rounded-[14px] border p-2 shadow-xl"
-                      style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-strong)" }}
-                    >
-                      <button
-                        onClick={() => {
-                          setIsUserMenuOpen(false);
-                          void signOut().then(() => router.replace("/?auth=signin"));
-                        }}
-                        className="flex w-full items-center rounded-[10px] px-3 py-2 text-sm font-semibold studio-muted hover:bg-slate-50"
-                      >
-                        退出登录
-                      </button>
+            {me ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsUserMenuOpen((value) => !value)}
+                  className="flex items-center gap-2 rounded-md hover:bg-slate-50 p-1 px-2 transition-colors"
+                >
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200">
+                    {me.user.display_name?.[0] || me.user.email?.[0] || "U"}
+                  </div>
+                  <span className="text-xs font-semibold text-slate-700">{me.user.display_name || "User"}</span>
+                  <ChevronDown size={14} className="text-slate-400" />
+                </button>
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 top-full z-30 mt-1 min-w-[160px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                    <div className="border-b border-slate-100 bg-slate-50/50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Account</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-slate-700">{me.user.email}</p>
                     </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {actions}
-            </div>
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        void signOut().then(() => router.replace("/?auth=signin"));
+                      }}
+                      className="flex w-full items-center px-4 py-2.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </header>
 
-        <main className="flex-1 px-5 py-5 lg:px-8 lg:py-6">{children}</main>
+        {/* Tags View - vue-element-admin style */}
+        <TagsView currentMeta={{ title, path: pathname }} />
+
+        {/* Main Content Area - Scrollable */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <div className="mx-auto max-w-[1600px]">
+            {/* Minimalist page header if needed, or just children */}
+            <div className="mb-6 flex flex-col gap-1">
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">{title}</h2>
+              <p className="text-xs text-slate-500">{description}</p>
+            </div>
+            {children}
+          </div>
+        </main>
       </div>
+
+      <style jsx>{`
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </div>
   );
 }

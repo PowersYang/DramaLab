@@ -664,6 +664,58 @@ export interface FinalMixTimelineDraft {
     clips: FinalMixClipDraft[];
 }
 
+export type TimelineTrackType = "video" | "dialogue" | "sfx" | "bgm";
+export type TimelineAssetKind = "video" | "audio";
+
+export interface TimelineAsset {
+    id: string;
+    kind: TimelineAssetKind;
+    source_url: string;
+    label: string;
+    source_duration: number;
+    frame_id?: string;
+    video_task_id?: string;
+    role?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface TimelineTrack {
+    id: string;
+    track_type: TimelineTrackType;
+    label: string;
+    order: number;
+    enabled: boolean;
+    locked: boolean;
+    gain: number;
+    solo: boolean;
+}
+
+export interface TimelineClip {
+    id: string;
+    asset_id: string;
+    track_id: string;
+    clip_order: number;
+    timeline_start: number;
+    timeline_end: number;
+    source_start: number;
+    source_end: number;
+    volume: number;
+    fade_in_duration: number;
+    fade_out_duration: number;
+    lane_index: number;
+    linked_clip_id?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface ProjectTimeline {
+    project_id: string;
+    version: number;
+    tracks: TimelineTrack[];
+    assets: TimelineAsset[];
+    clips: TimelineClip[];
+    updated_at: string;
+}
+
 export interface ProjectBrief {
     id: string;
     title: string;
@@ -687,6 +739,7 @@ export interface ProjectSummary {
     episode_number?: number | null;
     character_count: number;
     scene_count: number;
+    prop_count: number;
     frame_count: number;
     created_at?: string | number;
     updated_at?: string | number;
@@ -699,6 +752,8 @@ export interface SeriesSummary {
     episode_count: number;
     character_count: number;
     scene_count: number;
+    prop_count: number;
+    frame_count: number;
     created_at?: string | number;
     updated_at?: string | number;
 }
@@ -711,6 +766,19 @@ export interface EpisodeBrief {
     frame_count: number;
     created_at?: string | number;
     updated_at?: string | number;
+}
+
+export interface Announcement {
+    id: string;
+    title: string;
+    content: string;
+    status: "active" | "inactive";
+    priority: number;
+    publish_at?: string;
+    expires_at?: string;
+    created_at: string;
+    updated_at: string;
+    created_by?: string;
 }
 
 export const api = {
@@ -817,8 +885,18 @@ export const api = {
         return res.data;
     },
 
+    listWorkspaceInvitations: async (): Promise<InvitationCreateResponse[]> => {
+        const res = await axios.get(`${API_URL}/workspace/invitations`);
+        return res.data;
+    },
+
     inviteWorkspaceMember: async (email: string, roleCode: string): Promise<InvitationCreateResponse> => {
         const res = await axios.post(`${API_URL}/workspace/invitations`, { email, role_code: roleCode });
+        return res.data;
+    },
+
+    deleteWorkspaceInvitation: async (invitationId: string) => {
+        const res = await axios.delete(`${API_URL}/workspace/invitations/${invitationId}`);
         return res.data;
     },
 
@@ -1423,6 +1501,21 @@ export const api = {
         });
     },
 
+    getProjectTimeline: async (scriptId: string): Promise<ProjectTimeline> => {
+        return fetchJson(`${API_URL}/projects/${scriptId}/timeline`);
+    },
+
+    updateProjectTimeline: async (
+        scriptId: string,
+        payload: Pick<ProjectTimeline, "version" | "tracks" | "assets" | "clips">
+    ): Promise<ProjectTimeline> => {
+        return fetchJson(`${API_URL}/projects/${scriptId}/timeline`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+    },
+
     updateVoiceParams: async (scriptId: string, charId: string, speed: number, pitch: number, volume: number) => {
         return fetchJson(`${API_URL}/projects/${scriptId}/characters/${charId}/voice_params`, {
             method: "PUT",
@@ -1777,6 +1870,31 @@ export const api = {
     importFileConfirm: async (data: { title: string; description?: string; text: string; episodes: any[]; import_id?: string }): Promise<TaskReceipt> => {
         const response = await axios.post(`${API_URL}/series/import/confirm`, data);
         return response.data;
+    },
+
+    // Announcements
+    listAnnouncements: async (): Promise<Announcement[]> => {
+        const res = await axios.get(`${API_URL}/announcements`);
+        return res.data;
+    },
+    listAllAnnouncements: async (): Promise<Announcement[]> => {
+        const res = await axios.get(`${API_URL}/announcements/all`);
+        return res.data;
+    },
+    createAnnouncement: async (data: Partial<Announcement>): Promise<Announcement> => {
+        const res = await axios.post(`${API_URL}/announcements`, data);
+        return res.data;
+    },
+    getAnnouncement: async (id: string): Promise<Announcement> => {
+        const res = await axios.get(`${API_URL}/announcements/${id}`);
+        return res.data;
+    },
+    updateAnnouncement: async (id: string, data: Partial<Announcement>): Promise<Announcement> => {
+        const res = await axios.patch(`${API_URL}/announcements/${id}`, data);
+        return res.data;
+    },
+    deleteAnnouncement: async (id: string): Promise<void> => {
+        await axios.delete(`${API_URL}/announcements/${id}`);
     },
 };
 

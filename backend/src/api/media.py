@@ -8,11 +8,11 @@ import json
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from ..application.tasks import TaskService
-from ..application.services import ProjectService, VideoTaskService
+from ..application.services import ProjectService, ProjectTimelineService, VideoTaskService
 from ..application.services.model_provider_service import ModelProviderService
 from ..auth.dependencies import get_request_context
 from ..application.workflows import MediaWorkflow
-from ..schemas.models import Script
+from ..schemas.models import ProjectTimeline, Script, TimelineAsset, TimelineClip, TimelineTrack
 from ..common import logger, signed_response
 from ..schemas.requests import (
     BindVoiceRequest,
@@ -21,6 +21,7 @@ from ..schemas.requests import (
     GenerateLineAudioRequest,
     MergeVideosRequest,
     PreviewVoiceRequest,
+    UpdateProjectTimelineRequest,
     UpdateVoiceParamsRequest,
 )
 from ..schemas.task_models import TaskReceipt
@@ -32,6 +33,7 @@ media_workflow = MediaWorkflow()
 project_service = ProjectService()
 task_service = TaskService()
 model_provider_service = ModelProviderService()
+project_timeline_service = ProjectTimelineService()
 
 
 def _timeline_scope_suffix(final_mix_timeline: dict | None) -> str:
@@ -230,6 +232,51 @@ async def generate_line_audio(
         return signed_response(receipt)
     except Exception as exc:
         logger.exception("MEDIA_API: generate_line_audio unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/projects/{script_id}/timeline", response_model=ProjectTimeline)
+async def get_project_timeline(script_id: str):
+    """返回项目时间轴；若尚未保存过，则按当前素材即时构建默认工程。"""
+    try:
+        logger.info("MEDIA_API: get_project_timeline script_id=%s", script_id)
+        return signed_response(project_timeline_service.get_timeline(script_id))
+    except ValueError as exc:
+        logger.warning("MEDIA_API: get_project_timeline failed script_id=%s detail=%s", script_id, exc)
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.exception("MEDIA_API: get_project_timeline unexpected_error script_id=%s", script_id)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.put("/projects/{script_id}/timeline", response_model=ProjectTimeline)
+async def update_project_timeline(script_id: str, request: UpdateProjectTimelineRequest):
+    """保存项目时间轴。
+
+    Phase 1 先把时间轴整体写回项目 JSON 列，确保前后端已经有统一真源，
+    后续再把高频编辑热点拆成更细粒度的写模型。
+    """
+    try:
+        logger.info(
+            "MEDIA_API: update_project_timeline script_id=%s track_count=%s clip_count=%s asset_count=%s",
+            script_id,
+            len(request.tracks),
+            len(request.clips),
+            len(request.assets),
+        )
+        timeline = ProjectTimeline(
+            project_id=script_id,
+            version=request.version,
+            tracks=[TimelineTrack(**item.model_dump()) for item in request.tracks],
+            assets=[TimelineAsset(**item.model_dump()) for item in request.assets],
+            clips=[TimelineClip(**item.model_dump()) for item in request.clips],
+        )
+        return signed_response(project_timeline_service.save_timeline(script_id, timeline))
+    except ValueError as exc:
+        logger.warning("MEDIA_API: update_project_timeline failed script_id=%s detail=%s", script_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("MEDIA_API: update_project_timeline unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

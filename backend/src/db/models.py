@@ -654,3 +654,15 @@ class TaskConcurrencyLimitRecord(GlobalAuditMixin, Base):
     organization_id: Mapped[str] = mapped_column(String(64), ForeignKey("organizations.id"), nullable=False, index=True)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class SystemAnnouncementRecord(Base, GlobalAuditMixin, SoftDeleteMixin):
+    __tablename__ = "system_announcements"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False) # active, inactive
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -460,7 +460,7 @@ export default function PlatformModelAdmin() {
       ) : null}
 
       <section className="studio-panel p-6">
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="admin-ledger-head !mb-6 !rounded-[1rem] !border">
           <h2 className="text-xl font-bold text-slate-950">厂商管理</h2>
           <button
             onClick={openCreateProviderModal}
@@ -470,9 +470,9 @@ export default function PlatformModelAdmin() {
           </button>
         </div>
 
-        <div className="overflow-x-auto rounded-[1.5rem] border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
+        <div className="admin-governance-table">
+          <table className="bg-white text-sm">
+            <thead>
               <tr>
                 <th className="px-4 py-3 font-semibold">厂商编码</th>
                 <th className="px-4 py-3 font-semibold">厂商名称</th>
@@ -541,7 +541,7 @@ export default function PlatformModelAdmin() {
       </section>
 
       <section className="studio-panel p-6">
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="admin-ledger-head !mb-6 !rounded-[1rem] !border">
           <h2 className="text-xl font-bold text-slate-950">模型管理</h2>
           <button
             onClick={openCreateCatalogModal}
@@ -551,9 +551,9 @@ export default function PlatformModelAdmin() {
           </button>
         </div>
 
-        <div className="overflow-x-auto rounded-[1.5rem] border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
+        <div className="admin-governance-table">
+          <table className="bg-white text-sm">
+            <thead>
               <tr>
                 <th className="px-4 py-3 font-semibold">供应商</th>
                 <th className="px-4 py-3 font-semibold">模型类型</th>
@@ -634,76 +634,79 @@ export default function PlatformModelAdmin() {
         title={providerMode === "create" ? "新增厂商" : "编辑厂商"}
         onClose={closeProviderModal}
       >
-        <div className="grid gap-4 lg:grid-cols-2">
-          <label className="text-sm text-slate-600">
+        <div className="admin-form-section">
+          <div className="admin-form-section-title">厂商基础配置</div>
+          <div className="admin-form-grid">
+          <label className="admin-form-field">
             供应商编码
             <input
               value={providerForm.provider_key}
               disabled={providerMode === "edit"}
               onChange={(event) => setProviderForm((prev) => ({ ...prev, provider_key: event.target.value.toUpperCase() }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
               placeholder="例如 DASHSCOPE"
             />
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             供应商名称
             <input
               value={providerForm.display_name}
               onChange={(event) => setProviderForm((prev) => ({ ...prev, display_name: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
             />
           </label>
-          <label className="text-sm text-slate-600 lg:col-span-2">
+          <label className="admin-form-field lg:col-span-2">
             描述
             <input
               value={providerForm.description}
               onChange={(event) => setProviderForm((prev) => ({ ...prev, description: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
             />
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             Base URL
             <input
               value={providerForm.base_url}
               onChange={(event) => setProviderForm((prev) => ({ ...prev, base_url: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
               placeholder="留空使用默认地址"
             />
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             凭据字段
             <input
               value={providerForm.credential_fields_text}
               onChange={(event) => handleProviderCredentialFieldsChange(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
               placeholder="例如 api_key, secret_key"
             />
           </label>
+          </div>
+        </div>
           {providerFields.length ? (
-            <div className="grid gap-4 lg:col-span-2 lg:grid-cols-2">
+            <div className="admin-form-section">
+              <div className="admin-form-section-title">凭据配置</div>
+              <div className="admin-form-grid">
               {providerFields.map((field) => (
-                <label key={field} className="text-sm text-slate-600">
+                <label key={field} className="admin-form-field">
                   {field}
                   <input
                     type="password"
                     value={providerForm.credential_values[field] || ""}
                     onChange={(event) => handleProviderFieldChange(field, event.target.value)}
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
                     placeholder={providerMode === "edit" ? "留空保留；输入 __CLEAR__ 清空" : "输入凭据"}
                   />
                 </label>
               ))}
             </div>
+            </div>
           ) : null}
-          <label className="text-sm text-slate-600 lg:col-span-2">
+          <div className="admin-form-section">
+            <div className="admin-form-section-title">供应商扩展设置</div>
+            <label className="admin-form-field">
             供应商设置 JSON
             <textarea
               value={providerForm.settings_json_text}
               onChange={(event) => setProviderForm((prev) => ({ ...prev, settings_json_text: event.target.value }))}
-              className="mt-2 min-h-[120px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+              className="font-mono text-sm"
             />
           </label>
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <label className="mt-4 flex items-center gap-2 text-sm font-medium text-slate-700">
             <input
               type="checkbox"
               checked={providerForm.enabled}
@@ -711,8 +714,8 @@ export default function PlatformModelAdmin() {
             />
             启用该厂商
           </label>
-        </div>
-        <div className="mt-6 flex gap-3">
+          </div>
+        <div className="admin-form-actions">
           <button
             onClick={() => void saveProvider()}
             disabled={busyKey?.startsWith("provider:") || false}
@@ -734,43 +737,41 @@ export default function PlatformModelAdmin() {
         title={catalogMode === "create" ? "新增模型" : "编辑模型"}
         onClose={closeCatalogModal}
       >
-        <div className="grid gap-4 lg:grid-cols-2">
-          <label className="text-sm text-slate-600">
+        <div className="admin-form-section">
+          <div className="admin-form-section-title">模型基础配置</div>
+          <div className="admin-form-grid">
+          <label className="admin-form-field">
             模型 ID
             <input
               value={catalogForm.model_id}
               disabled={catalogMode === "edit"}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, model_id: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
               placeholder="例如 wan2.6-i2v"
             />
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             模型名称
             <input
               value={catalogForm.display_name}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, display_name: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
             />
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             模型类型
             <select
               value={catalogForm.task_type}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, task_type: event.target.value as TaskType }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
             >
               <option value="t2i">t2i</option>
               <option value="i2i">i2i</option>
               <option value="i2v">i2v</option>
             </select>
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             供应商
             <select
               value={catalogForm.provider_key}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, provider_key: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
             >
               <option value="">请选择供应商</option>
               {providers.map((provider) => (
@@ -780,21 +781,19 @@ export default function PlatformModelAdmin() {
               ))}
             </select>
           </label>
-          <label className="text-sm text-slate-600 lg:col-span-2">
+          <label className="admin-form-field lg:col-span-2">
             描述
             <input
               value={catalogForm.description}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, description: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
             />
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             排序
             <input
               type="number"
               value={catalogForm.sort_order}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, sort_order: Number(event.target.value) || 100 }))}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-900"
             />
           </label>
           <div className="flex items-end gap-6 text-sm font-medium text-slate-700">
@@ -816,29 +815,35 @@ export default function PlatformModelAdmin() {
               对业务前台公开
             </label>
           </div>
+          </div>
+        </div>
           {catalogForm.provider_key && !providerMap.get(catalogForm.provider_key)?.enabled ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
               当前供应商已关闭，模型不能单独启用。请先开启供应商，再修改模型启用状态。
             </div>
           ) : null}
-          <label className="text-sm text-slate-600">
+          <div className="admin-form-section">
+            <div className="admin-form-section-title">能力与默认参数</div>
+            <div className="admin-form-grid">
+          <label className="admin-form-field">
             能力 JSON
             <textarea
               value={catalogForm.capabilities_json_text}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, capabilities_json_text: event.target.value }))}
-              className="mt-2 min-h-[140px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+              className="min-h-[140px] font-mono text-sm"
             />
           </label>
-          <label className="text-sm text-slate-600">
+          <label className="admin-form-field">
             默认参数 JSON
             <textarea
               value={catalogForm.default_settings_json_text}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, default_settings_json_text: event.target.value }))}
-              className="mt-2 min-h-[140px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+              className="min-h-[140px] font-mono text-sm"
             />
           </label>
-        </div>
-        <div className="mt-6 flex gap-3">
+            </div>
+          </div>
+        <div className="admin-form-actions">
           <button
             onClick={() => void saveCatalog()}
             disabled={busyKey?.startsWith("catalog:") || false}

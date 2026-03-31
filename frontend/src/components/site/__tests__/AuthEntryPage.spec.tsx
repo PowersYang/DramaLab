@@ -86,10 +86,10 @@ describe("AuthEntryPage", () => {
   it("submits password sign in by default", async () => {
     await renderAuth("signin");
 
-    fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
-    fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
-    fireEvent.change(screen.getByPlaceholderText("输入你的登录密码"), { target: { value: "strong-pass-123" } });
-    fireEvent.click(screen.getByText("登录并进入工作台"));
+    fireEvent.change(screen.getByPlaceholderText("请输入邮箱 / 手机号"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("输入图形验证码"), { target: { value: "ABCD1" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "strong-pass-123" } });
+    fireEvent.click(screen.getByLabelText("主登录按钮"));
 
     await waitFor(() => {
       expect(mockSignInWithPassword).toHaveBeenCalledWith({
@@ -102,17 +102,14 @@ describe("AuthEntryPage", () => {
     });
   });
 
-  it("submits org admin signup with organization name", async () => {
+  it("submits password signup in the simplified modal", async () => {
     await renderAuth("signup");
 
-    fireEvent.click(screen.getByText("创建团队空间"));
-    fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
-    fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
-    fireEvent.change(screen.getByPlaceholderText("例如：王制片，团队内会显示这个名称"), { target: { value: "Owner" } });
-    fireEvent.change(screen.getByPlaceholderText("例如：银河短剧工作室"), { target: { value: "银河短剧" } });
-    fireEvent.change(screen.getByPlaceholderText("至少 6 位，建议包含字母和数字"), { target: { value: "strong-pass-123" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入邮箱 / 手机号"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("输入图形验证码"), { target: { value: "ABCD1" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "strong-pass-123" } });
 
-    fireEvent.click(screen.getByText("创建账号并进入工作台"));
+    fireEvent.click(screen.getByLabelText("主注册按钮"));
 
     await waitFor(() => {
       expect(mockSignUpWithPassword).toHaveBeenCalledWith({
@@ -121,9 +118,6 @@ describe("AuthEntryPage", () => {
         password: "strong-pass-123",
         captchaId: "captcha-1",
         captchaCode: "ABCD1",
-        displayName: "Owner",
-        signupKind: "org_admin",
-        organizationName: "银河短剧",
       });
     });
   });
@@ -140,10 +134,10 @@ describe("AuthEntryPage", () => {
 
     await renderAuth("signin");
 
-    fireEvent.click(screen.getByText("邮箱验证码"));
-    fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "577790911@qq.com" } });
-    fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
-    fireEvent.click(screen.getByText("发送登录验证码"));
+    fireEvent.click(screen.getByText("短信登录"));
+    fireEvent.change(screen.getByPlaceholderText("请输入手机号"), { target: { value: "13800138000" } });
+    fireEvent.change(screen.getByPlaceholderText("输入图形验证码"), { target: { value: "ABCD1" } });
+    fireEvent.click(screen.getByText("获取验证码"));
 
     await waitFor(() => {
       expect(screen.getByText("当前环境还没有配置验证码邮件发送，请先补齐 SMTP 配置后再登录。")).toBeInTheDocument();
@@ -155,11 +149,10 @@ describe("AuthEntryPage", () => {
 
     await renderAuth("signup");
 
-    fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
-    fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
-    fireEvent.change(screen.getByPlaceholderText("例如：Will，首次注册时会用于创建个人空间"), { target: { value: "Owner" } });
-    fireEvent.change(screen.getByPlaceholderText("至少 6 位，建议包含字母和数字"), { target: { value: "12345" } });
-    fireEvent.click(screen.getByText("创建账号并进入工作台"));
+    fireEvent.change(screen.getByPlaceholderText("请输入邮箱 / 手机号"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("输入图形验证码"), { target: { value: "ABCD1" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "12345" } });
+    fireEvent.click(screen.getByLabelText("主注册按钮"));
 
     await waitFor(() => {
       expect(screen.getByText("密码至少需要 6 位。")).toBeInTheDocument();
@@ -171,10 +164,10 @@ describe("AuthEntryPage", () => {
 
     await renderAuth("signin");
 
-    fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
-    fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
-    fireEvent.click(screen.getByText("忘记密码"));
-    fireEvent.click(screen.getByText("发送重置验证码"));
+    fireEvent.change(screen.getByPlaceholderText("请输入邮箱 / 手机号"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("输入图形验证码"), { target: { value: "ABCD1" } });
+    fireEvent.click(screen.getByText("忘记密码?"));
+    fireEvent.click(screen.getByText("发送重置码"));
 
     await waitFor(() => {
       expect(mockSendEmailCode).toHaveBeenCalledWith("owner@example.com", "reset_password", "email", {
@@ -183,10 +176,10 @@ describe("AuthEntryPage", () => {
       });
     });
 
-    fireEvent.change(screen.getByPlaceholderText("输入 6 位验证码"), { target: { value: "654321" } });
-    fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ZXCV2" } });
-    fireEvent.change(screen.getByPlaceholderText("至少 6 位，重置后立即生效"), { target: { value: "new-pass-1" } });
-    fireEvent.click(screen.getByText("重置密码并登录"));
+    fireEvent.change(screen.getByPlaceholderText("请输入验证码"), { target: { value: "654321" } });
+    fireEvent.change(screen.getByPlaceholderText("输入图形验证码"), { target: { value: "ZXCV2" } });
+    fireEvent.change(screen.getByPlaceholderText("设置新密码"), { target: { value: "new-pass-1" } });
+    fireEvent.click(screen.getByLabelText("主登录按钮"));
 
     await waitFor(() => {
       expect(mockResetPasswordWithCode).toHaveBeenCalledWith({
@@ -203,11 +196,10 @@ describe("AuthEntryPage", () => {
   it("supports phone password sign in", async () => {
     await renderAuth("signin");
 
-    fireEvent.click(screen.getByText("手机号"));
-    fireEvent.change(screen.getByPlaceholderText("例如：13800138000"), { target: { value: "13800138000" } });
-    fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
-    fireEvent.change(screen.getByPlaceholderText("输入你的登录密码"), { target: { value: "123456" } });
-    fireEvent.click(screen.getByText("登录并进入工作台"));
+    fireEvent.change(screen.getByPlaceholderText("请输入邮箱 / 手机号"), { target: { value: "13800138000" } });
+    fireEvent.change(screen.getByPlaceholderText("输入图形验证码"), { target: { value: "ABCD1" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByLabelText("主登录按钮"));
 
     await waitFor(() => {
       expect(mockSignInWithPassword).toHaveBeenCalledWith({

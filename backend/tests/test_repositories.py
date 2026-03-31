@@ -168,6 +168,42 @@ class RepositoryPersistenceTest(unittest.TestCase):
                 expected_version=1,
             )
 
+    def test_project_timeline_round_trip(self):
+        from src.repository import ProjectRepository
+        from src.schemas.models import ProjectTimeline, Script, TimelineAsset, TimelineClip, TimelineTrack
+
+        now = utc_now()
+        repository = ProjectRepository()
+        repository.create(
+            Script(
+                id="project_timeline_1",
+                title="Timeline",
+                original_text="text",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                timeline=ProjectTimeline(
+                    project_id="project_timeline_1",
+                    version=1,
+                    tracks=[TimelineTrack(id="track_video_main", track_type="video", label="视频", order=0)],
+                    assets=[TimelineAsset(id="asset_video_1", kind="video", source_url="oss://video-1", label="镜头 1", source_duration=5)],
+                    clips=[TimelineClip(id="clip_video_1", asset_id="asset_video_1", track_id="track_video_main", clip_order=0, timeline_start=0, timeline_end=5, source_start=0, source_end=5)],
+                    updated_at=now,
+                ),
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        loaded = repository.get("project_timeline_1")
+        self.assertIsNotNone(loaded)
+        self.assertIsNotNone(loaded.timeline)
+        self.assertEqual(loaded.timeline.project_id, "project_timeline_1")
+        self.assertEqual(loaded.timeline.tracks[0].track_type, "video")
+        self.assertEqual(loaded.timeline.assets[0].source_url, "oss://video-1")
+
     def test_series_repository_round_trip(self):
         from src.repository import SeriesRepository
         from src.schemas.models import AssetUnit, Character, ImageVariant, Series

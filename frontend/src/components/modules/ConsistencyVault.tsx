@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, MapPin, Box, Lock, Unlock, RefreshCw, Image as ImageIcon, X, Check, ChevronRight, Trash2, Plus } from "lucide-react";
+import { User, MapPin, Box, Lock, Unlock, RefreshCw, Image as ImageIcon, X, Check, ChevronRight, Trash2, Plus, Sparkles, Video, FileText, Wand2, Palette, Sliders } from "lucide-react";
 import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
@@ -401,101 +401,124 @@ export default function ConsistencyVault() {
     }, [currentProject, fetchProjectJobs, reconcileGeneratingTasks]);
 
     return (
-        <div className="flex flex-col h-full text-white">
-            {/* Header */}
-            <div>
-                <div className={PANEL_HEADER_CLASS}>
-                    <h2 className={PANEL_TITLE_CLASS}>
-                        <Box size={16} className="text-primary" />
-                        资产制作
-                    </h2>
-                    <div className="flex gap-2">
+        <div className="flex flex-col h-full bg-slate-950/20 backdrop-blur-sm">
+            {/* ── Header Section ── */}
+            <div className="px-6 py-6 border-b border-white/5 bg-slate-900/40">
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            <Box size={20} />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-white tracking-tight">资产中心</h2>
+                            <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wider mt-0.5">Asset Workbench</p>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
                         <button
                             onClick={handleSyncDescriptions}
-                            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+                            className="group flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
                             title="同步 Script 页面中的描述到所有素材"
                         >
-                            <RefreshCw size={16} className="text-blue-400" />
-                            <span className="text-sm font-bold">同步描述</span>
+                            <RefreshCw size={14} className="text-indigo-400 group-hover:rotate-180 transition-transform duration-500" />
+                            <span className="text-xs font-bold text-slate-300">同步剧本描述</span>
                         </button>
                     </div>
                 </div>
 
-                <div className="studio-panel-subheader p-4 pt-3">
-                    <div className="studio-panel-chip-rail flex shrink-0 gap-2 rounded-xl p-1 w-fit">
-                        <TabButton
-                            active={activeTab === "character"}
-                            onClick={() => setActiveTab("character")}
-                            icon={<User size={18} />}
-                            label="角色"
-                            count={currentProject?.characters?.length || 0}
-                        />
-                        <TabButton
-                            active={activeTab === "scene"}
-                            onClick={() => setActiveTab("scene")}
-                            icon={<MapPin size={18} />}
-                            label="场景"
-                            count={currentProject?.scenes?.length || 0}
-                        />
-                        <TabButton
-                            active={activeTab === "prop"}
-                            onClick={() => setActiveTab("prop")}
-                            icon={<Box size={18} />}
-                            label="道具"
-                            count={currentProject?.props?.length || 0}
-                        />
-                    </div>
+                <div className="flex items-center gap-2 p-1 bg-black/40 rounded-2xl w-fit border border-white/5">
+                    <TabButton
+                        active={activeTab === "character"}
+                        onClick={() => setActiveTab("character")}
+                        icon={<User size={16} />}
+                        label="角色"
+                        count={currentProject?.characters?.length || 0}
+                    />
+                    <TabButton
+                        active={activeTab === "scene"}
+                        onClick={() => setActiveTab("scene")}
+                        icon={<MapPin size={16} />}
+                        label="场景"
+                        count={currentProject?.scenes?.length || 0}
+                    />
+                    <TabButton
+                        active={activeTab === "prop"}
+                        onClick={() => setActiveTab("prop")}
+                        icon={<Box size={16} />}
+                        label="道具"
+                        count={currentProject?.props?.length || 0}
+                    />
                 </div>
             </div>
 
-            {/* Content Grid */}
-            <div className="flex-1 overflow-y-auto p-6">
+            {/* ── Content Grid ── */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {!currentProject ? (
-                    <div className="flex items-center justify-center h-full text-gray-500">
-                        正在加载项目...
+                    <div className="flex items-center justify-center h-full">
+                        <div className="flex flex-col items-center gap-4 animate-pulse">
+                            <div className="h-12 w-12 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+                            <p className="text-xs font-bold text-slate-500 tracking-widest uppercase">Loading Assets</p>
+                        </div>
                     </div>
                 ) : assets?.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-500 gap-4">
-                        <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
-                            {activeTab === "character" ? <User size={32} /> : activeTab === "scene" ? <MapPin size={32} /> : <Box size={32} />}
+                    <div className="flex flex-col items-center justify-center h-full py-20 px-6">
+                        <div className="w-24 h-24 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-2xl">
+                            {activeTab === "character" ? <User size={48} className="text-slate-600" /> : activeTab === "scene" ? <MapPin size={48} className="text-slate-600" /> : <Box size={48} className="text-slate-600" />}
                         </div>
-                        <p>暂无{getAssetTypeLabel(activeTab)}素材</p>
+                        <h3 className="text-lg font-bold text-white mb-2">暂无{getAssetTypeLabel(activeTab)}资产</h3>
+                        <p className="text-sm text-slate-500 text-center max-w-xs mb-8">
+                            您可以点击下方按钮手动添加，或者返回“剧本解析”步骤自动提取。
+                        </p>
+                        <button
+                            onClick={() => setIsCreateDialogOpen(true)}
+                            className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20"
+                        >
+                            <Plus size={18} />
+                            新增{getAssetTypeLabel(activeTab)}
+                        </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                        {assets?.map((asset: any) => (
-                            <AssetCard
-                                key={asset.id}
-                                asset={asset}
-                                type={activeTab}
-                                isGenerating={isAssetGenerating(asset.id)}
-                                isLockToggling={isAssetLockToggling(asset.id)}
-                                onGenerate={() => handleGenerate(asset.id, activeTab)}
-                                generatePriceCredits={assetGeneratePrice}
-                                balanceCredits={account?.balance_credits}
-                                generateAffordable={assetGenerateAffordable}
-                                onToggleLock={() => handleToggleLock(asset.id, activeTab)}
-                                onClick={() => {
-                                    setSelectedAssetId(asset.id);
-                                    setSelectedAssetType(activeTab);
-                                }}
-                                onDelete={() => handleDeleteAsset(asset.id, activeTab)}
-                                onUpload={() => handleOpenUploadModal(asset, activeTab)}
-                            />
-                        ))}
-                        {/* Create New Asset Button */}
-                        <motion.div
-                            layout
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            onClick={() => setIsCreateDialogOpen(true)}
-                            className="group relative aspect-[3/4] bg-black/20 rounded-2xl border-2 border-dashed border-white/20 hover:border-primary/50 overflow-hidden transition-all cursor-pointer flex items-center justify-center hover:bg-white/5"
-                        >
-                            <div className="flex flex-col items-center gap-3 text-gray-400 group-hover:text-primary transition-colors">
-                                <Plus size={40} />
-                                <span className="text-sm font-medium">新增{getAssetTypeLabel(activeTab)}</span>
-                            </div>
-                        </motion.div>
+                    <div className="p-8">
+                        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+                            {/* Create New Asset Button - Always First or Last? Let's put it first for better UX */}
+                            <motion.div
+                                layout
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                onClick={() => setIsCreateDialogOpen(true)}
+                                className="group relative aspect-[3/4] bg-white/[0.02] rounded-2xl border-2 border-dashed border-white/10 hover:border-indigo-500/50 hover:bg-white/5 transition-all cursor-pointer flex flex-col items-center justify-center gap-4"
+                            >
+                                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-500 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-all">
+                                    <Plus size={32} strokeWidth={1.5} />
+                                </div>
+                                <div className="text-center px-4">
+                                    <span className="text-[13px] font-bold text-slate-400 group-hover:text-white transition-colors">新增{getAssetTypeLabel(activeTab)}</span>
+                                    <p className="text-[10px] text-slate-600 mt-1">手动录入资产信息</p>
+                                </div>
+                            </motion.div>
+
+                            {assets?.map((asset: any) => (
+                                <AssetCard
+                                    key={asset.id}
+                                    asset={asset}
+                                    type={activeTab}
+                                    isGenerating={isAssetGenerating(asset.id)}
+                                    isLockToggling={isAssetLockToggling(asset.id)}
+                                    onGenerate={() => handleGenerate(asset.id, activeTab)}
+                                    generatePriceCredits={assetGeneratePrice}
+                                    balanceCredits={account?.balance_credits}
+                                    generateAffordable={assetGenerateAffordable}
+                                    onToggleLock={() => handleToggleLock(asset.id, activeTab)}
+                                    onClick={() => {
+                                        setSelectedAssetId(asset.id);
+                                        setSelectedAssetType(activeTab);
+                                    }}
+                                    onDelete={() => handleDeleteAsset(asset.id, activeTab)}
+                                    onUpload={() => handleOpenUploadModal(asset, activeTab)}
+                                />
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
@@ -656,187 +679,244 @@ function CharacterDetailModal({
         onGenerate(applyStyle, negativePrompt, batchSize);
     };
 
-    return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-8">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="asset-surface-strong border border-white/10 rounded-2xl w-full max-w-5xl h-[85vh] flex overflow-hidden shadow-2xl"
-            >
-                {/* Left: Variant Selector */}
-                <div className="w-1/2 bg-black/40 relative border-r border-white/10 flex flex-col overflow-hidden">
-                    {/* Tab Switcher */}
-                    <div className="flex border-b border-white/10 bg-black/20">
-                        <button
-                            onClick={() => setActiveTab("image")}
-                            className={`flex-1 p-3 text-sm font-bold transition-colors ${activeTab === "image" ? "text-white border-b-2 border-primary bg-white/5" : "text-gray-500 hover:text-gray-300"}`}
-                        >
-                            图片参考
-                        </button>
-                        <button
-                            onClick={() => setActiveTab("video")}
-                            className={`flex-1 p-3 text-sm font-bold transition-colors ${activeTab === "video" ? "text-white border-b-2 border-primary bg-white/5" : "text-gray-500 hover:text-gray-300"}`}
-                        >
-                            视频参考
-                        </button>
-                    </div>
+    const typeLabel = getAssetTypeLabel(type);
 
-                    <div className="flex-1 p-4 overflow-hidden">
-                        {activeTab === "image" ? (
-                            <VariantSelector
-                                asset={asset.image_asset}
-                                currentImageUrl={asset.image_url}
-                                onSelect={handleSelectVariant}
-                                onDelete={handleDeleteVariant}
-                                onGenerate={handleGenerateClick}
-                                isGenerating={isGenerating}
-                                disableGenerate={!generateAffordable}
-                                generateDisabledReason="当前组织算力豆余额不足，无法提交资产生成任务"
-                                generatePriceCredits={generatePriceCredits}
-                                generateBalanceCredits={balanceCredits ?? 0}
-                                aspectRatio="16:9"
-                                className="h-full"
-                            />
-                        ) : (
-                            <VideoVariantSelector
-                                videos={asset.video_assets || []}
-                                onDelete={onDeleteVideo}
-                                onGenerate={(duration) => onGenerateVideo(videoPrompt, duration)}
-                                isGenerating={isGeneratingVideo}
-                                generatePriceCredits={videoGeneratePriceCredits}
-                                generateBalanceCredits={videoBalanceCredits ?? 0}
-                                disableGenerate={!videoGenerateAffordable}
-                                aspectRatio="16:9"
-                                className="h-full"
-                            />
-                        )}
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+            >
+                {/* ── Header ── */}
+                <div className="flex h-20 items-center justify-between border-b border-white/5 bg-white/[0.02] px-8">
+                    <div className="flex items-center gap-4">
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                            type === "scene" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                        } border`}>
+                            {type === "scene" ? <MapPin size={20} /> : <Box size={20} />}
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-xl font-bold text-white">{asset.name}</h2>
+                                <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                    {typeLabel}详情
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">管理资产参考图与视频变体</p>
+                        </div>
                     </div>
+                    <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
+                        <X size={24} />
+                    </button>
                 </div>
 
-                {/* Right: Details */}
-                <div className="w-1/2 flex flex-col">
-                    {/* Header */}
-                    <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
-                        <h2 className="text-2xl font-bold text-white">{asset.name}</h2>
-                        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white">
-                            <X size={24} />
-                        </button>
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 p-6 overflow-y-auto space-y-6">
-                        {/* Description */}
-                        <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                                <label className="text-sm font-bold text-gray-400">素材描述</label>
-                                {!isEditing && (
-                                    <button onClick={() => setIsEditing(true)} className="text-xs text-primary hover:underline">
-                                        编辑
-                                    </button>
-                                )}
-                            </div>
-                            {isEditing ? (
-                                <div className="space-y-2">
-                                    <textarea
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        className="w-full h-32 bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-300 resize-none focus:border-primary focus:outline-none"
-                                        placeholder="请输入素材描述"
-                                    />
-                                    <div className="flex justify-end gap-2">
-                                        <button onClick={() => { setIsEditing(false); setDescription(asset.description); }} className="px-3 py-1.5 text-xs text-gray-400 hover:text-white">取消</button>
-                                        <button onClick={handleSave} className="px-3 py-1.5 bg-primary text-white text-xs rounded hover:bg-primary/90">保存描述</button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <p className="text-sm text-gray-300 leading-relaxed bg-white/5 p-3 rounded-lg border border-transparent hover:border-white/10 transition-colors">
-                                    {asset.description || "暂未填写描述"}
-                                </p>
-                            )}
+                {/* ── Main Content Area ── */}
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left: Media Control */}
+                    <div className="w-[55%] flex flex-col border-r border-white/5 bg-black/20">
+                        {/* Internal Tabs */}
+                        <div className="flex p-2 bg-black/40 border-b border-white/5">
+                            <button
+                                onClick={() => setActiveTab("image")}
+                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                                    activeTab === "image" 
+                                        ? "bg-white/10 text-white shadow-lg ring-1 ring-white/10" 
+                                        : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                }`}
+                            >
+                                <ImageIcon size={16} />
+                                图片参考
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("video")}
+                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                                    activeTab === "video" 
+                                        ? "bg-white/10 text-white shadow-lg ring-1 ring-white/10" 
+                                        : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                }`}
+                            >
+                                <Video size={16} />
+                                视频参考
+                            </button>
                         </div>
 
-                        {/* Video Prompt (Only visible in Video Tab) */}
-                        {activeTab === "video" && (
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-400">视频提示词</label>
-                                <textarea
-                                    value={videoPrompt}
-                                    onChange={(e) => setVideoPrompt(e.target.value)}
-                                    className="w-full h-24 bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-300 resize-none focus:border-primary focus:outline-none"
-                                    placeholder="请输入视频动作描述"
+                        <div className="flex-1 overflow-hidden p-6">
+                            {activeTab === "image" ? (
+                                <VariantSelector
+                                    asset={asset.image_asset}
+                                    currentImageUrl={asset.image_url}
+                                    onSelect={handleSelectVariant}
+                                    onDelete={handleDeleteVariant}
+                                    onGenerate={handleGenerateClick}
+                                    isGenerating={isGenerating}
+                                    disableGenerate={!generateAffordable}
+                                    generateDisabledReason="当前组织算力豆余额不足，无法提交资产生成任务"
+                                    generatePriceCredits={generatePriceCredits}
+                                    generateBalanceCredits={balanceCredits ?? 0}
+                                    aspectRatio={type === "scene" ? "16:9" : "1:1"}
+                                    className="h-full"
                                 />
-                            </div>
-                        )}
-
-                        {/* Style Control (Only visible in Image Tab) */}
-                        {activeTab === "image" && (
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-400">风格设置</label>
-                                <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <input
-                                            type="checkbox"
-                                            id="applyStyleModal"
-                                            checked={applyStyle}
-                                            onChange={(e) => setApplyStyle(e.target.checked)}
-                                            className="rounded border-gray-600 bg-gray-700 text-primary focus:ring-primary"
-                                        />
-                                        <label htmlFor="applyStyleModal" className="text-sm font-bold text-gray-300 cursor-pointer select-none">
-                                            应用艺术指导风格
-                                        </label>
-                                    </div>
-
-                                    {stylePrompt && (
-                                        <div className="text-xs text-gray-500 font-mono bg-black/20 p-2 rounded border border-white/5">
-                                            <span className="text-primary font-bold">当前风格：</span> {stylePrompt}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Advanced Settings (Negative Prompt) - Only visible in Image Tab */}
-                        {activeTab === "image" && (
-                            <div className="space-y-2">
-                                <button
-                                    onClick={() => setShowAdvanced(!showAdvanced)}
-                                    className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-white transition-colors"
-                                >
-                                    <span>高级设置（负向提示词）</span>
-                                    <ChevronRight size={12} className={`transform transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
-                                </button>
-
-                                <AnimatePresence>
-                                    {showAdvanced && (
-                                        <motion.div
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: "auto", opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            className="overflow-hidden"
-                                        >
-                                            <textarea
-                                                value={negativePrompt}
-                                                onChange={(e) => setNegativePrompt(e.target.value)}
-                                                className="w-full h-24 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-400 resize-none focus:outline-none focus:border-primary/50 font-mono"
-                                                placeholder="请输入负向提示词"
-                                            />
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
-                        )}
+                            ) : (
+                                <VideoVariantSelector
+                                    videos={asset.video_assets || []}
+                                    onDelete={onDeleteVideo}
+                                    onGenerate={(duration) => onGenerateVideo(videoPrompt, duration)}
+                                    isGenerating={isGeneratingVideo}
+                                    generatePriceCredits={videoGeneratePriceCredits}
+                                    generateBalanceCredits={videoBalanceCredits ?? 0}
+                                    disableGenerate={!videoGenerateAffordable}
+                                    aspectRatio={type === "scene" ? "16:9" : "1:1"}
+                                    className="h-full"
+                                />
+                            )}
+                        </div>
                     </div>
 
-                    {/* Footer Actions */}
-                    <div className="p-6 border-t border-white/10 bg-black/20 flex gap-4">
-                        <button
-                            onClick={onClose}
-                            className="asset-card-action-secondary flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors"
-                        >
-                            <Check size={18} />
-                            完成
-                        </button>
+                    {/* Right: Info & Settings */}
+                    <div className="flex-1 flex flex-col bg-slate-900/50">
+                        <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+                            {/* Section: Description */}
+                            <section>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2 text-slate-400">
+                                        <FileText size={14} />
+                                        <h3 className="text-xs font-bold uppercase tracking-widest">素材描述</h3>
+                                    </div>
+                                    {!isEditing && (
+                                        <button 
+                                            onClick={() => setIsEditing(true)} 
+                                            className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                                        >
+                                            修改描述
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {isEditing ? (
+                                    <div className="space-y-3">
+                                        <textarea
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
+                                            className="w-full h-40 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-slate-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all"
+                                            placeholder="请输入详细的素材描述..."
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <button 
+                                                onClick={() => { setIsEditing(false); setDescription(asset.description); }} 
+                                                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors"
+                                            >
+                                                取消
+                                            </button>
+                                            <button 
+                                                onClick={handleSave} 
+                                                className="px-5 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20"
+                                            >
+                                                保存更改
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="group relative">
+                                        <p className="text-[13px] text-slate-300 leading-relaxed bg-white/[0.03] p-5 rounded-2xl border border-white/5 group-hover:border-white/10 transition-all">
+                                            {asset.description || "暂未填写描述"}
+                                        </p>
+                                    </div>
+                                )}
+                            </section>
+
+                            {/* Section: Prompts */}
+                            <section className="space-y-6">
+                                {activeTab === "video" ? (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2 text-slate-400">
+                                            <Wand2 size={14} />
+                                            <h3 className="text-xs font-bold uppercase tracking-widest">视频提示词</h3>
+                                        </div>
+                                        <textarea
+                                            value={videoPrompt}
+                                            onChange={(e) => setVideoPrompt(e.target.value)}
+                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-slate-300 resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
+                                            placeholder="描述您想要的视频动态效果..."
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-2 text-slate-400">
+                                                <Palette size={14} />
+                                                <h3 className="text-xs font-bold uppercase tracking-widest">全局风格</h3>
+                                            </div>
+                                            <div className="bg-white/[0.03] rounded-2xl p-5 border border-white/5 space-y-4">
+                                                <label className="flex items-center gap-3 cursor-pointer group">
+                                                    <div className="relative flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={applyStyle}
+                                                            onChange={(e) => setApplyStyle(e.target.checked)}
+                                                            className="peer sr-only"
+                                                        />
+                                                        <div className="h-5 w-9 rounded-full bg-slate-700 transition-colors peer-checked:bg-indigo-600" />
+                                                        <div className="absolute left-1 top-1 h-3 w-3 rounded-full bg-white transition-transform peer-checked:translate-x-4" />
+                                                    </div>
+                                                    <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">应用艺术指导风格</span>
+                                                </label>
+
+                                                {stylePrompt && (
+                                                    <div className="text-[11px] text-slate-500 font-mono bg-black/40 p-3 rounded-xl border border-white/5 leading-relaxed">
+                                                        <span className="text-indigo-400 font-bold mr-2">STYLE:</span> 
+                                                        {stylePrompt}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <button
+                                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                                className="flex items-center justify-between w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-all"
+                                            >
+                                                <div className="flex items-center gap-2 text-slate-400">
+                                                    <Sliders size={14} />
+                                                    <span className="text-xs font-bold uppercase tracking-widest">高级设置（负向提示词）</span>
+                                                </div>
+                                                <ChevronRight size={16} className={`text-slate-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
+                                            </button>
+
+                                            <AnimatePresence>
+                                                {showAdvanced && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: "auto", opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        className="overflow-hidden"
+                                                    >
+                                                        <textarea
+                                                            value={negativePrompt}
+                                                            onChange={(e) => setNegativePrompt(e.target.value)}
+                                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-slate-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
+                                                            placeholder="排除您不想要的视觉元素..."
+                                                        />
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                    </div>
+                                )}
+                            </section>
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="p-8 border-t border-white/5 bg-white/[0.02] flex gap-4">
+                            <button
+                                onClick={onClose}
+                                className="flex-1 py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold text-sm hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                            >
+                                <Check size={18} className="text-indigo-400" />
+                                确认完成
+                            </button>
+                        </div>
                     </div>
                 </div>
             </motion.div>
@@ -848,16 +928,30 @@ function TabButton({ active, onClick, icon, label, count }: any) {
     return (
         <button
             onClick={onClick}
-            className={`flex min-w-[104px] items-center justify-between gap-2 px-3 py-2 rounded-xl transition-all ${active
-                ? "bg-white/10 text-white border border-white/10 shadow-sm"
-                : "text-gray-500 hover:bg-white/5 hover:text-gray-300"
+            className={`group relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl transition-all duration-300 ${active
+                ? "bg-white/10 text-white ring-1 ring-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
+                : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
                 }`}
         >
-            <div className="flex min-w-0 items-center gap-2">
+            <div className={`transition-colors duration-300 ${active ? "text-indigo-400" : "text-slate-600 group-hover:text-slate-400"}`}>
                 {icon}
-                <span className="truncate whitespace-nowrap font-semibold text-sm leading-none">{label}</span>
             </div>
-            <span className="shrink-0 rounded-full bg-black/30 px-1.5 py-0.5 text-[11px] leading-none">{count}</span>
+            <span className="font-bold text-sm tracking-tight">{label}</span>
+            <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-colors duration-300 ${active
+                ? "bg-indigo-500/20 text-indigo-400"
+                : "bg-slate-800 text-slate-600 group-hover:bg-slate-700 group-hover:text-slate-500"
+                }`}>
+                {count}
+            </span>
+            
+            {active && (
+                <motion.div
+                    layoutId="activeTabGlow"
+                    className="absolute inset-0 rounded-xl bg-indigo-500/5 blur-md -z-10"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                />
+            )}
         </button>
     );
 }
@@ -946,7 +1040,6 @@ function AssetCard({
         };
     };
 
-    // 这里统一优先使用选中的 variant，避免顶层 legacy 字段与候选图状态短暂不同步时卡片丢图。
     const { previewPath, previewTimestamp } = resolveAssetPreview();
     const fullImageUrl = previewTimestamp
         ? getAssetUrlWithTimestamp(previewPath, typeof previewTimestamp === "number" ? previewTimestamp : new Date(previewTimestamp).getTime())
@@ -955,83 +1048,97 @@ function AssetCard({
     return (
         <motion.div
             layout
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
             onClick={onClick}
-            className={`asset-surface group relative rounded-2xl border overflow-hidden transition-colors cursor-pointer shadow-lg ${isLocked ? 'border-yellow-500/50' : 'border-white/10 hover:border-primary/50'
-                }`}
+            className={`group relative flex flex-col overflow-hidden rounded-2xl border transition-all duration-300 cursor-pointer ${
+                isLocked 
+                    ? 'border-amber-500/30 bg-amber-500/5 shadow-lg shadow-amber-500/5' 
+                    : 'border-white/10 bg-white/5 hover:border-indigo-500/50 hover:bg-white/[0.08] hover:shadow-2xl hover:shadow-indigo-500/10'
+            }`}
         >
-            <div className="relative aspect-[4/5] overflow-hidden border-b border-white/10 bg-black/20">
+            {/* ── Image Container ── */}
+            <div className="relative aspect-[3/4] overflow-hidden">
                 {previewPath ? (
                     <ImageWithRetry
                         src={fullImageUrl}
                         alt={asset.name}
-                        className="w-full h-full object-cover"
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />
                 ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-white/5">
-                        <ImageIcon className="text-white/10" size={48} />
+                    <div className="flex h-full w-full items-center justify-center bg-slate-900/50">
+                        <ImageIcon className="text-white/10" size={48} strokeWidth={1} />
                     </div>
                 )}
 
+                {/* ── Badges & Top Actions ── */}
                 <div className="absolute inset-x-0 top-0 flex items-start justify-between p-3 z-20">
-                    <span className="inline-flex items-center rounded-full border border-white/15 bg-black/15 px-2 py-0.5 text-[10px] font-medium tracking-[0.01em] text-white/85 backdrop-blur-sm">
+                    <span className={`inline-flex items-center rounded-lg px-2 py-1 text-[10px] font-bold tracking-wider uppercase backdrop-blur-md border ${
+                        isLocked ? "border-amber-500/30 bg-amber-500/20 text-amber-200" : "border-white/10 bg-black/40 text-white/70"
+                    }`}>
                         {typeLabel}
                     </span>
 
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete();
-                            }}
-                            className="p-2 rounded-full backdrop-blur-md bg-red-500/20 text-red-400 hover:bg-red-500/40 transition-colors"
-                            title="删除"
-                        >
-                            <Trash2 size={14} />
-                        </button>
+                    <div className="flex gap-1.5 opacity-0 translate-y-[-10px] group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onToggleLock();
                             }}
                             disabled={isLockToggling}
-                            className={`p-2 rounded-full backdrop-blur-md transition-colors ${isLocked
-                                ? "bg-yellow-500/20 text-yellow-500 hover:bg-yellow-500/30"
-                                : "bg-black/40 text-white hover:bg-white/20"
-                                }`}
+                            className={`p-2 rounded-lg backdrop-blur-md border transition-all ${
+                                isLocked
+                                    ? "bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/40"
+                                    : "bg-black/40 text-white/60 border-white/10 hover:text-white hover:bg-black/60"
+                            }`}
                             title={isLocked ? "解除锁定" : "锁定素材"}
                         >
                             {isLockToggling ? <RefreshCw size={14} className="animate-spin" /> : isLocked ? <Lock size={14} /> : <Unlock size={14} />}
                         </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete();
+                            }}
+                            className="p-2 rounded-lg backdrop-blur-md bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/40 transition-all"
+                            title="删除"
+                        >
+                            <Trash2 size={14} />
+                        </button>
                     </div>
                 </div>
+
+                {/* ── Overlay Gradient ── */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-300" />
             </div>
 
-            {/* Loading Overlay */}
+            {/* ── Loading Overlay ── */}
             {isGenerating && (
-                <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm flex items-center justify-center flex-col gap-2">
-                    <RefreshCw className="animate-spin text-primary" size={32} />
-                    <span className="text-xs font-mono text-primary">生成中...</span>
+                <div className="absolute inset-0 z-30 bg-black/70 backdrop-blur-sm flex items-center justify-center flex-col gap-3">
+                    <div className="relative">
+                        <RefreshCw className="animate-spin text-indigo-400" size={32} />
+                        <div className="absolute inset-0 animate-pulse bg-indigo-500/20 blur-xl rounded-full" />
+                    </div>
+                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-indigo-200">Generating</span>
                 </div>
             )}
 
-            <div className="p-3">
-                <div className="mb-2.5">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                        <h3 className="text-sm font-semibold text-white truncate">{asset.name}</h3>
-                        {isLocked && (
-                            <span className="shrink-0 rounded-full bg-yellow-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-500">
-                                已锁定
-                            </span>
-                        )}
+            {/* ── Info Area ── */}
+            <div className="flex flex-1 flex-col p-4">
+                <div className="mb-3 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-[13px] font-bold text-white truncate group-hover:text-indigo-400 transition-colors">
+                            {asset.name}
+                        </h3>
+                        {isLocked && <div className="h-1 w-1 rounded-full bg-amber-500 animate-pulse" />}
                     </div>
-                    <p className="text-[11px] leading-[1.35rem] text-gray-400 line-clamp-2 min-h-[2.2rem]">
+                    <p className="text-[11px] leading-relaxed text-slate-400 line-clamp-2">
                         {asset.description || "暂未填写描述"}
                     </p>
                 </div>
 
-                <div className="flex gap-2">
+                {/* ── Actions ── */}
+                <div className="flex items-center gap-2">
                     <BillingActionButton
                         onClick={(e) => {
                             e.stopPropagation();
@@ -1040,26 +1147,25 @@ function AssetCard({
                         disabled={isLocked || isGenerating || !generateAffordable}
                         priceCredits={generatePriceCredits}
                         balanceCredits={balanceCredits}
-                        className={`flex-1 min-w-0 whitespace-nowrap px-2.5 py-1.5 rounded-md text-[11px] font-semibold tracking-[0.01em] transition-colors ${isLocked
-                            ? 'asset-card-action-disabled cursor-not-allowed'
-                            : isGenerating || !generateAffordable
-                                ? 'asset-card-action-disabled cursor-not-allowed'
-                                : 'asset-card-action-primary'
-                            }`}
+                        className={`flex-[1.5] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
+                            isLocked || isGenerating || !generateAffordable
+                                ? 'bg-white/5 text-slate-600 cursor-not-allowed border border-white/5'
+                                : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20'
+                        }`}
                         tooltipText={generatePriceCredits == null ? undefined : `预计消耗${generatePriceCredits}算力豆${!generateAffordable ? "，当前余额不足" : ""}`}
-                        costClassName="px-1.5 py-0.5 text-[10px]"
                     >
-                        {isGenerating ? "生成中..." : "生成"}
+                        <Sparkles size={12} className={isGenerating ? "animate-spin" : ""} />
+                        {isGenerating ? "正在生成" : "生成资产"}
                     </BillingActionButton>
+                    
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
                             onUpload?.();
                         }}
-                        className="asset-card-action-secondary min-w-0 whitespace-nowrap px-2.5 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer transition-colors"
-                        title="上传图片"
+                        className="flex-1 flex items-center justify-center px-3 py-2 rounded-xl bg-white/5 text-slate-300 text-[11px] font-bold border border-white/10 hover:bg-white/10 hover:text-white transition-all"
                     >
-                        上传图片
+                        上传
                     </button>
                 </div>
             </div>

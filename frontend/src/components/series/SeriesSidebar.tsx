@@ -90,21 +90,21 @@ export default function SeriesSidebar({
       initial={{ x: -100, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.4, ease: [0.25, 1, 0.5, 1] }}
-      className="w-64 flex-shrink-0 h-full border-r border-glass-border bg-black/40 backdrop-blur-xl flex flex-col"
+      className="flex h-full w-72 flex-shrink-0 flex-col border-r border-slate-200 bg-white/96 backdrop-blur-xl"
     >
       {/* ── Header: breadcrumb + editable title ── */}
-      <div className="p-5 border-b border-glass-border">
+      <div className="border-b border-slate-200 p-5">
         <div className="space-y-2">
           {/* Back row */}
           <div className="flex items-center gap-1.5">
             <button
               onClick={onBack}
-              className="flex-shrink-0 text-gray-400 hover:text-white transition-colors"
+              className="flex-shrink-0 text-slate-400 transition-colors hover:text-slate-900"
               title="返回首页"
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="text-xs text-gray-500 truncate">DramaLab</span>
+            <span className="truncate text-xs text-slate-500">DramaLab / 系列控制台</span>
           </div>
 
           {/* Editable title */}
@@ -115,12 +115,12 @@ export default function SeriesSidebar({
               onChange={(e) => onEditTitleChange(e.target.value)}
               onBlur={onTitleSave}
               onKeyDown={onTitleKeyDown}
-              className="text-base font-display font-bold text-white bg-transparent border-b-2 border-primary outline-none w-full"
+              className="w-full border-b-2 border-primary bg-transparent text-base font-display font-bold text-slate-900 outline-none"
               autoFocus
             />
           ) : (
             <h1
-              className="text-base font-display font-bold text-white cursor-pointer hover:text-primary transition-colors truncate"
+              className="cursor-pointer truncate text-base font-display font-bold text-slate-900 transition-colors hover:text-primary"
               onDoubleClick={onTitleDoubleClick}
               title="双击编辑标题"
             >
@@ -129,7 +129,7 @@ export default function SeriesSidebar({
           )}
 
           {series.description && (
-            <p className="text-xs text-gray-500 truncate">{series.description}</p>
+            <p className="truncate text-xs text-slate-500">{series.description}</p>
           )}
         </div>
       </div>
@@ -137,7 +137,7 @@ export default function SeriesSidebar({
       {/* ── Asset navigation ── */}
       <div className="p-3 space-y-1">
         <div className="px-3 py-1.5">
-          <span className="text-[10px] font-mono text-gray-600 uppercase tracking-wider">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
             共享资产
           </span>
         </div>
@@ -153,8 +153,8 @@ export default function SeriesSidebar({
               className={clsx(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative overflow-hidden",
                 isActive
-                  ? "bg-primary/10 text-white"
-                  : "text-gray-400 hover:text-white hover:bg-white/5"
+                  ? "bg-[color:var(--admin-primary-soft)] text-slate-900"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               )}
             >
               {isActive && (
@@ -169,7 +169,7 @@ export default function SeriesSidebar({
                 size={18}
                 className={clsx(
                   "transition-colors",
-                  isActive ? "text-primary" : "group-hover:text-white"
+                  isActive ? "text-primary" : "group-hover:text-slate-900"
                 )}
               />
               <span className="text-sm font-medium flex-1 text-left">
@@ -179,8 +179,8 @@ export default function SeriesSidebar({
                 className={clsx(
                   "text-xs px-1.5 py-0.5 rounded-md font-mono",
                   isActive
-                    ? "bg-primary/20 text-primary"
-                    : "bg-white/5 text-gray-500"
+                    ? "bg-white text-primary"
+                    : "bg-slate-100 text-slate-500"
                 )}
               >
                 {count}
@@ -191,9 +191,9 @@ export default function SeriesSidebar({
       </div>
 
       {/* ── Episode list ── */}
-      <div className="flex-1 flex flex-col min-h-0 border-t border-glass-border">
+      <div className="flex min-h-0 flex-1 flex-col border-t border-slate-200">
         <div className="px-6 py-2.5 flex items-center justify-between">
-          <span className="text-[10px] font-mono text-gray-600 uppercase tracking-wider">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
             集数 ({episodes.length})
           </span>
         </div>
@@ -213,8 +213,8 @@ export default function SeriesSidebar({
                 className={clsx(
                   "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-200 group relative overflow-hidden",
                   isActive
-                    ? "bg-primary/10 text-white"
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                    ? "bg-[color:var(--admin-primary-soft)] text-slate-900"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                 )}
               >
                 {isActive && (
@@ -229,8 +229,8 @@ export default function SeriesSidebar({
                   className={clsx(
                     "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded",
                     isActive
-                      ? "bg-primary/20 text-primary"
-                      : "bg-white/5 text-gray-500"
+                      ? "bg-white text-primary"
+                      : "bg-slate-100 text-slate-500"
                   )}
                 >
                   EP{ep.episode_number || "?"}
@@ -238,7 +238,7 @@ export default function SeriesSidebar({
                 <span className="text-sm font-medium flex-1 text-left truncate">
                   {ep.title}
                 </span>
-                <span className="text-[10px] text-gray-600 font-mono">
+                <span className="text-[10px] font-mono text-slate-400">
                   {ep.frames?.length || 0}
                 </span>
                 {isActive && (
@@ -250,7 +250,7 @@ export default function SeriesSidebar({
 
           {episodes.length === 0 && !showAddEpisode && (
             <div className="text-center py-6">
-              <p className="text-xs text-gray-600">暂无集数</p>
+              <p className="text-xs text-slate-400">暂无集数</p>
             </div>
           )}
         </div>
@@ -273,7 +273,7 @@ export default function SeriesSidebar({
                     value={newEpisodeTitle}
                     onChange={(e) => onNewEpisodeTitleChange(e.target.value)}
                     placeholder="集数标题..."
-                    className="w-full bg-black/30 border border-glass-border rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-primary focus:outline-none"
                     autoFocus
                     onKeyDown={onAddEpisodeKeyDown}
                   />
@@ -281,7 +281,7 @@ export default function SeriesSidebar({
                     <button
                       onClick={onAddEpisode}
                       disabled={!newEpisodeTitle.trim() || isCreatingEpisode}
-                      className="flex-1 bg-primary hover:bg-primary/90 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 active:scale-[0.97]"
+                      className="studio-button studio-button-primary flex-1 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                     >
                       {isCreatingEpisode ? "创建中..." : "确定"}
                     </button>
@@ -290,7 +290,7 @@ export default function SeriesSidebar({
                         onShowAddEpisode(false);
                         onNewEpisodeTitleChange("");
                       }}
-                      className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors text-xs active:scale-[0.97]"
+                      className="rounded-lg px-3 py-1.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 active:scale-[0.97]"
                     >
                       取消
                     </button>
@@ -305,7 +305,7 @@ export default function SeriesSidebar({
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
                 onClick={() => onShowAddEpisode(true)}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-colors text-xs border border-dashed border-gray-700 hover:border-gray-500 active:scale-[0.97]"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
               >
                 <Plus size={14} />
                 添加集数
@@ -316,12 +316,12 @@ export default function SeriesSidebar({
       </div>
 
       {/* ── Bottom tools ── */}
-      <div className="border-t border-glass-border p-3 space-y-1">
+      <div className="space-y-1 border-t border-slate-200 p-3">
         <button
           onClick={onOpenImportAssets}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors group"
+          className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
         >
-          <Download size={16} className="group-hover:text-green-400 transition-colors" />
+          <Download size={16} className="transition-colors group-hover:text-green-600" />
           <span className="text-sm">导入资产</span>
         </button>
       </div>

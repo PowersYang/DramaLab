@@ -310,6 +310,58 @@ export interface FinalMixTimelineDraft {
     clips: FinalMixClipDraft[];
 }
 
+export type TimelineTrackType = "video" | "dialogue" | "sfx" | "bgm";
+export type TimelineAssetKind = "video" | "audio";
+
+export interface TimelineAsset {
+    id: string;
+    kind: TimelineAssetKind;
+    source_url: string;
+    label: string;
+    source_duration: number;
+    frame_id?: string;
+    video_task_id?: string;
+    role?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface TimelineTrack {
+    id: string;
+    track_type: TimelineTrackType;
+    label: string;
+    order: number;
+    enabled: boolean;
+    locked: boolean;
+    gain: number;
+    solo: boolean;
+}
+
+export interface TimelineClip {
+    id: string;
+    asset_id: string;
+    track_id: string;
+    clip_order: number;
+    timeline_start: number;
+    timeline_end: number;
+    source_start: number;
+    source_end: number;
+    volume: number;
+    fade_in_duration: number;
+    fade_out_duration: number;
+    lane_index: number;
+    linked_clip_id?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface ProjectTimeline {
+    project_id: string;
+    version: number;
+    tracks: TimelineTrack[];
+    assets: TimelineAsset[];
+    clips: TimelineClip[];
+    updated_at: string;
+}
+
 export interface Series {
     id: string;
     title: string;
@@ -346,6 +398,7 @@ export interface Project {
     prompt_config?: PromptConfig;
     merged_video_url?: string;
     final_mix_timeline?: FinalMixTimelineDraft;
+    timeline?: ProjectTimeline;
     series_id?: string;
     episode_number?: number;
 }
@@ -463,6 +516,36 @@ const mergeAssetCollection = (currentItems: any[] | undefined, incomingItems: an
     return incomingItems.map((item: any) => mergeItem(currentMap.get(item.id), item));
 };
 
+const toFinalMixTimelineDraft = (timeline?: ProjectTimeline | null): FinalMixTimelineDraft | undefined => {
+    if (!timeline) {
+        return undefined;
+    }
+
+    const videoTrackIds = new Set((timeline.tracks || []).filter((track) => track.track_type === "video").map((track) => track.id));
+    const assetById = new Map((timeline.assets || []).map((asset) => [asset.id, asset]));
+    const clips = (timeline.clips || [])
+        .filter((clip) => videoTrackIds.has(clip.track_id))
+        .map((clip, index) => {
+            const asset = assetById.get(clip.asset_id);
+            const frameId = asset?.frame_id || clip.metadata?.frame_id;
+            const videoId = asset?.video_task_id || clip.metadata?.video_task_id;
+            if (!frameId || !videoId) {
+                return null;
+            }
+            return {
+                frame_id: frameId,
+                video_id: videoId,
+                clip_order: typeof clip.clip_order === "number" ? clip.clip_order : index,
+                trim_start: Number((clip.source_start || 0).toFixed(3)),
+                trim_end: Number((clip.source_end || 0).toFixed(3)),
+            } satisfies FinalMixClipDraft;
+        })
+        .filter((clip): clip is FinalMixClipDraft => Boolean(clip))
+        .sort((a, b) => a.clip_order - b.clip_order);
+
+    return { clips };
+};
+
 const normalizeProject = (project: any): any => {
     if (!project) {
         return project;
@@ -473,6 +556,7 @@ const normalizeProject = (project: any): any => {
         ...(Array.isArray(item?.video_assets) ? { video_assets: sortVideoTasks(item.video_assets) } : {}),
     });
 
+    const normalizedTimeline = project.timeline || undefined;
     return {
         ...project,
         ...(Array.isArray(project.characters) ? { characters: sortByCreatedAt(project.characters).map(normalizeAssetOwner) } : {}),
@@ -480,6 +564,7 @@ const normalizeProject = (project: any): any => {
         ...(Array.isArray(project.props) ? { props: sortByCreatedAt(project.props).map(normalizeAssetOwner) } : {}),
         ...(Array.isArray(project.frames) ? { frames: sortStoryboardFrames(project.frames) } : {}),
         ...(Array.isArray(project.video_tasks) ? { video_tasks: sortVideoTasks(project.video_tasks) } : {}),
+        ...(normalizedTimeline ? { final_mix_timeline: toFinalMixTimelineDraft(normalizedTimeline) } : {}),
     };
 };
 
@@ -488,13 +573,18 @@ const mergeProjectDrafts = (incomingProject: any, existingProject?: any): any =>
         return incomingProject;
     }
 
-    if (!existingProject?.final_mix_timeline || incomingProject.final_mix_timeline) {
+    if (incomingProject.timeline) {
         return incomingProject;
     }
 
-    // Final Mix 时间轴当前先保存在前端项目状态里；后端刷新项目时要保留这份本地草稿。
+    if (!existingProject?.timeline && !existingProject?.final_mix_timeline) {
+        return incomingProject;
+    }
+
+    // 时间轴真源切到后端后，仍保留一层前端兜底，避免旧缓存项目在首次读取前丢失本地草稿。
     return {
         ...incomingProject,
+        timeline: existingProject.timeline,
         final_mix_timeline: existingProject.final_mix_timeline,
     };
 };

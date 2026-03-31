@@ -10,7 +10,9 @@ import platform
 import subprocess
 import tempfile
 import time
+from typing import Any
 
+from ...application.services.project_timeline_service import ProjectTimelineService
 from ...providers import AudioGenerator, VideoModelProvider
 from ...providers.export.export_provider import ExportManager
 from ...repository import ProjectRepository, StoryboardFrameRepository, VideoTaskRepository
@@ -34,6 +36,7 @@ class MediaWorkflow:
         self.video_provider = VideoModelProvider()
         self.audio_provider = AudioGenerator()
         self.export_manager = ExportManager()
+        self.project_timeline_service = ProjectTimelineService()
 
     def get_available_voices(self):
         """向 API 层暴露当前可用的 TTS 音色列表。"""
@@ -188,6 +191,7 @@ class MediaWorkflow:
                 raise ValueError("No valid video files found. The video files may have been deleted or moved.")
 
             output_path = os.path.join(temp_dir, f"merged_{script_id}_{int(time.time())}.mp4")
+            mixed_output_path = os.path.join(temp_dir, f"merged_mix_{script_id}_{int(time.time())}.mp4")
 
             cmd = [
                 ffmpeg_path,
@@ -215,7 +219,19 @@ class MediaWorkflow:
 
             try:
                 subprocess.run(cmd, check=True, capture_output=True, timeout=600)
-                merged_video_url = self._persist_output(output_path, "video/merged")
+                final_output_path = output_path
+                audio_overlay_specs = self._resolve_timeline_audio_clips(project)
+                video_track_gain = self._get_video_track_gain(project)
+                if audio_overlay_specs or video_track_gain != 1.0:
+                    final_output_path = self._mix_timeline_audio(
+                        ffmpeg_path=ffmpeg_path,
+                        merged_video_path=output_path,
+                        mixed_output_path=mixed_output_path,
+                        audio_overlay_specs=audio_overlay_specs,
+                        video_track_gain=video_track_gain,
+                        temp_dir=temp_dir,
+                    )
+                merged_video_url = self._persist_output(final_output_path, "video/merged")
                 updated_project = self.project_repository.patch_metadata(
                     script_id,
                     {"merged_video_url": merged_video_url, "updated_at": utc_now()},
@@ -277,6 +293,11 @@ class MediaWorkflow:
             if clips:
                 return clips
 
+        if project.timeline:
+            timeline_payload = self.project_timeline_service.build_final_mix_payload(project.timeline)
+            if timeline_payload and timeline_payload.get("clips"):
+                return self._resolve_merge_clips(project, final_mix_timeline=timeline_payload)
+
         clips = []
         for frame in project.frames:
             if frame.selected_video_id:
@@ -304,6 +325,71 @@ class MediaWorkflow:
                     }
                 )
         return clips
+
+    def _resolve_timeline_audio_clips(self, project) -> list[dict[str, Any]]:
+        """从项目时间轴提取需要参与最终混音的音频片段。"""
+        timeline = project.timeline
+        if not timeline:
+            return []
+
+        solo_track_types = {track.track_type for track in timeline.tracks if track.solo}
+        track_by_id = {
+            track.id: track
+            for track in timeline.tracks
+            if track.enabled and (not solo_track_types or track.track_type in solo_track_types)
+        }
+        asset_by_id = {asset.id: asset for asset in timeline.assets}
+        audio_specs: list[dict[str, Any]] = []
+
+        for clip in sorted(timeline.clips, key=lambda item: (item.timeline_start, item.clip_order, item.id)):
+            track = track_by_id.get(clip.track_id)
+            if not track or track.track_type not in {"dialogue", "sfx", "bgm"}:
+                continue
+
+            asset = asset_by_id.get(clip.asset_id)
+            if not asset or not asset.source_url:
+                continue
+
+            asset_duration = max(float(asset.source_duration or 0), 0.1)
+            source_start = max(float(clip.source_start or 0), 0.0)
+            source_end = float(clip.source_end or asset_duration)
+            source_end = max(min(source_end, asset_duration), source_start + 0.1)
+            timeline_start = max(float(clip.timeline_start or 0), 0.0)
+            duration = max(source_end - source_start, 0.1)
+            track_gain = max(float(track.gain or 0), 0.0)
+            audio_specs.append(
+                {
+                    "clip_id": clip.id,
+                    "track_type": track.track_type,
+                    "source_url": asset.source_url,
+                    "timeline_start": round(timeline_start, 3),
+                    "source_start": round(source_start, 3),
+                    "source_end": round(source_end, 3),
+                    "duration": round(duration, 3),
+                    "volume": round(max(float(clip.volume or 0), 0.0) * track_gain, 3),
+                    "fade_in_duration": round(max(float(clip.fade_in_duration or 0), 0.0), 3),
+                    "fade_out_duration": round(max(float(clip.fade_out_duration or 0), 0.0), 3),
+                }
+            )
+
+        return audio_specs
+
+    def _get_video_track_gain(self, project) -> float:
+        """读取视频主轨音量倍率；轨道禁用时直接返回 0。"""
+        timeline = project.timeline
+        if not timeline:
+            return 1.0
+
+        solo_track_types = {track.track_type for track in timeline.tracks if track.solo}
+        for track in timeline.tracks:
+            if track.track_type != "video":
+                continue
+            if not track.enabled:
+                return 0.0
+            if solo_track_types and track.track_type not in solo_track_types:
+                return 0.0
+            return max(float(track.gain or 0), 0.0)
+        return 1.0
 
     def _trim_video_clip(self, ffmpeg_path: str, source_path: str, temp_dir: str, index: int, trim_start: float, trim_end: float) -> str:
         """把单个视频片段裁切成标准化中间文件，供后续 concat 使用。"""
@@ -338,6 +424,143 @@ class MediaWorkflow:
         except subprocess.CalledProcessError as exc:
             stderr_msg = exc.stderr.decode() if exc.stderr else "No error output"
             raise RuntimeError(self._extract_ffmpeg_error_message(stderr_msg))
+
+    def _mix_timeline_audio(
+        self,
+        ffmpeg_path: str,
+        merged_video_path: str,
+        mixed_output_path: str,
+        audio_overlay_specs: list[dict[str, Any]],
+        video_track_gain: float,
+        temp_dir: str,
+    ) -> str:
+        """把 timeline 音频片段按绝对时间位置混入最终成片。"""
+        local_audio_inputs: list[str] = []
+        normalized_specs: list[dict[str, Any]] = []
+
+        for index, spec in enumerate(audio_overlay_specs):
+            local_path = self._materialize_media_input(
+                spec["source_url"],
+                temp_dir=temp_dir,
+                filename_hint=f"merge_audio_{index}.m4a",
+            )
+            if not local_path or not os.path.exists(local_path):
+                continue
+            normalized_specs.append({**spec, "local_path": local_path})
+            local_audio_inputs.append(local_path)
+
+        if not normalized_specs and video_track_gain == 1.0:
+            return merged_video_path
+
+        filter_parts: list[str] = []
+        final_mix_labels: list[str] = []
+        grouped_labels: dict[str, list[str]] = {"dialogue": [], "sfx": [], "bgm": []}
+
+        has_base_audio = self._video_has_audio_stream(ffmpeg_path, merged_video_path) and video_track_gain > 0
+        if has_base_audio:
+            filter_parts.append(f"[0:a]asetpts=PTS-STARTPTS,volume={video_track_gain:.3f}[basea]")
+            final_mix_labels.append("[basea]")
+
+        for index, spec in enumerate(normalized_specs, start=1):
+            delay_ms = max(int(round(float(spec["timeline_start"]) * 1000)), 0)
+            source_start = float(spec["source_start"])
+            duration = max(float(spec["duration"]), 0.1)
+            volume = max(float(spec["volume"]), 0.0)
+            fade_in_duration = min(max(float(spec.get("fade_in_duration") or 0), 0.0), max(duration - 0.01, 0.0))
+            fade_out_duration = min(max(float(spec.get("fade_out_duration") or 0), 0.0), max(duration - fade_in_duration - 0.01, 0.0))
+            label = f"a{index}"
+            audio_filter = (
+                f"[{index}:a]atrim=start={source_start:.3f}:duration={duration:.3f},"
+                f"asetpts=PTS-STARTPTS,volume={volume:.3f}"
+            )
+            if fade_in_duration > 0:
+                audio_filter += f",afade=t=in:st=0:d={fade_in_duration:.3f}"
+            if fade_out_duration > 0:
+                fade_out_start = max(duration - fade_out_duration, 0.0)
+                audio_filter += f",afade=t=out:st={fade_out_start:.3f}:d={fade_out_duration:.3f}"
+            filter_parts.append(
+                f"{audio_filter},adelay={delay_ms}|{delay_ms}[{label}]"
+            )
+            if spec["track_type"] in grouped_labels:
+                grouped_labels[spec["track_type"]].append(f"[{label}]")
+
+        dialogue_bus = self._build_mix_bus_filter(filter_parts, grouped_labels["dialogue"], "dialoguebus")
+        sfx_bus = self._build_mix_bus_filter(filter_parts, grouped_labels["sfx"], "sfxbus")
+        bgm_bus = self._build_mix_bus_filter(filter_parts, grouped_labels["bgm"], "bgmbus")
+
+        if dialogue_bus and bgm_bus:
+            filter_parts.append(
+                f"{bgm_bus}{dialogue_bus}sidechaincompress="
+                "threshold=0.08:ratio=10:attack=5:release=250:makeup=1[bgmduck]"
+            )
+            bgm_bus = "[bgmduck]"
+
+        for bus in [dialogue_bus, sfx_bus, bgm_bus]:
+            if bus:
+                final_mix_labels.append(bus)
+
+        if not final_mix_labels:
+            return merged_video_path
+
+        filter_parts.append(
+            f"{''.join(final_mix_labels)}amix=inputs={len(final_mix_labels)}:normalize=0:dropout_transition=0[aout]"
+        )
+        cmd = [ffmpeg_path, "-y", "-i", merged_video_path]
+        for local_input in local_audio_inputs:
+            cmd.extend(["-i", local_input])
+        cmd.extend(
+            [
+                "-filter_complex",
+                ";".join(filter_parts),
+                "-map",
+                "0:v",
+                "-map",
+                "[aout]",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                "-shortest",
+                mixed_output_path,
+            ]
+        )
+
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+            return mixed_output_path
+        except subprocess.CalledProcessError as exc:
+            stderr_msg = exc.stderr.decode() if exc.stderr else "No error output"
+            raise RuntimeError(self._extract_ffmpeg_error_message(stderr_msg))
+
+    def _build_mix_bus_filter(self, filter_parts: list[str], input_labels: list[str], bus_name: str) -> str | None:
+        """把同类音轨片段汇总成一个总线 label。"""
+        if not input_labels:
+            return None
+        if len(input_labels) == 1:
+            return input_labels[0]
+        filter_parts.append(
+            f"{''.join(input_labels)}amix=inputs={len(input_labels)}:normalize=0:dropout_transition=0[{bus_name}]"
+        )
+        return f"[{bus_name}]"
+
+    def _video_has_audio_stream(self, ffmpeg_path: str, video_path: str) -> bool:
+        """判断输入视频是否包含可用音频流。"""
+        try:
+            result = subprocess.run(
+                [ffmpeg_path, "-i", video_path],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except Exception:
+            return False
+
+        inspect_output = "\n".join([result.stdout or "", result.stderr or ""]).lower()
+        return "audio:" in inspect_output
 
     def _download_temp_image(self, url: str) -> tuple[str | None, bool]:
         """尽可能把本地图片地址解析成磁盘文件路径。"""

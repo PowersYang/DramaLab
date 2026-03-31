@@ -136,15 +136,9 @@ export default function StudioTaskConcurrencyPage() {
       ) : null}
 
       <section className="studio-panel overflow-hidden">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(87,143,120,0.14),_transparent_38%),linear-gradient(135deg,_#ffffff_0%,_#f5f7f4_100%)] px-6 py-6 lg:px-8">
+        <div className="admin-ledger-head !border-b-0">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Task Concurrency</p>
-              <h2 className="text-2xl font-bold text-slate-950">组织级任务并发管理</h2>
-              <p className="max-w-3xl text-sm leading-7 text-slate-600">
-                为每个 MCN / 制作公司按任务类型设置总并发上限。达到上限后，新任务会继续保持在排队状态，直到已有任务释放执行位。
-              </p>
-            </div>
+            <h3 className="text-xl font-semibold studio-strong">组织级任务并发管理</h3>
             <button
               onClick={() => void load(false)}
               disabled={refreshing}
@@ -172,7 +166,7 @@ export default function StudioTaskConcurrencyPage() {
                 ))}
               </select>
             </label>
-            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 text-sm leading-7 text-slate-600">
+            <div className="admin-governance-callout text-sm leading-7">
               <div className="font-semibold text-slate-900">{selectedOrganization?.name || "未选择组织"}</div>
               <p className="mt-1">
                 留空表示该任务类型不限制并发；输入 `0` 表示暂停该组织该任务类型的新执行，仅保留排队。
@@ -180,9 +174,9 @@ export default function StudioTaskConcurrencyPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-[1.5rem] border border-slate-200">
-            <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-              <thead className="bg-slate-50 text-left text-slate-500">
+          <div className="admin-governance-table">
+            <table className="bg-white text-sm">
+              <thead>
                 <tr>
                   <th className="px-4 py-3 font-semibold">任务类型</th>
                   <th className="px-4 py-3 font-semibold">编码</th>

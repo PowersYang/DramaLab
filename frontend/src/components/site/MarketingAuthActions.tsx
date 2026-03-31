@@ -1,12 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { ChevronDown, LogOut } from "lucide-react";
 
-import { buildMarketingAuthHref } from "@/components/site/marketingAuthHref";
 import { useAuthStore } from "@/store/authStore";
+import { useMarketingAuthStore } from "@/store/marketingAuthStore";
 
 interface MarketingAuthActionsProps {
   ctaMode?: "default" | "auth";
@@ -14,13 +12,11 @@ interface MarketingAuthActionsProps {
 }
 
 export default function MarketingAuthActions({ ctaMode = "default", theme = "light" }: MarketingAuthActionsProps) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const authStatus = useAuthStore((state) => state.authStatus);
   const me = useAuthStore((state) => state.me);
   const bootstrapAuth = useAuthStore((state) => state.bootstrapAuth);
   const signOut = useAuthStore((state) => state.signOut);
+  const openAuthDialog = useMarketingAuthStore((state) => state.open);
   const currentWorkspace = me?.workspaces.find((item) => item.workspace_id === me.current_workspace_id);
   const roleLabel = me?.current_role_name || currentWorkspace?.role_name || "成员";
   const userLabel = me?.user.display_name || me?.user.email || "已登录用户";
@@ -32,54 +28,47 @@ export default function MarketingAuthActions({ ctaMode = "default", theme = "lig
     }
   }, [authStatus, bootstrapAuth]);
 
-  const signInHref = buildMarketingAuthHref(pathname, searchParams.toString(), "signin");
-  const signUpHref = buildMarketingAuthHref(pathname, searchParams.toString(), "signup");
-
   const loggedOutActions = ctaMode === "auth" ? (
     <div className="flex items-center gap-3">
-      <Link
-        href={signInHref}
-        prefetch
-        scroll={false}
+      <button
+        type="button"
+        onClick={() => openAuthDialog("signin")}
         className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
           isDark ? "text-white/72 hover:bg-white/8 hover:text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
         }`}
       >
         登录
-      </Link>
-      <Link
-        href={signUpHref}
-        prefetch
-        scroll={false}
+      </button>
+      <button
+        type="button"
+        onClick={() => openAuthDialog("signup")}
         className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-transform hover:scale-[1.01] ${
           isDark ? "bg-white text-slate-950 shadow-[0_10px_30px_rgba(255,255,255,0.08)]" : "bg-slate-950 text-white shadow-sm hover:bg-slate-800"
         }`}
       >
         注册
-      </Link>
+      </button>
     </div>
   ) : (
     <div className="flex items-center gap-3">
-      <Link
-        href={signInHref}
-        prefetch
-        scroll={false}
+      <button
+        type="button"
+        onClick={() => openAuthDialog("signin")}
         className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
           isDark ? "text-white/72 hover:bg-white/8 hover:text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
         }`}
       >
         登录
-      </Link>
-      <Link
-        href={signUpHref}
-        prefetch
-        scroll={false}
+      </button>
+      <button
+        type="button"
+        onClick={() => openAuthDialog("signup")}
         className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-colors ${
           isDark ? "border border-white/14 text-white hover:border-white/30 hover:bg-white/6" : "border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-950"
         }`}
       >
         注册
-      </Link>
+      </button>
     </div>
   );
 
@@ -108,15 +97,15 @@ export default function MarketingAuthActions({ ctaMode = "default", theme = "lig
             </div>
 
             <div className="mt-2 flex flex-col">
-              <Link href="/studio" prefetch className={`rounded-2xl px-4 py-3 text-sm font-semibold transition-colors ${
+              <a href="/studio" className={`rounded-2xl px-4 py-3 text-sm font-semibold transition-colors ${
                 isDark ? "text-white/80 hover:bg-white/5 hover:text-white" : "text-slate-700 hover:bg-slate-50 hover:text-slate-950"
               }`}>
                 进入工作台
-              </Link>
+              </a>
               <button
                 type="button"
                 onClick={() => {
-                  void signOut().then(() => router.replace("/?auth=signin"));
+                  void signOut().then(() => openAuthDialog("signin"));
                 }}
                 className={`flex items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition-colors ${
                   isDark ? "text-white/72 hover:bg-rose-500/10 hover:text-rose-300" : "text-slate-700 hover:bg-rose-50 hover:text-rose-600"
@@ -128,11 +117,11 @@ export default function MarketingAuthActions({ ctaMode = "default", theme = "lig
             </div>
           </div>
         </details>
-        <Link href="/studio" prefetch className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-transform hover:scale-[1.01] ${
+        <a href="/studio" className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-transform hover:scale-[1.01] ${
           isDark ? "bg-cyan-300 text-slate-950 shadow-[0_14px_36px_rgba(34,211,238,0.2)]" : "bg-primary text-white shadow-sm hover:bg-secondary"
         }`}>
           进入工作台
-        </Link>
+        </a>
       </div>
     );
   }

@@ -3,6 +3,53 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class TimelineAssetRequest(BaseModel):
+    id: str
+    kind: str
+    source_url: str
+    label: str = ""
+    source_duration: float = 0
+    frame_id: Optional[str] = None
+    video_task_id: Optional[str] = None
+    role: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TimelineTrackRequest(BaseModel):
+    id: str
+    track_type: str
+    label: str
+    order: int = 0
+    enabled: bool = True
+    locked: bool = False
+    gain: float = 1.0
+    solo: bool = False
+
+
+class TimelineClipRequest(BaseModel):
+    id: str
+    asset_id: str
+    track_id: str
+    clip_order: int = 0
+    timeline_start: float = 0
+    timeline_end: float = 0
+    source_start: float = 0
+    source_end: float = 0
+    volume: float = 1.0
+    fade_in_duration: float = 0.0
+    fade_out_duration: float = 0.0
+    lane_index: int = 0
+    linked_clip_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateProjectTimelineRequest(BaseModel):
+    version: int = 0
+    tracks: List[TimelineTrackRequest] = Field(default_factory=list)
+    assets: List[TimelineAssetRequest] = Field(default_factory=list)
+    clips: List[TimelineClipRequest] = Field(default_factory=list)
+
+
 class FinalMixClipRequest(BaseModel):
     frame_id: str
     video_id: str

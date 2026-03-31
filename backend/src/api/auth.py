@@ -291,6 +291,40 @@ async def invite_workspace_member(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.get("/workspace/invitations")
+async def list_workspace_invitations(context: RequestContext = Depends(get_request_context)):
+    if not context.current_workspace_id:
+        raise HTTPException(status_code=400, detail="Current workspace is missing")
+    if CAP_WORKSPACE_MANAGE_MEMBERS not in context.capabilities:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    invitations = auth_service.list_workspace_invitations(context.current_workspace_id)
+    
+    payloads = []
+    for item in invitations:
+        p = item.model_dump()
+        p["invite_url"] = auth_service.build_invitation_url_for_client(item.id)
+        payloads.append(p)
+        
+    return signed_response(payloads)
+
+
+@router.delete("/workspace/invitations/{invitation_id}")
+async def delete_workspace_invitation(
+    invitation_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
+    if CAP_WORKSPACE_MANAGE_MEMBERS not in context.capabilities:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    try:
+        invitation = auth_service.invitation_repository.get(invitation_id)
+        if invitation is None or invitation.workspace_id != context.current_workspace_id:
+            raise ValueError("Invitation not found")
+        auth_service.remove_workspace_invitation(invitation_id)
+        return signed_response({"status": "deleted"})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.patch("/workspace/current")
 async def update_current_workspace(
     request: UpdateCurrentWorkspaceRequest,
