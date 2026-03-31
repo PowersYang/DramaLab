@@ -82,6 +82,8 @@ frontend/.next/
 frontend/out/
 frontend/.env.local
 frontend/.vercel
+frontend/public/images/marketing/
+frontend/public/videos/marketing/
 
 # Logs
 *.log
@@ -96,7 +98,6 @@ logs/
 !*.pub.key
 
 # Project outputs
-backend/output/
 backend/static/
 
 # Test artifacts

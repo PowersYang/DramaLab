@@ -1,6 +1,5 @@
 """项目渲染导出的具体实现。"""
 
-import os
 import time
 from typing import Any, Dict, List
 
@@ -8,6 +7,7 @@ from ...schemas.models import Script
 
 from ...utils import get_logger
 from ...utils.oss_utils import OSSImageUploader
+from ...utils.temp_media import create_temp_file_path, remove_temp_file
 
 logger = get_logger(__name__)
 
@@ -21,8 +21,6 @@ class ExportManager:
 
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.output_dir = self.config.get("output_dir", "output/export")
-        os.makedirs(self.output_dir, exist_ok=True)
 
     def render_project(self, script: Script, options: Dict[str, Any]) -> str:
         """导出项目最终视频，并返回 OSS 对象键。"""
@@ -35,8 +33,7 @@ class ExportManager:
         try:
             duration = len(script.frames) * 0.5
             time.sleep(min(duration, 5))
-            filename = f"{script.id}_{int(time.time())}.{format_name}"
-            output_path = os.path.join(self.output_dir, filename)
+            output_path = create_temp_file_path(prefix=f"dramalab-export-{script.id}-", suffix=f".{format_name}")
             with open(output_path, "wb") as file_obj:
                 file_obj.write(b"dummy video content")
             uploader = OSSImageUploader()
@@ -48,6 +45,8 @@ class ExportManager:
         except Exception as exc:
             logger.error("Export failed: %s", exc)
             raise
+        finally:
+            remove_temp_file(output_path if "output_path" in locals() else None)
 
     def _stitch_video(self, frames: List[Any], output_path: str):
         """为后续多片段拼接预留占位方法。"""

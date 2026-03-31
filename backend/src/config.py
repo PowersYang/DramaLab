@@ -45,10 +45,6 @@ class Config:
         if args.audio_url:
             self.config.setdefault('input', {})['audio_url'] = args.audio_url
             
-        # 输出项覆盖
-        if args.output_dir:
-            self.config.setdefault('output', {})['dir'] = args.output_dir
-            
         # 模型相关覆盖
         if args.model_name:
              self.config.setdefault('model', {}).setdefault('params', {})['model_name'] = args.model_name
@@ -72,7 +68,6 @@ class ArgParser:
         parser.add_argument('--prompt', type=str, help='Input prompt for video generation')
         parser.add_argument('--negative_prompt', type=str, help='Negative prompt')
         parser.add_argument('--audio_url', type=str, help='Audio URL for generation')
-        parser.add_argument('--output_dir', type=str, help='Directory to save generated videos')
         parser.add_argument('--model_name', type=str, help='Model name to use (e.g., wan2.5-t2v-preview)')
         parser.add_argument('--dry-run', action='store_true', help='Run without calling actual APIs')
         

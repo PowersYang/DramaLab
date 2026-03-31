@@ -8,6 +8,7 @@ import { TaskJob, VideoTask, api } from "@/lib/api";
 import { DurationConfig, ModelParamSupport, VideoParams, GRID_COLS_CLASS } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useAvailableModelCatalog } from "@/lib/modelCatalog";
+import { filterVideoQueueJobs } from "@/lib/videoTaskQueue";
 
 interface VideoSidebarProps {
     tasks: VideoTask[];
@@ -27,9 +28,11 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
     const { catalog } = useAvailableModelCatalog({ i2v: params.model });
 
     const activeJobs: TaskJob[] = projectId
-        ? (jobIdsByProject[projectId] || [])
-            .map((jobId) => jobsById[jobId])
-            .filter((job): job is TaskJob => !!job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested", "failed", "timed_out"].includes(job.status))
+        ? filterVideoQueueJobs(
+            (jobIdsByProject[projectId] || [])
+                .map((jobId) => jobsById[jobId])
+                .filter((job): job is TaskJob => !!job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested", "failed", "timed_out"].includes(job.status))
+        )
         : [];
 
     const currentModelConfig = catalog.i2v.find(m => m.id === params.model);

@@ -1,10 +1,12 @@
 from collections import defaultdict
 from datetime import datetime
+import time
 from typing import Iterable
 import uuid
 
 from sqlalchemy.orm import Session
 
+from ..common.log import get_logger
 from ..db.models import (
     CharacterAssetUnitRecord,
     CharacterRecord,
@@ -40,6 +42,7 @@ from ..schemas.task_models import TaskAttempt, TaskEvent, TaskJob
 from ..utils.datetime import utc_now
 
 
+logger = get_logger(__name__)
 CHARACTER_UNIT_TYPES = ("full_body", "three_views", "head_shot")
 CHARACTER_LEGACY_ASSET_TO_UNIT = {
     "full_body_asset": "full_body",
@@ -403,6 +406,7 @@ def _task_event_record(event: TaskEvent) -> TaskEventRecord:
 
 
 def hydrate_project_map(session: Session, project_ids: set[str] | None = None, include_deleted: bool = False) -> dict[str, Script]:
+    started_at = time.perf_counter()
     query = session.query(ProjectRecord)
     if not include_deleted:
         query = _active(query)
@@ -411,10 +415,18 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
             return {}
         query = query.filter(ProjectRecord.id.in_(project_ids))
     project_records = query.order_by(ProjectRecord.created_at.asc(), ProjectRecord.id.asc()).all()
+    project_query_duration_ms = (time.perf_counter() - started_at) * 1000
     if not project_records:
+        logger.info(
+            "REPO_HYDRATE: project_map projects=0 include_deleted=%s project_query_ms=%.2f total_ms=%.2f",
+            include_deleted,
+            project_query_duration_ms,
+            (time.perf_counter() - started_at) * 1000,
+        )
         return {}
 
     project_ids = [record.id for record in project_records]
+    child_query_started_at = time.perf_counter()
     # 子资源默认全部走活跃态过滤，这样项目聚合读出来就是“当前视图”，不是历史快照全集。
     characters = _active(session.query(CharacterRecord)).filter(
         CharacterRecord.owner_type == "project",
@@ -460,7 +472,9 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
 
     image_groups = _group_image_variants(image_variant_records)
     video_groups = _group_video_variants(video_variant_records)
+    child_query_duration_ms = (time.perf_counter() - child_query_started_at) * 1000
 
+    materialize_started_at = time.perf_counter()
     tasks_by_project = defaultdict(list)
     tasks_by_asset = defaultdict(list)
     for record in tasks:
@@ -638,10 +652,27 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
+    materialize_duration_ms = (time.perf_counter() - materialize_started_at) * 1000
+    logger.info(
+        "REPO_HYDRATE: project_map projects=%s characters=%s scenes=%s props=%s frames=%s tasks=%s image_variants=%s video_variants=%s project_query_ms=%.2f child_query_ms=%.2f materialize_ms=%.2f total_ms=%.2f",
+        len(project_records),
+        len(characters),
+        len(scenes),
+        len(props),
+        len(frames),
+        len(tasks),
+        len(image_variant_records),
+        len(video_variant_records),
+        project_query_duration_ms,
+        child_query_duration_ms,
+        materialize_duration_ms,
+        (time.perf_counter() - started_at) * 1000,
+    )
     return result
 
 
 def hydrate_series_map(session: Session, series_ids: set[str] | None = None, include_deleted: bool = False) -> dict[str, Series]:
+    started_at = time.perf_counter()
     query = session.query(SeriesRecord)
     if not include_deleted:
         query = _active(query)
@@ -650,10 +681,18 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
             return {}
         query = query.filter(SeriesRecord.id.in_(series_ids))
     series_records = query.all()
+    series_query_duration_ms = (time.perf_counter() - started_at) * 1000
     if not series_records:
+        logger.info(
+            "REPO_HYDRATE: series_map series=0 include_deleted=%s series_query_ms=%.2f total_ms=%.2f",
+            include_deleted,
+            series_query_duration_ms,
+            (time.perf_counter() - started_at) * 1000,
+        )
         return {}
 
     series_ids = [record.id for record in series_records]
+    child_query_started_at = time.perf_counter()
     characters = _active(session.query(CharacterRecord)).filter(CharacterRecord.owner_type == "series", CharacterRecord.owner_id.in_(series_ids)).all()
     scenes = _active(session.query(SceneRecord)).filter(SceneRecord.owner_type == "series", SceneRecord.owner_id.in_(series_ids)).all()
     props = _active(session.query(PropRecord)).filter(PropRecord.owner_type == "series", PropRecord.owner_id.in_(series_ids)).all()
@@ -671,6 +710,8 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
 
     image_groups = _group_image_variants(image_variant_records)
     video_groups = _group_video_variants(video_variant_records)
+    child_query_duration_ms = (time.perf_counter() - child_query_started_at) * 1000
+    materialize_started_at = time.perf_counter()
     units_by_character = defaultdict(dict)
     for record in unit_records:
         unit = AssetUnit(
@@ -792,6 +833,21 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
+    materialize_duration_ms = (time.perf_counter() - materialize_started_at) * 1000
+    logger.info(
+        "REPO_HYDRATE: series_map series=%s characters=%s scenes=%s props=%s projects=%s image_variants=%s video_variants=%s series_query_ms=%.2f child_query_ms=%.2f materialize_ms=%.2f total_ms=%.2f",
+        len(series_records),
+        len(characters),
+        len(scenes),
+        len(props),
+        len(projects),
+        len(image_variant_records),
+        len(video_variant_records),
+        series_query_duration_ms,
+        child_query_duration_ms,
+        materialize_duration_ms,
+        (time.perf_counter() - started_at) * 1000,
+    )
     return result
 
 
@@ -984,6 +1040,8 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
     # 先把角色主记录刷入数据库，避免 PostgreSQL 在写角色素材单元时触发外键约束失败。
     session.flush()
 
+    persisted_image_variant_ids: set[str] = set()
+
     for group_name in ("full_body_asset", "three_view_asset", "headshot_asset"):
         image_asset = _legacy_character_asset(character, group_name)
         unit_type = CHARACTER_LEGACY_ASSET_TO_UNIT[group_name]
@@ -994,7 +1052,11 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
         if unit.image_variants:
             continue
         for variant in image_asset.variants:
+            if variant.id and variant.id in persisted_image_variant_ids:
+                continue
             session.merge(_image_variant_record("character", character.id, group_name, variant, tenant))
+            if variant.id:
+                persisted_image_variant_ids.add(variant.id)
 
     for unit_type in CHARACTER_UNIT_TYPES:
         unit = getattr(character, unit_type, None) or AssetUnit()
@@ -1018,7 +1080,11 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
             )
         )
         for variant in unit.image_variants:
+            if variant.id and variant.id in persisted_image_variant_ids:
+                continue
             session.merge(_image_variant_record("character_asset_unit", unit_id, "image_variants", variant, tenant))
+            if variant.id:
+                persisted_image_variant_ids.add(variant.id)
         for variant in unit.video_variants:
             session.merge(_video_variant_record("character_asset_unit", unit_id, "video_variants", variant, tenant))
 

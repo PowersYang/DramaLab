@@ -56,8 +56,8 @@
   - 是否影响软删除字段语义
   - 是否同时兼容 SQLite 测试和 PostgreSQL 生产结构
 - 改 provider 或输出逻辑时：
-  - 尽量不要继续扩大对本地 `output/` 路径的耦合
-  - 优先保留未来迁移 OSS / 对象存储的空间
+  - 不要重新引入仓库内本地持久化目录
+  - 统一沿用 `tempfile + OSS / 对象存储` 的运行方式
 - 新增依赖时：
   - 同步更新 `backend/requirements.txt`
 

@@ -1,10 +1,4 @@
-"""
-系统路由：调试检查、文件导入、环境配置与通用工具接口。
-"""
-
-import os
-import shutil
-import uuid
+"""系统路由：调试检查、文件导入、环境配置与通用工具接口。"""
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
@@ -15,6 +9,7 @@ from ..auth.dependencies import RequestContext, get_request_context
 from src.settings.env_settings import get_env, has_env
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.system_check import run_system_checks
+from ..utils.temp_media import staged_upload_file
 from ..common import logger, signed_response
 from ..schemas.requests import (
     AnalyzeStyleRequest,
@@ -35,7 +30,7 @@ model_provider_service = ModelProviderService()
 
 @router.get("/debug/config")
 async def debug_config():
-    """检查 OSS 与本地路径配置是否正常。"""
+    """检查 OSS 配置是否正常。"""
     logger.info("SYSTEM_API: debug_config")
     uploader = OSSImageUploader()
     return {
@@ -43,9 +38,7 @@ async def debug_config():
         "oss_bucket_initialized": uploader.bucket is not None,
         "oss_base_path": get_env("OSS_BASE_PATH", "dramalab"),
         "oss_public_base_url": get_env("OSS_PUBLIC_BASE_URL", ""),
-        "output_dir_exists": os.path.exists("output"),
-        "output_contents": os.listdir("output") if os.path.exists("output") else [],
-        "cwd": os.getcwd(),
+        "local_output_mount_enabled": False,
         "env_vars_present": {
             "OSS_ENDPOINT": has_env("OSS_ENDPOINT"),
             "OSS_BUCKET_NAME": has_env("OSS_BUCKET_NAME"),
@@ -73,17 +66,11 @@ async def upload_file(file: UploadFile = File(...)):
     """上传文件，并返回可供前端访问的地址。"""
     try:
         logger.info("SYSTEM_API: upload_file filename=%s", file.filename)
-        file_ext = os.path.splitext(file.filename)[1]
-        filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join("output/uploads", filename)
-
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        oss_url = OSSImageUploader().upload_image(file_path)
-        if oss_url:
-            logger.info("SYSTEM_API: upload_file uploaded_to_oss filename=%s", file.filename)
-            return signed_response({"url": oss_url})
+        with staged_upload_file(file.file, file.filename) as file_path:
+            oss_url = OSSImageUploader().upload_image(file_path, sub_path="uploads")
+            if oss_url:
+                logger.info("SYSTEM_API: upload_file uploaded_to_oss filename=%s", file.filename)
+                return signed_response({"url": oss_url})
 
         raise RuntimeError("OSS upload failed. Static file mount has been removed, so local fallback URLs are no longer supported.")
     except Exception as exc:

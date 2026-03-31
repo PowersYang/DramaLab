@@ -2,7 +2,13 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.17.0"
+  },
   "scripts": {
+    "sync:marketing-assets": "node ../scripts/sync_marketing_assets.mjs",
+    "predev": "npm run sync:marketing-assets",
+    "prebuild": "npm run sync:marketing-assets",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

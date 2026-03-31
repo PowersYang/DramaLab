@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 
 from pptx import Presentation
@@ -459,7 +460,7 @@ def build_closing(prs, thumbnail_path: Path):
 
 def main():
     """生成 PPT 主流程。"""
-    output_dir = Path("/Users/will/Documents/jishu/code/lumenx/output/ppt")
+    output_dir = Path(tempfile.gettempdir()) / "lumenx-ppt"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "AI教育与应用商务演讲稿.pptx"
     thumbnail_path = output_dir / "Thumbnails" / "thumbnail.png"

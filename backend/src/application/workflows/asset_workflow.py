@@ -13,7 +13,7 @@ from ...common.log import get_logger
 from ...providers import AssetGenerator, VideoModelProvider
 from ...providers.image.asset_image_provider import ASPECT_RATIO_TO_SIZE
 from ...repository import ProjectRepository, SeriesRepository
-from ...schemas.models import GenerationStatus, VideoTask, VideoVariant
+from ...schemas.models import AssetUnit, GenerationStatus, VideoTask, VideoVariant
 from ...utils.datetime import utc_now
 
 
@@ -615,8 +615,63 @@ class AssetWorkflow:
         if batch_size > 0 and not generated_videos:
             raise RuntimeError(f"Failed to generate any motion reference videos for {asset_type}")
 
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        self._persist_motion_ref_results(
+            project_id=project.id,
+            asset_id=asset.id,
+            asset_type=asset_type,
+            prompt=prompt,
+            generated_videos=generated_videos,
+        )
+
+    def _persist_motion_ref_results(
+        self,
+        *,
+        project_id: str,
+        asset_id: str,
+        asset_type: str,
+        prompt: str | None,
+        generated_videos: list[VideoVariant | VideoTask],
+    ) -> None:
+        """把动作参考结果合并回最新项目快照，避免并发任务互相覆盖状态。"""
+        fresh_project = self._get_project(project_id)
+        fresh_asset = self._find_asset(fresh_project, asset_id, asset_type)
+
+        if asset_type in ["full_body", "head_shot"]:
+            unit = getattr(fresh_asset, asset_type, None)
+            if unit is None:
+                unit = AssetUnit()
+                setattr(fresh_asset, asset_type, unit)
+
+            existing_variant_ids = {item.id for item in unit.video_variants}
+            for variant in generated_videos:
+                if not isinstance(variant, VideoVariant):
+                    continue
+                if variant.id in existing_variant_ids:
+                    continue
+                unit.video_variants.append(variant.model_copy(deep=True))
+                existing_variant_ids.add(variant.id)
+            if generated_videos and not unit.selected_video_id:
+                first_variant = next((item for item in generated_videos if isinstance(item, VideoVariant)), None)
+                if first_variant is not None:
+                    unit.selected_video_id = first_variant.id
+            unit.video_prompt = prompt
+            unit.video_updated_at = utc_now()
+        else:
+            existing_asset_video_ids = {item.id for item in fresh_asset.video_assets}
+            existing_project_video_ids = {item.id for item in fresh_project.video_tasks}
+            for task in generated_videos:
+                if not isinstance(task, VideoTask):
+                    continue
+                task_copy = task.model_copy(deep=True)
+                if task_copy.id not in existing_asset_video_ids:
+                    fresh_asset.video_assets.append(task_copy)
+                    existing_asset_video_ids.add(task_copy.id)
+                if task_copy.id not in existing_project_video_ids:
+                    fresh_project.video_tasks.append(task_copy.model_copy(deep=True))
+                    existing_project_video_ids.add(task_copy.id)
+
+        fresh_project.updated_at = utc_now()
+        self.project_repository.save(fresh_project)
 
     def _resolve_character_motion_source_image(self, asset, asset_type: str) -> str | None:
         """为角色动作参考解析最稳妥的源图地址。"""

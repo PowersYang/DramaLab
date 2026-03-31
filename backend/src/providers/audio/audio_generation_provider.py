@@ -1,6 +1,5 @@
 """对白、音效、背景音乐的具体音频生成实现。"""
 
-import os
 import time
 from typing import Any, Dict, List
 
@@ -10,6 +9,7 @@ from ...audio.tts import TTSProcessor
 from ...application.services.model_provider_service import ModelProviderService
 from ...utils import get_logger
 from ...utils.oss_utils import OSSImageUploader
+from ...utils.temp_media import create_temp_file_path, remove_temp_file
 
 logger = get_logger(__name__)
 
@@ -25,7 +25,6 @@ class AudioGenerator:
 
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.output_dir = self.config.get("output_dir", "output/audio")
         self.provider_service = ModelProviderService()
         self._tts: TTSProcessor | None = None
         self._tts_init_failed = False
@@ -93,10 +92,15 @@ class AudioGenerator:
             raise RuntimeError("TTS service not available. Configure the corresponding provider in platform model settings.")
 
         preview_text = (text or self.DEFAULT_PREVIEW_TEXT).strip() or self.DEFAULT_PREVIEW_TEXT
-        output_path = os.path.join(self.output_dir, "voice_preview", f"{provider_key.lower()}_{canonical_voice_id}.mp3")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        self.tts.synthesize(preview_text, output_path, voice=canonical_voice_id)
-        preview_url = self._persist_media(output_path, "audio/voice_preview")
+        output_path = create_temp_file_path(
+            prefix=f"dramalab-voice-preview-{provider_key.lower()}-{canonical_voice_id}-",
+            suffix=".mp3",
+        )
+        try:
+            self.tts.synthesize(preview_text, output_path, voice=canonical_voice_id)
+            preview_url = self._persist_media(output_path, "audio/voice_preview")
+        finally:
+            remove_temp_file(output_path)
 
         updated_catalog = {
             **voice_catalog,
@@ -150,9 +154,8 @@ class AudioGenerator:
 
     def _real_generate_dialogue(self, frame: StoryboardFrame, character: Character, text: str, speed: float, pitch: float, volume: int) -> StoryboardFrame:
         """在通过前置校验后，真正执行一次 TTS 请求。"""
+        output_path = create_temp_file_path(prefix=f"dramalab-dialogue-{frame.id}-", suffix=".mp3")
         try:
-            output_path = os.path.join(self.output_dir, "dialogue", f"{frame.id}.mp3")
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             self.tts.synthesize(text, output_path, voice=character.voice_id, speech_rate=speed, pitch_rate=pitch, volume=volume)
             frame.audio_url = self._persist_media(output_path, "audio/dialogue")
             frame.status = GenerationStatus.COMPLETED
@@ -160,15 +163,16 @@ class AudioGenerator:
             logger.error("TTS generation failed for frame %s: %s", frame.id, exc)
             frame.status = GenerationStatus.FAILED
             frame.audio_error = f"TTS generation failed: {str(exc)}"
+        finally:
+            remove_temp_file(output_path)
         return frame
 
     def generate_sfx(self, frame: StoryboardFrame) -> StoryboardFrame:
         """为当前分镜帧生成音效。"""
         frame.status = GenerationStatus.PROCESSING
+        output_path = create_temp_file_path(prefix=f"dramalab-sfx-{frame.id}-", suffix=".mp3")
         try:
             logger.info("Generating SFX for: %s", frame.action_description)
-            output_path = os.path.join(self.output_dir, "sfx", f"{frame.id}.mp3")
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "wb") as file_obj:
                 file_obj.write(b"dummy sfx content")
             frame.sfx_url = self._persist_media(output_path, "audio/sfx")
@@ -176,6 +180,8 @@ class AudioGenerator:
         except Exception as exc:
             logger.error("Failed to generate SFX for frame %s: %s", frame.id, exc)
             frame.status = GenerationStatus.FAILED
+        finally:
+            remove_temp_file(output_path)
         return frame
 
     def generate_sfx_from_video(self, frame: StoryboardFrame) -> StoryboardFrame:
@@ -185,11 +191,13 @@ class AudioGenerator:
         logger.info("Generating SFX from video for frame %s", frame.id)
         # 这里暂时仍是占位实现，但 workflow 契约已经稳定，后续可以直接替换底层 provider。
         time.sleep(1)
-        output_path = os.path.join(self.output_dir, "sfx", f"{frame.id}_v2a.mp3")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "wb") as file_obj:
-            file_obj.write(b"dummy v2a sfx content")
-        frame.sfx_url = self._persist_media(output_path, "audio/sfx")
+        output_path = create_temp_file_path(prefix=f"dramalab-sfx-v2a-{frame.id}-", suffix=".mp3")
+        try:
+            with open(output_path, "wb") as file_obj:
+                file_obj.write(b"dummy v2a sfx content")
+            frame.sfx_url = self._persist_media(output_path, "audio/sfx")
+        finally:
+            remove_temp_file(output_path)
         return frame
 
     def generate_bgm(self, frame: StoryboardFrame) -> StoryboardFrame:
@@ -197,11 +205,13 @@ class AudioGenerator:
         logger.info("Generating BGM for frame %s", frame.id)
         # 这里暂时仍是占位实现，但输出路径约定保持真实，便于下游导出逻辑继续复用。
         time.sleep(1)
-        output_path = os.path.join(self.output_dir, "bgm", f"{frame.id}.mp3")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "wb") as file_obj:
-            file_obj.write(b"dummy bgm content")
-        frame.bgm_url = self._persist_media(output_path, "audio/bgm")
+        output_path = create_temp_file_path(prefix=f"dramalab-bgm-{frame.id}-", suffix=".mp3")
+        try:
+            with open(output_path, "wb") as file_obj:
+                file_obj.write(b"dummy bgm content")
+            frame.bgm_url = self._persist_media(output_path, "audio/bgm")
+        finally:
+            remove_temp_file(output_path)
         return frame
 
     def _persist_media(self, output_path: str, sub_path: str) -> str:

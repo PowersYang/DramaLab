@@ -17,6 +17,7 @@ from ...models.image import WanxImageModel
 from ...utils import get_logger
 from ...utils.datetime import utc_now
 from ...utils.oss_utils import OSSImageUploader, is_object_key
+from ...utils.temp_media import create_temp_file_path, remove_temp_file
 
 logger = get_logger(__name__)
 
@@ -31,7 +32,6 @@ class StoryboardGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxImageModel(self.config.get("model", {}))
-        self.output_dir = self.config.get("output_dir", "output/storyboard")
 
     def generate_storyboard(self, script: Any) -> Any:
         """为剧本中所有未完成分镜帧批量生成图片。"""
@@ -95,12 +95,8 @@ class StoryboardGenerator:
                 if target_url:
                     if is_object_key(target_url):
                         asset_ref_paths.append(target_url)
-                    else:
-                        potential_path = os.path.join("output", target_url)
-                        if os.path.exists(potential_path):
-                            asset_ref_paths.append(os.path.abspath(potential_path))
-                        elif os.path.exists(target_url):
-                            asset_ref_paths.append(os.path.abspath(target_url))
+                    elif os.path.exists(target_url):
+                        asset_ref_paths.append(os.path.abspath(target_url))
 
             scene_url = None
             if scene:
@@ -113,12 +109,8 @@ class StoryboardGenerator:
                 if scene_url:
                     if is_object_key(scene_url):
                         asset_ref_paths.append(scene_url)
-                    else:
-                        potential_path = os.path.join("output", scene_url)
-                        if os.path.exists(potential_path):
-                            asset_ref_paths.append(os.path.abspath(potential_path))
-                        elif os.path.exists(scene_url):
-                            asset_ref_paths.append(os.path.abspath(scene_url))
+                    elif os.path.exists(scene_url):
+                        asset_ref_paths.append(os.path.abspath(scene_url))
 
         for char_id in frame.character_ids:
             char = next((item for item in characters if item.id == char_id), None)
@@ -148,19 +140,20 @@ class StoryboardGenerator:
         try:
             for _ in range(batch_size):
                 variant_id = str(uuid.uuid4())
-                output_filename = f"{frame.id}_{variant_id}.png"
-                output_path = os.path.join(self.output_dir, output_filename)
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                output_path = create_temp_file_path(prefix=f"dramalab-storyboard-{frame.id}-{variant_id}-", suffix=".png")
                 logger.info("[Storyboard] Calling model.generate with %s reference images using model %s", len(asset_ref_paths), model_name or "default")
-                self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
-                # 分镜图现在必须以 OSS 对象键持久化，避免前端继续依赖本地静态目录。
-                uploader = OSSImageUploader()
-                object_key = uploader.upload_file(output_path, sub_path="storyboard") if uploader.is_configured else None
-                if not object_key:
-                    raise RuntimeError(f"Failed to upload storyboard frame {frame.id} to OSS.")
-                variant = ImageVariant(id=variant_id, url=object_key, prompt=prompt, created_at=utc_now())
-                frame.rendered_image_asset.variants.append(variant)
-                frame.rendered_image_asset.selected_id = variant_id
+                try:
+                    self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
+                    # 分镜图现在必须以 OSS 对象键持久化，避免前端继续依赖本地静态目录。
+                    uploader = OSSImageUploader()
+                    object_key = uploader.upload_file(output_path, sub_path="storyboard") if uploader.is_configured else None
+                    if not object_key:
+                        raise RuntimeError(f"Failed to upload storyboard frame {frame.id} to OSS.")
+                    variant = ImageVariant(id=variant_id, url=object_key, prompt=prompt, created_at=utc_now())
+                    frame.rendered_image_asset.variants.append(variant)
+                    frame.rendered_image_asset.selected_id = variant_id
+                finally:
+                    remove_temp_file(output_path)
 
             selected_variant = next((variant for variant in frame.rendered_image_asset.variants if variant.id == frame.rendered_image_asset.selected_id), None)
             if selected_variant:

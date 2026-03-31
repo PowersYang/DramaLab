@@ -37,9 +37,5 @@ def bootstrap_api_environment(logger: logging.Logger) -> None:
     model_provider_service.ensure_defaults()
     logger.info("STARTUP: style preset bootstrap completed")
 
-    # 输出目录在分布式部署里通常会被映射到共享存储，这里显式创建并记录状态，便于排查挂载问题。
-    os.makedirs("output", exist_ok=True)
-    os.makedirs("output/uploads", exist_ok=True)
-    os.makedirs("output/video", exist_ok=True)
-    os.makedirs("output/assets", exist_ok=True)
-    logger.info("STARTUP: output directories are ready")
+    # 运行时产物统一走临时文件 + OSS，不再依赖仓库内 output 挂载目录。
+    logger.info("STARTUP: local output mount disabled; runtime artifacts use tempfile + OSS")

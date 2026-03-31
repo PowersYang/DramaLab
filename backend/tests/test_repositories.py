@@ -264,6 +264,65 @@ class RepositoryPersistenceTest(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].owner_type, "character_asset_unit")
 
+    def test_asset_service_select_variant_persists_latest_character_selection_when_only_unit_variants_exist(self):
+        from src.application.services.asset_service import AssetService
+        from src.repository import ProjectRepository
+        from src.schemas.models import AssetUnit, Character, ImageVariant, Script
+
+        now = utc_now()
+        repository = ProjectRepository()
+        repository.sync([
+            Script(
+                id="project_select_variant_1",
+                title="Select Variant",
+                original_text="text",
+                characters=[
+                    Character(
+                        id="char_select_1",
+                        name="Hero",
+                        description="lead",
+                        full_body_image_url="oss://hero-a",
+                        image_url="oss://hero-a",
+                        full_body=AssetUnit(
+                            selected_image_id="imgv_a",
+                            image_variants=[
+                                ImageVariant(id="imgv_a", url="oss://hero-a", created_at=now),
+                                ImageVariant(id="imgv_b", url="oss://hero-b", created_at=now),
+                            ],
+                        ),
+                    )
+                ],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                created_at=now,
+                updated_at=now,
+            )
+        ])
+
+        updated_project = AssetService().select_variant(
+            "project_select_variant_1",
+            "char_select_1",
+            "character",
+            "imgv_b",
+            "full_body",
+        )
+        selected_character = next(character for character in updated_project.characters if character.id == "char_select_1")
+
+        self.assertEqual(selected_character.full_body.selected_image_id, "imgv_b")
+        self.assertEqual(selected_character.full_body_asset.selected_id, "imgv_b")
+        self.assertEqual(selected_character.full_body_image_url, "oss://hero-b")
+        self.assertEqual(selected_character.image_url, "oss://hero-b")
+
+        reloaded_project = repository.get("project_select_variant_1")
+        self.assertIsNotNone(reloaded_project)
+        reloaded_character = next(character for character in reloaded_project.characters if character.id == "char_select_1")
+        self.assertEqual(reloaded_character.full_body.selected_image_id, "imgv_b")
+        self.assertEqual(reloaded_character.full_body_asset.selected_id, "imgv_b")
+        self.assertEqual(reloaded_character.full_body_image_url, "oss://hero-b")
+        self.assertEqual(reloaded_character.image_url, "oss://hero-b")
+
     def test_child_repositories_support_independent_frame_and_task_crud(self):
         from src.repository import ProjectRepository, StoryboardFrameRepository, VideoTaskRepository
         from src.schemas.models import ImageAsset, ImageVariant, Script, StoryboardFrame, VideoTask

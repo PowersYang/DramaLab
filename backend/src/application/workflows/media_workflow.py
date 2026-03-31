@@ -14,11 +14,12 @@ import time
 from ...providers import AudioGenerator, VideoModelProvider
 from ...providers.export.export_provider import ExportManager
 from ...repository import ProjectRepository, VideoTaskRepository
-from ...utils.path_safety import safe_resolve_path, validate_safe_id
+from ...utils.path_safety import validate_safe_id
 from ...utils import get_logger
 from ...utils.datetime import utc_now
 from ...utils.system_check import get_ffmpeg_install_instructions, get_ffmpeg_path
 from ...utils.oss_utils import OSSImageUploader, is_object_key
+from ...utils.temp_media import remove_temp_file
 
 logger = get_logger(__name__)
 
@@ -85,12 +86,15 @@ class MediaWorkflow:
             logger.error("Task %s not found in script %s", task_id, script_id)
             return
 
+        img_path = None
+        should_cleanup_img = False
+        output_path = None
         try:
             task.status = "processing"
             task.failed_reason = None
             self.video_task_repository.save(task)
 
-            img_path = self._download_temp_image(task.image_url) if task.image_url else None
+            img_path, should_cleanup_img = self._download_temp_image(task.image_url) if task.image_url else (None, False)
             output_path = self.video_provider.build_output_path(task.id)
             self.video_provider.generate_task_video(
                 task,
@@ -108,6 +112,9 @@ class MediaWorkflow:
             task.status = "failed"
             task.failed_reason = str(exc)
         finally:
+            if should_cleanup_img:
+                remove_temp_file(img_path)
+            remove_temp_file(output_path)
             self.video_task_repository.save(task)
 
         project = self._get_project(script_id)
@@ -182,9 +189,7 @@ class MediaWorkflow:
             if not abs_video_paths:
                 raise ValueError("No valid video files found. The video files may have been deleted or moved.")
 
-            output_filename = f"merged_{script_id}_{int(time.time())}.mp4"
-            output_path = safe_resolve_path(os.path.join("output", "video"), output_filename)
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_path = os.path.join(temp_dir, f"merged_{script_id}_{int(time.time())}.mp4")
 
             cmd = [
                 ffmpeg_path,
@@ -359,23 +364,22 @@ class MediaWorkflow:
         else:
             project.video_tasks.append(task)
 
-    def _download_temp_image(self, url: str):
+    def _download_temp_image(self, url: str) -> tuple[str | None, bool]:
         """尽可能把本地图片地址解析成磁盘文件路径。"""
         if not url:
-            return None
+            return None, False
         if is_object_key(url) or url.startswith("http"):
             with tempfile.NamedTemporaryFile(prefix="dramalab-input-", suffix=os.path.splitext(url)[1] or ".png", delete=False) as tmp:
                 tmp_path = tmp.name
             if self._download_to_local(url, tmp_path):
-                return tmp_path
+                return tmp_path, True
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            return None
+            return None, False
 
-        local_path = safe_resolve_path("output", url)
-        if os.path.exists(local_path):
-            return local_path
-        return None
+        if os.path.exists(url):
+            return url, False
+        return None, False
 
     def _persist_output(self, local_path: str, sub_path: str) -> str:
         """把导出结果持久化到 OSS。
@@ -410,9 +414,6 @@ class MediaWorkflow:
             local_path = os.path.join(temp_dir, filename_hint)
             return local_path if self._download_to_local(source, local_path) else None
 
-        local_path = safe_resolve_path("output", source)
-        if os.path.exists(local_path):
-            return local_path
         if os.path.exists(source):
             return source
         return None
@@ -427,7 +428,7 @@ class MediaWorkflow:
         if "invalid data found" in stderr_lower or "moov atom not found" in stderr_lower:
             return "One or more video files are corrupted or incomplete.\nPlease try regenerating the affected videos."
         if "permission denied" in stderr_lower or "access is denied" in stderr_lower:
-            return "Permission denied when accessing video files.\nPlease check that the application has read/write permissions for the output directory."
+            return "Permission denied when accessing temporary video files.\nPlease check that the application has read/write permissions for the system temp directory."
         if "disk full" in stderr_lower or "no space" in stderr_lower:
             return "Insufficient disk space to create the merged video.\nPlease free up some space and try again."
         return f"FFmpeg merge failed: {stderr.strip().splitlines()[-1]}"

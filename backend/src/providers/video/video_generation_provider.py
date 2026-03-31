@@ -8,7 +8,8 @@ from ...schemas.models import GenerationStatus, StoryboardFrame
 
 from ...models.wanx import WanxModel
 from ...utils import get_logger
-from ...utils.oss_utils import OSSImageUploader
+from ...utils.oss_utils import OSSImageUploader, is_object_key
+from ...utils.temp_media import create_temp_file_path, remove_temp_file
 
 logger = get_logger(__name__)
 
@@ -23,7 +24,6 @@ class VideoGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxModel(self.config.get("model", {}))
-        self.output_dir = self.config.get("output_dir", "output/video")
 
     def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str = None, negative_prompt: str | None = None) -> Dict[str, Any]:
         """根据输入图片生成动作参考视频。"""
@@ -31,19 +31,11 @@ class VideoGenerator:
         logger.info("Generating I2V motion reference: prompt=%s..., duration=%s", prompt[:50], duration)
 
         img_path = None
-        if image_url and not image_url.startswith("http"):
-            # 本地路径通常是 output 相对路径，但调用方偶尔也会直接传绝对路径。
-            potential_path = os.path.join("output", image_url)
-            if os.path.exists(potential_path):
-                img_path = os.path.abspath(potential_path)
-            elif os.path.exists(image_url):
-                img_path = image_url
+        if image_url and not image_url.startswith("http") and not is_object_key(image_url) and os.path.exists(image_url):
+            img_path = os.path.abspath(image_url)
 
+        output_path = create_temp_file_path(prefix="dramalab-motion-ref-", suffix=".mp4")
         try:
-            output_filename = f"motion_ref_{uuid.uuid4().hex[:8]}.mp4"
-            output_path = os.path.join(self.output_dir, output_filename)
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
             self.model.generate(
                 prompt=prompt,
                 output_path=output_path,
@@ -64,6 +56,8 @@ class VideoGenerator:
         except Exception as exc:
             logger.error("Failed to generate I2V motion reference: %s", exc)
             raise
+        finally:
+            remove_temp_file(output_path)
 
     def generate_clip(self, frame: StoryboardFrame) -> StoryboardFrame:
         """根据分镜帧生成视频片段。"""
@@ -77,16 +71,11 @@ class VideoGenerator:
         img_url = frame.image_url
         img_path = None
 
-        if img_url and not img_url.startswith("http"):
-            # 分镜图片地址可能已经是 OSS 或其它远程地址；只有本地 output 路径才去落盘解析。
-            potential_path = os.path.join("output", img_url)
-            if os.path.exists(potential_path):
-                img_path = os.path.abspath(potential_path)
-            elif os.path.exists(img_url):
-                img_path = img_url
+        if img_url and not img_url.startswith("http") and not is_object_key(img_url) and os.path.exists(img_url):
+            img_path = os.path.abspath(img_url)
 
+        output_path = create_temp_file_path(prefix=f"dramalab-frame-{frame.id}-", suffix=".mp4")
         try:
-            output_path = os.path.join(self.output_dir, f"{frame.id}.mp4")
             self.model.generate(
                 prompt=prompt,
                 output_path=output_path,
@@ -104,5 +93,7 @@ class VideoGenerator:
         except Exception as exc:
             logger.error("Failed to generate video for frame %s: %s", frame.id, exc)
             frame.status = GenerationStatus.FAILED
+        finally:
+            remove_temp_file(output_path)
 
         return frame

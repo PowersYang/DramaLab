@@ -6,10 +6,11 @@ import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, ChevronRight } f
 import BillingTaskHint from "@/components/billing/BillingTaskHint";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { api } from "@/lib/api";
+import { applyCharacterVariantSelection, getPreferredCharacterPanel } from "@/lib/characterAssets";
 
-import { useProjectStore } from "@/store/projectStore";
+import { useProjectStore, type Character } from "@/store/projectStore";
 import { Image as PhotoIcon } from "lucide-react";
-import { getAssetUrl } from "@/lib/utils";
+import { getAssetUrl, normalizeComparableAssetPath } from "@/lib/utils";
 
 type PanelKey = "full_body" | "three_view" | "headshot";
 type MotionAssetType = "full_body" | "head_shot";
@@ -21,7 +22,13 @@ type VariantLike = {
     is_uploaded_source?: boolean;
 };
 type VideoVariantLike = {
+    id?: string;
     url?: string | null;
+    video_url?: string | null;
+    image_url?: string | null;
+    created_at?: string | number | null;
+    status?: string | null;
+    source_image_id?: string | null;
 };
 type PanelAssetData = {
     selected_id: string | null;
@@ -34,6 +41,7 @@ type LegacyPanelAsset = {
 };
 type UnitPanelAsset = {
     selected_image_id?: string | null;
+    selected_video_id?: string | null;
     image_variants?: VariantLike[];
     video_variants?: VideoVariantLike[];
 };
@@ -57,11 +65,10 @@ type CharacterAsset = {
     full_body?: UnitPanelAsset | null;
     three_views?: UnitPanelAsset | null;
     head_shot?: UnitPanelAsset | null;
+    video_assets?: VideoVariantLike[];
 };
 
 const DEFAULT_NEGATIVE_PROMPT = "low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, jpeg artifacts, signature, watermark, blurry";
-const LATEST_BATCH_WINDOW_MS = 5000;
-
 const parseVariantTime = (value: string | number | undefined | null) => {
     if (typeof value === "number") {
         return Number.isFinite(value) ? value : 0;
@@ -73,36 +80,26 @@ const parseVariantTime = (value: string | number | undefined | null) => {
     return 0;
 };
 
-// 通过时间窗口和提示词近似识别“最后一次生成”的那一批候选图。
-const getLatestBatchVariants = <T extends { created_at?: string | number; prompt_used?: string | null }>(variants: T[]) => {
+// 候选图稳定按生成时间倒序展示最近 4 张，避免“批次识别”误伤已生成结果。
+const getRecentVariants = <T extends { created_at?: string | number | null }>(variants: T[]) => {
     if (!Array.isArray(variants) || variants.length === 0) {
         return [];
     }
 
-    const sortedVariants = [...variants].sort((a, b) => parseVariantTime(b.created_at) - parseVariantTime(a.created_at));
-    const latestTime = parseVariantTime(sortedVariants[0]?.created_at);
-    const latestPrompt = sortedVariants[0]?.prompt_used || "";
-    const strictBatch = sortedVariants.filter((variant, index) => {
-        if (index === 0) {
-            return true;
-        }
-        const delta = Math.abs(latestTime - parseVariantTime(variant.created_at));
-        if (delta > LATEST_BATCH_WINDOW_MS) {
-            return false;
-        }
-        if (latestPrompt && variant.prompt_used && variant.prompt_used !== latestPrompt) {
-            return false;
-        }
-        return true;
-    }).slice(0, 4);
+    return [...variants]
+        .sort((a, b) => parseVariantTime(b.created_at) - parseVariantTime(a.created_at))
+        .slice(0, 4);
+};
 
-    // 历史数据里同批图片可能分批入库，或 prompt_used 存在轻微差异。
-    // 如果严格窗口只剩 1 张，就回退到最近的 4 张，避免“明明生成了 4 张却只显示 1 张”。
-    if (strictBatch.length <= 1 && sortedVariants.length > 1) {
-        return sortedVariants.slice(0, 4);
+// 视频预览也统一按最新优先排序，兼容新版 unit 视频和旧版 video task。
+const getRecentVideoVariants = <T extends VideoVariantLike>(videos: T[]) => {
+    if (!Array.isArray(videos) || videos.length === 0) {
+        return [];
     }
 
-    return strictBatch;
+    return [...videos]
+        .filter((video) => !!(video?.url || video?.video_url))
+        .sort((a, b) => parseVariantTime(b.created_at) - parseVariantTime(a.created_at));
 };
 
 const getAspectRatioCardClass = (aspectRatio: string) => {
@@ -157,18 +154,41 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
     const [isVideoLoading, setIsVideoLoading] = useState(false);
     const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
     const [optimisticSelectedIds, setOptimisticSelectedIds] = useState<Partial<Record<PanelKey, string>>>({});
+    const inFlightSelectionRef = useRef<Partial<Record<PanelKey, boolean>>>({});
+    const latestSelectionRef = useRef<Partial<Record<PanelKey, string>>>({});
+
+    useEffect(() => {
+        // 每次切到新的角色时，默认打开真正有候选图的分面，避免用户刚生成了 4 张却总落在只有 1 张主图的默认页。
+        setActivePanel(getPreferredCharacterPanel(asset as Character));
+        setOptimisticSelectedIds({});
+        latestSelectionRef.current = {};
+        inFlightSelectionRef.current = {};
+    }, [asset.id]);
 
 
     // === Reverse Generation: Detect uploaded images ===
-    const hasUploadedThreeViews = asset.three_view_asset?.variants?.some((v: VariantLike) => v.is_uploaded_source) || false;
-    const hasUploadedHeadshot = asset.headshot_asset?.variants?.some((v: VariantLike) => v.is_uploaded_source) || false;
-    const hasUploadedFullBody = asset.full_body_asset?.variants?.some((v: VariantLike) => v.is_uploaded_source) || false;
+    const hasUploadedThreeViews = [
+        ...(asset.three_view_asset?.variants || []),
+        ...(asset.three_views?.image_variants || []),
+    ].some((v: VariantLike) => v.is_uploaded_source);
+    const hasUploadedHeadshot = [
+        ...(asset.headshot_asset?.variants || []),
+        ...(asset.head_shot?.image_variants || []),
+    ].some((v: VariantLike) => v.is_uploaded_source);
+    const hasUploadedFullBody = [
+        ...(asset.full_body_asset?.variants || []),
+        ...(asset.full_body?.image_variants || []),
+    ].some((v: VariantLike) => v.is_uploaded_source);
     const hasAnyUpload = hasUploadedThreeViews || hasUploadedHeadshot || hasUploadedFullBody;
     const hasNonFullBodyUpload = hasUploadedThreeViews || hasUploadedHeadshot;
-    const hasFullBodyImage = !!(asset.full_body_image_url || (asset.full_body_asset?.variants?.length > 0));
+    const hasFullBodyImage = !!(
+        asset.full_body_image_url
+        || ((asset.full_body_asset?.variants?.length || 0) > 0)
+        || ((asset.full_body?.image_variants?.length || 0) > 0)
+    );
 
     // Local state for prompts
-    const getInitialPrompt = useCallback((type: string, existingPrompt: string) => {
+    const getInitialPrompt = useCallback((type: string, existingPrompt?: string | null) => {
         if (existingPrompt) return existingPrompt;
 
         const baseDesc = asset.description || "";
@@ -209,11 +229,17 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
     // Get the uploaded image URL for reverse generation reference
     const getUploadedReferenceUrl = () => {
         if (hasUploadedThreeViews) {
-            const uploadedVariant = asset.three_view_asset?.variants?.find((v: VariantLike) => v.is_uploaded_source);
+            const uploadedVariant = [
+                ...(asset.three_view_asset?.variants || []),
+                ...(asset.three_views?.image_variants || []),
+            ].find((v: VariantLike) => v.is_uploaded_source);
             return uploadedVariant?.url || asset.three_view_image_url;
         }
         if (hasUploadedHeadshot) {
-            const uploadedVariant = asset.headshot_asset?.variants?.find((v: VariantLike) => v.is_uploaded_source);
+            const uploadedVariant = [
+                ...(asset.headshot_asset?.variants || []),
+                ...(asset.head_shot?.image_variants || []),
+            ].find((v: VariantLike) => v.is_uploaded_source);
             return uploadedVariant?.url || asset.headshot_image_url;
         }
         return null;
@@ -229,8 +255,8 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
 
         // Check if source image exists
         const hasSourceImage = assetType === 'full_body'
-            ? (asset.full_body_image_url || asset.full_body_asset?.variants?.length > 0)
-            : (asset.headshot_image_url || asset.headshot_asset?.variants?.length > 0);
+            ? (asset.full_body_image_url || (asset.full_body_asset?.variants?.length || 0) > 0 || (asset.full_body?.image_variants?.length || 0) > 0)
+            : (asset.headshot_image_url || (asset.headshot_asset?.variants?.length || 0) > 0 || (asset.head_shot?.image_variants?.length || 0) > 0);
 
         if (!hasSourceImage) {
             alert(`请先生成一张${assetType === 'full_body' ? '全身图' : '头像'}作为参考图，然后再生成动态参考视频。`);
@@ -320,35 +346,175 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
         return task ? { isGenerating: true, batchSize: task.batchSize || 1 } : { isGenerating: false, batchSize: 1 };
     };
 
-    const handleSelectVariant = async (type: PanelKey, variantId: string) => {
-        if (!currentProject) return;
-        setOptimisticSelectedIds((current) => ({ ...current, [type]: variantId }));
+    const flushVariantSelection = useCallback(async (type: PanelKey) => {
+        if (!currentProject || inFlightSelectionRef.current[type]) {
+            return;
+        }
+
+        const requestedVariantId = latestSelectionRef.current[type];
+        if (!requestedVariantId) {
+            return;
+        }
+
+        inFlightSelectionRef.current[type] = true;
 
         try {
-            const panelAsset = getPanelAsset(type);
-            const selectedVariantUrl = panelAsset.variants?.find((variant) => variant.id === variantId)?.url;
-            await api.selectAssetVariant(currentProject.id, asset.id, "character", variantId, type);
-            if (selectedVariantUrl) {
-                const attributes =
-                    type === "full_body"
-                        ? { full_body_image_url: selectedVariantUrl, image_url: selectedVariantUrl }
-                        : type === "three_view"
-                            ? { three_view_image_url: selectedVariantUrl }
-                            : { headshot_image_url: selectedVariantUrl, avatar_url: selectedVariantUrl };
-                await api.updateAssetAttributes(currentProject.id, asset.id, "character", attributes);
-            }
+            const updatedProject = await api.selectAssetVariant(currentProject.id, asset.id, "character", requestedVariantId, type);
 
-            // 选中主图后直接刷新整份项目，避免角色卡片列表、弹窗和局部 store 合并状态出现分叉。
-            const refreshedProject = await api.getProject(currentProject.id);
-            updateProject(currentProject.id, refreshedProject);
+            // 用户连续切图时只认最后一次点击，旧请求返回不能把更新后的选中态再覆盖回去。
+            if (latestSelectionRef.current[type] === requestedVariantId) {
+                updateProject(currentProject.id, updatedProject);
+            }
         } catch (error) {
             console.error("Failed to select variant:", error);
-            setOptimisticSelectedIds((current) => {
-                const next = { ...current };
-                delete next[type];
-                return next;
+            if (latestSelectionRef.current[type] === requestedVariantId) {
+                const refreshedProject = await api.getProject(currentProject.id);
+                updateProject(currentProject.id, refreshedProject);
+                setOptimisticSelectedIds((current) => {
+                    const next = { ...current };
+                    delete next[type];
+                    return next;
+                });
+            }
+        } finally {
+            inFlightSelectionRef.current[type] = false;
+            if (latestSelectionRef.current[type] !== requestedVariantId) {
+                void flushVariantSelection(type);
+            }
+        }
+    }, [asset.id, currentProject, updateProject]);
+
+    const handleSelectVariant = (type: PanelKey, variantId: string) => {
+        if (!currentProject) return;
+
+        setOptimisticSelectedIds((current) => ({ ...current, [type]: variantId }));
+        latestSelectionRef.current[type] = variantId;
+
+        // 点击后先同步本地项目状态，确保弹窗左侧预览和角色卡片列表立即切到新图。
+        updateProject(currentProject.id, {
+            characters: currentProject.characters?.map((character) =>
+                character.id === asset.id ? applyCharacterVariantSelection(character as any, type, variantId) : character
+            ),
+        } as any);
+
+        void flushVariantSelection(type);
+    };
+
+    const resolvePanelAsset = (legacyAsset: LegacyPanelAsset | null | undefined, unitAsset: UnitPanelAsset | null | undefined, legacyUrl?: string | null, fallbackVariantId?: string): PanelAssetData => {
+        const legacyVariants = Array.isArray(legacyAsset?.variants) ? legacyAsset.variants : [];
+        const unitVariants = Array.isArray(unitAsset?.image_variants) ? unitAsset.image_variants : [];
+        const mergedVariantsById = new Map<string, VariantLike>();
+
+        [...legacyVariants, ...unitVariants].forEach((variant) => {
+            if (!variant?.id) return;
+            if (!mergedVariantsById.has(variant.id)) {
+                mergedVariantsById.set(variant.id, variant);
+            }
+        });
+
+        const mergedVariants = Array.from(mergedVariantsById.values()).sort((a, b) => parseVariantTime(b?.created_at) - parseVariantTime(a?.created_at));
+
+        if (mergedVariants.length === 0 && legacyUrl) {
+            mergedVariants.push({
+                id: legacyAsset?.selected_id || unitAsset?.selected_image_id || fallbackVariantId || `${asset.id}-legacy`,
+                url: legacyUrl,
+                created_at: asset.updated_at || asset.created_at || Date.now(),
             });
         }
+
+        const selectedVariant =
+            mergedVariants.find((variant) => variant.id === legacyAsset?.selected_id)
+            || mergedVariants.find((variant) => variant.id === unitAsset?.selected_image_id)
+            || mergedVariants.find((variant) => legacyUrl && variant.url === legacyUrl);
+
+        return {
+            selected_id: selectedVariant?.id || legacyAsset?.selected_id || unitAsset?.selected_image_id || null,
+            variants: mergedVariants,
+        };
+    };
+
+    const fullBodyPanelAsset = resolvePanelAsset(asset.full_body_asset, asset.full_body, asset.full_body_image_url, `${asset.id}-full-body-legacy`);
+    const threeViewPanelAsset = resolvePanelAsset(asset.three_view_asset, asset.three_views, asset.three_view_image_url, `${asset.id}-three-view-legacy`);
+    const headshotPanelAsset = resolvePanelAsset(asset.headshot_asset, asset.head_shot, asset.headshot_image_url || asset.avatar_url, `${asset.id}-headshot-legacy`);
+
+    // 统一把新版 unit 视频和旧版 video task 对齐到当前面板，保证历史动态结果也能显示。
+    const resolvePanelMotionVideos = (panelKey: Extract<PanelKey, "full_body" | "headshot">) => {
+        const unitVideos = panelKey === "full_body" ? (asset.full_body?.video_variants || []) : (asset.head_shot?.video_variants || []);
+        const panelAsset = panelKey === "full_body" ? fullBodyPanelAsset : headshotPanelAsset;
+        const panelImageUrls = new Set(
+            [
+                ...(panelAsset.variants || []).map((variant) => variant.url),
+                panelKey === "full_body" ? asset.full_body_image_url : (asset.headshot_image_url || asset.avatar_url),
+            ].map((value) => normalizeComparableAssetPath(value)).filter(Boolean),
+        );
+        const projectVideos = (currentProject?.video_tasks || [])
+            .filter((task) => {
+                if (!task?.video_url || (task.status && !["completed", "succeeded"].includes(task.status))) {
+                    return false;
+                }
+
+                // 历史动态任务不一定回填 asset_id；这里退回到源图地址匹配，避免旧结果在弹窗里“凭空消失”。
+                const imageMatchesPanel = !!task.image_url && panelImageUrls.has(normalizeComparableAssetPath(task.image_url));
+                return task.asset_id === asset.id || imageMatchesPanel;
+            });
+        const legacyVideos = [...(asset.video_assets || []), ...projectVideos]
+            .filter((task) => task?.video_url && (!task.status || ["completed", "succeeded"].includes(task.status)))
+            .map((task) => ({
+                id: task.id,
+                url: task.video_url,
+                video_url: task.video_url,
+                image_url: task.image_url,
+                created_at: task.created_at,
+                status: task.status,
+            }));
+        const matchedLegacyVideos = legacyVideos.filter((task) => task.image_url && panelImageUrls.has(normalizeComparableAssetPath(task.image_url)));
+        const fallbackLegacyVideos = matchedLegacyVideos.length > 0 ? matchedLegacyVideos : legacyVideos;
+        const mergedById = new Map<string, VideoVariantLike>();
+
+        [...unitVideos, ...fallbackLegacyVideos].forEach((video, index) => {
+            const resolvedUrl = video?.url || video?.video_url;
+            if (!resolvedUrl) return;
+            const resolvedId = video?.id || `${panelKey}-video-${index}-${resolvedUrl}`;
+            if (!mergedById.has(resolvedId)) {
+                mergedById.set(resolvedId, { ...video, id: resolvedId, url: resolvedUrl });
+            }
+        });
+
+        return getRecentVideoVariants(Array.from(mergedById.values()));
+    };
+
+    const fullBodyMotionVideos = resolvePanelMotionVideos("full_body");
+    const headshotMotionVideos = resolvePanelMotionVideos("headshot");
+
+    const getPanelAsset = (panelKey: PanelKey) => {
+        if (panelKey === "full_body") return fullBodyPanelAsset;
+        if (panelKey === "three_view") return threeViewPanelAsset;
+        return headshotPanelAsset;
+    };
+
+    const getPanelSelectedVariantId = (panelKey: PanelKey) => {
+        const panelAsset = getPanelAsset(panelKey);
+        const optimisticSelectedId = optimisticSelectedIds[panelKey];
+        if (optimisticSelectedId && panelAsset.variants?.some((variant) => variant.id === optimisticSelectedId)) {
+            return optimisticSelectedId;
+        }
+        if (panelAsset.selected_id && panelAsset.variants?.some((variant) => variant.id === panelAsset.selected_id)) {
+            return panelAsset.selected_id;
+        }
+        return null;
+    };
+
+    const getPanelSelectedUrl = (panelKey: PanelKey) => {
+        if (panelKey === "full_body") {
+            const selected = fullBodyPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("full_body"));
+            return getAssetUrl(selected?.url || asset.full_body_image_url || fullBodyPanelAsset.variants?.[0]?.url);
+        }
+        if (panelKey === "three_view") {
+            const selected = threeViewPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("three_view"));
+            return getAssetUrl(selected?.url || asset.three_view_image_url || threeViewPanelAsset.variants?.[0]?.url);
+        }
+        const selected = headshotPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("headshot"));
+        return getAssetUrl(selected?.url || asset.headshot_image_url || asset.avatar_url || headshotPanelAsset.variants?.[0]?.url);
     };
 
     // 用统一的面板元信息，避免 UI 状态和业务数据在多个地方分叉。
@@ -360,8 +526,8 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
             hint: "建议先完成主素材，再衍生三视图和头像。",
             icon: PhotoIcon,
             accent: "from-cyan-400/30 via-sky-500/15 to-transparent",
-            previewUrl: asset.full_body_image_url,
-            variantsCount: asset.full_body_asset?.variants?.length || 0,
+            previewUrl: getPanelSelectedUrl("full_body"),
+            variantsCount: fullBodyPanelAsset.variants?.length || 0,
             isGenerating: getGeneratingInfo("full_body").isGenerating,
             isLocked: false,
             motionEnabled: true
@@ -373,10 +539,10 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
             hint: "适合控制角色服装和体态在多视角下的一致性。",
             icon: Sparkles,
             accent: "from-emerald-400/25 via-teal-500/15 to-transparent",
-            previewUrl: asset.three_view_image_url,
-            variantsCount: asset.three_view_asset?.variants?.length || 0,
+            previewUrl: getPanelSelectedUrl("three_view"),
+            variantsCount: threeViewPanelAsset.variants?.length || 0,
             isGenerating: getGeneratingInfo("three_view").isGenerating,
-            isLocked: !asset.full_body_image_url && !hasAnyUpload,
+            isLocked: !(fullBodyPanelAsset.variants?.length > 0 || asset.full_body_image_url || hasAnyUpload),
             motionEnabled: false
         },
         {
@@ -386,10 +552,10 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
             hint: "更适合锁定五官、妆容和近景表情特征。",
             icon: Eye,
             accent: "from-amber-400/25 via-orange-500/15 to-transparent",
-            previewUrl: asset.headshot_image_url || asset.avatar_url,
-            variantsCount: asset.headshot_asset?.variants?.length || 0,
+            previewUrl: getPanelSelectedUrl("headshot"),
+            variantsCount: headshotPanelAsset.variants?.length || 0,
             isGenerating: getGeneratingInfo("headshot").isGenerating,
-            isLocked: !asset.full_body_image_url && !hasAnyUpload,
+            isLocked: !(fullBodyPanelAsset.variants?.length > 0 || asset.full_body_image_url || hasAnyUpload),
             motionEnabled: true
         }
     ];
@@ -404,7 +570,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
 
     const handleActiveModeChange = (nextMode: "static" | "motion") => {
         if (activePanel === "full_body") {
-            if (nextMode === "motion" && !(asset.full_body_image_url || asset.full_body_asset?.variants?.length > 0)) {
+            if (nextMode === "motion" && !(fullBodyPanelAsset.variants?.length > 0 || asset.full_body_image_url)) {
                 alert("请先生成静态图片。");
                 return;
             }
@@ -413,7 +579,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
         }
 
         if (activePanel === "headshot") {
-            if (nextMode === "motion" && !(asset.headshot_image_url || asset.headshot_asset?.variants?.length > 0)) {
+            if (nextMode === "motion" && !(headshotPanelAsset.variants?.length > 0 || asset.headshot_image_url || asset.avatar_url)) {
                 alert("请先生成静态图片。");
                 return;
             }
@@ -437,70 +603,6 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
         if (activePanel === "full_body") handleGenerateClick("full_body", fullBodyBatchSize);
         else if (activePanel === "three_view") handleGenerateClick("three_view", threeViewBatchSize);
         else handleGenerateClick("headshot", headshotBatchSize);
-    };
-
-    const resolvePanelAsset = (legacyAsset: LegacyPanelAsset | null | undefined, unitAsset: UnitPanelAsset | null | undefined, legacyUrl?: string, fallbackVariantId?: string): PanelAssetData => {
-        const legacyVariants = Array.isArray(legacyAsset?.variants) ? legacyAsset.variants : [];
-        const unitVariants = Array.isArray(unitAsset?.image_variants) ? unitAsset.image_variants : [];
-        const mergedVariantsById = new Map<string, VariantLike>();
-
-        [...legacyVariants, ...unitVariants].forEach((variant) => {
-            if (!variant?.id) return;
-            if (!mergedVariantsById.has(variant.id)) {
-                mergedVariantsById.set(variant.id, variant);
-            }
-        });
-
-        const mergedVariants = Array.from(mergedVariantsById.values()).sort((a, b) => {
-            const timeA = a?.created_at ? new Date(a.created_at).getTime() : 0;
-            const timeB = b?.created_at ? new Date(b.created_at).getTime() : 0;
-            return timeB - timeA;
-        });
-
-        if (mergedVariants.length === 0 && legacyUrl) {
-            mergedVariants.push({
-                id: legacyAsset?.selected_id || unitAsset?.selected_image_id || fallbackVariantId || `${asset.id}-legacy`,
-                url: legacyUrl,
-                created_at: asset.updated_at || asset.created_at || Date.now(),
-            });
-        }
-
-        return {
-            selected_id: legacyAsset?.selected_id || unitAsset?.selected_image_id || mergedVariants[0]?.id || null,
-            variants: mergedVariants,
-        };
-    };
-
-    const fullBodyPanelAsset = resolvePanelAsset(asset.full_body_asset, asset.full_body, asset.full_body_image_url, `${asset.id}-full-body-legacy`);
-    const threeViewPanelAsset = resolvePanelAsset(asset.three_view_asset, asset.three_views, asset.three_view_image_url, `${asset.id}-three-view-legacy`);
-    const headshotPanelAsset = resolvePanelAsset(asset.headshot_asset, asset.head_shot, asset.headshot_image_url || asset.avatar_url, `${asset.id}-headshot-legacy`);
-
-    const getPanelAsset = (panelKey: PanelKey) => {
-        if (panelKey === "full_body") return fullBodyPanelAsset;
-        if (panelKey === "three_view") return threeViewPanelAsset;
-        return headshotPanelAsset;
-    };
-
-    const getPanelSelectedVariantId = (panelKey: PanelKey) => {
-        const panelAsset = getPanelAsset(panelKey);
-        const optimisticSelectedId = optimisticSelectedIds[panelKey];
-        if (optimisticSelectedId && panelAsset.variants?.some((variant) => variant.id === optimisticSelectedId)) {
-            return optimisticSelectedId;
-        }
-        return panelAsset.selected_id;
-    };
-
-    const getPanelSelectedUrl = (panelKey: PanelKey) => {
-        if (panelKey === "full_body") {
-            const selected = fullBodyPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("full_body"));
-            return getAssetUrl(selected?.url || asset.full_body_image_url);
-        }
-        if (panelKey === "three_view") {
-            const selected = threeViewPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("three_view"));
-            return getAssetUrl(selected?.url || asset.three_view_image_url);
-        }
-        const selected = headshotPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("headshot"));
-        return getAssetUrl(selected?.url || asset.headshot_image_url || asset.avatar_url);
     };
 
     const activeSelectedImageUrl = getPanelSelectedUrl(activePanel);
@@ -683,7 +785,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     reverseReferenceUrl={getUploadedReferenceUrl()}
                                     supportsMotion={true}
                                     mode={fullBodyMode}
-                                    motionRefVideos={asset.full_body?.video_variants || []}
+                                    motionRefVideos={fullBodyMotionVideos}
                                     onGenerateMotionRef={(prompt: string, negativePromptForMotion: string) => handleGenerateMotionRef('full_body', prompt, negativePromptForMotion)}
                                     isGeneratingMotion={generatingTypes.some(t => t.type === "video_full_body")}
                                     motionPrompt={fullBodyMotionPrompt}
@@ -694,7 +796,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     setIsVideoLoading={setIsVideoLoading}
                                     motionRefAffordable={motionRefAffordable}
                                     motionRefPrice={motionRefGeneratePrice}
-                                    balanceCredits={account?.balance_credits}
+                                    balanceCredits={account?.balance_credits ?? undefined}
                                     onZoomImage={setZoomedImageUrl}
                                 />
                             )}
@@ -731,7 +833,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     aspectRatio="1:1"
                                     supportsMotion={true}
                                     mode={headshotMode}
-                                    motionRefVideos={asset.head_shot?.video_variants || []}
+                                    motionRefVideos={headshotMotionVideos}
                                     onGenerateMotionRef={(prompt: string, negativePromptForMotion: string) => handleGenerateMotionRef('head_shot', prompt, negativePromptForMotion)}
                                     isGeneratingMotion={generatingTypes.some(t => t.type === "video_head_shot")}
                                     motionPrompt={headshotMotionPrompt}
@@ -742,7 +844,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     setIsVideoLoading={setIsVideoLoading}
                                     motionRefAffordable={motionRefAffordable}
                                     motionRefPrice={motionRefGeneratePrice}
-                                    balanceCredits={account?.balance_credits}
+                                    balanceCredits={account?.balance_credits ?? undefined}
                                     onZoomImage={setZoomedImageUrl}
                                 />
                             )}
@@ -800,7 +902,7 @@ interface WorkbenchPanelProps {
     reverseGenerationMode?: boolean;
     reverseReferenceUrl?: string | null;
     motionRefAffordable?: boolean;
-    motionRefPrice?: number;
+    motionRefPrice?: number | null;
     balanceCredits?: number;
     onZoomImage?: (url: string) => void;
 }
@@ -837,7 +939,8 @@ function WorkbenchPanel({
     balanceCredits,
     onZoomImage,
 }: WorkbenchPanelProps) {
-    const latestVariants = getLatestBatchVariants(Array.isArray(asset?.variants) ? asset.variants : []);
+    const latestVariants = getRecentVariants(Array.isArray(asset?.variants) ? asset.variants : []);
+    const latestMotionVideo = getRecentVideoVariants(motionRefVideos)[0];
     const railRef = useRef<HTMLDivElement | null>(null);
     const aspectRatioClass = getAspectRatioCardClass(aspectRatio);
     const candidateCardBasis = latestVariants.length <= 1
@@ -887,9 +990,7 @@ function WorkbenchPanel({
                                 </div>
                                 {reverseReferenceUrl && (
                                     <img
-                                        src={typeof reverseReferenceUrl === 'string' && reverseReferenceUrl.startsWith('http')
-                                            ? reverseReferenceUrl
-                                            : `${window.location.origin}/${reverseReferenceUrl}`}
+                                        src={getAssetUrl(reverseReferenceUrl)}
                                         alt="Reference"
                                         className="h-14 w-14 rounded-xl border border-white/20 object-cover"
                                     />
@@ -918,7 +1019,7 @@ function WorkbenchPanel({
                                         <Video size={14} />
                                         生成视频
                                     </button>
-                                    <BillingTaskHint priceCredits={motionRefPrice} balanceCredits={balanceCredits} compact />
+                                    <BillingTaskHint priceCredits={motionRefPrice ?? null} balanceCredits={balanceCredits} compact />
                                 </div>
                             </div>
 
@@ -941,10 +1042,10 @@ function WorkbenchPanel({
                                     </div>
                                 ) : null}
 
-                                {motionRefVideos?.length > 0 ? (
+                                {latestMotionVideo ? (
                                     <video
-                                        key={motionRefVideos[motionRefVideos.length - 1]?.url}
-                                        src={getAssetUrl(motionRefVideos[motionRefVideos.length - 1]?.url)}
+                                        key={latestMotionVideo.id || latestMotionVideo.url || latestMotionVideo.video_url}
+                                        src={getAssetUrl(latestMotionVideo.url || latestMotionVideo.video_url)}
                                         onCanPlay={() => setIsVideoLoading?.(false)}
                                         onLoadStart={() => setIsVideoLoading?.(true)}
                                         className="h-full w-full object-contain"
@@ -1012,9 +1113,9 @@ function WorkbenchPanel({
                                                     type="button"
                                                     onClick={() => onSelect(variant.id)}
                                                     onDoubleClick={() => onZoomImage?.(imageUrl)}
-                                                    className={`asset-workbench-candidate group flex min-w-0 shrink-0 snap-start flex-col overflow-hidden border text-left transition-all ${isSelected
-                                                        ? 'asset-workbench-candidate-active border-white/20'
-                                                        : 'border-white/10 hover:border-white/20'
+                                                    className={`asset-workbench-candidate group flex min-w-0 shrink-0 snap-start flex-col overflow-hidden text-left transition-all ${isSelected
+                                                        ? 'asset-workbench-candidate-active'
+                                                        : ''
                                                         }`}
                                                     style={{ flexBasis: candidateCardBasis }}
                                                     title="单击设为当前图片，双击放大查看"

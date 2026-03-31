@@ -1,10 +1,4 @@
-"""
-项目分镜路由：分镜分析、分镜帧编辑、重绘与帧图管理。
-"""
-
-import os
-import shutil
-import uuid
+"""项目分镜路由：分镜分析、分镜帧编辑、重绘与帧图管理。"""
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
@@ -28,6 +22,8 @@ from ..schemas.requests import (
     UpdateFrameRequest,
 )
 from ..schemas.task_models import TaskReceipt
+from ..utils.oss_utils import OSSImageUploader
+from ..utils.temp_media import staged_upload_file
 
 
 router = APIRouter(dependencies=[Depends(get_request_context)])
@@ -321,14 +317,12 @@ async def upload_frame_image(
     """给分镜帧上传一张渲染图候选图片。"""
     try:
         logger.info("STORYBOARD_API: upload_frame_image script_id=%s frame_id=%s filename=%s", script_id, frame_id, file.filename)
-        file_ext = os.path.splitext(file.filename)[1]
-        filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join("output/uploads", filename)
+        with staged_upload_file(file.file, file.filename) as file_path:
+            object_key = OSSImageUploader().upload_image(file_path, sub_path="uploads")
+        if not object_key:
+            raise RuntimeError("OSS upload failed for frame image.")
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        updated_script = asset_service.upload_frame_image(script_id, frame_id, file_path)
+        updated_script = asset_service.upload_frame_image(script_id, frame_id, object_key)
         return signed_response(updated_script)
     except ValueError as exc:
         logger.warning("STORYBOARD_API: upload_frame_image failed script_id=%s detail=%s", script_id, exc)

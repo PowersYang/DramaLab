@@ -25,6 +25,10 @@ class StorageProvider:
         """按给定逻辑子路径上传通用文件。"""
         return self._uploader.upload_file(path, sub_path=sub_path)
 
+    def download_file(self, source: str, local_path: str) -> bool:
+        """把 OSS 对象键或远程 URL 下载到本地临时文件。"""
+        return self._uploader.download_file(source, local_path)
+
     @property
     def is_configured(self) -> bool:
         """暴露底层存储客户端是否已完成配置。"""

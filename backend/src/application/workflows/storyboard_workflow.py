@@ -14,10 +14,12 @@ from ...providers.image.asset_image_provider import ASPECT_RATIO_TO_SIZE
 from ...repository import ProjectRepository, SeriesRepository, VideoTaskRepository
 from ...schemas.models import GenerationStatus, ImageAsset, ImageVariant, StoryboardFrame
 from ...providers.text.default_prompts import DEFAULT_STORYBOARD_POLISH_PROMPT
-from ...utils.path_safety import safe_resolve_path, validate_safe_id
+from ...utils.path_safety import validate_safe_id
 from ...utils import get_logger
 from ...utils.datetime import utc_now
 from ...utils.system_check import get_ffmpeg_path
+from ...utils.oss_utils import is_object_key
+from ...utils.temp_media import create_temp_file_path, remove_temp_file
 
 logger = get_logger(__name__)
 
@@ -143,7 +145,7 @@ class StoryboardWorkflow:
         self.project_repository.save(project)
 
         try:
-            # 前端可能传来 OSS 对象键、外部 URL 或 output 相对路径，调用模型前先统一归一化。
+            # 前端可能传来 OSS 对象键、外部 URL 或运行时临时文件路径，调用模型前先统一归一化。
             ref_image_urls = composition_data.get("reference_image_urls", []) if composition_data else []
             ref_image_url = composition_data.get("reference_image_url") if composition_data else None
             ref_image_paths = []
@@ -153,17 +155,14 @@ class StoryboardWorkflow:
                 if self.storage_provider.is_object_key(url) or url.startswith("http"):
                     ref_image_paths.append(url)
                     continue
-                potential_path = safe_resolve_path("output", url)
-                if os.path.exists(potential_path):
-                    ref_image_paths.append(potential_path)
+                if os.path.exists(url):
+                    ref_image_paths.append(url)
 
             if ref_image_url and ref_image_url not in ref_image_urls:
                 if self.storage_provider.is_object_key(ref_image_url) or ref_image_url.startswith("http"):
                     ref_image_paths.append(ref_image_url)
-                else:
-                    potential_path = safe_resolve_path("output", ref_image_url)
-                    if os.path.exists(potential_path):
-                        ref_image_paths.append(potential_path)
+                elif os.path.exists(ref_image_url):
+                    ref_image_paths.append(ref_image_url)
 
             ref_image_path = ref_image_paths[0] if ref_image_paths else None
             scene = next((item for item in project.scenes if item.id == frame.scene_id), None)
@@ -207,20 +206,23 @@ class StoryboardWorkflow:
             raise ValueError("Video task not found or not completed")
 
         video_path = video_task.video_url
-        if not video_path.startswith("/") and not video_path.startswith("http"):
-            video_path = safe_resolve_path("output", video_path)
-        if not os.path.exists(video_path):
+        cleanup_video_path = False
+        if is_object_key(video_path) or video_path.startswith("http"):
+            local_video_path = create_temp_file_path(prefix=f"dramalab-frame-source-{frame_id}-", suffix=".mp4")
+            if not self.storage_provider.download_file(video_path, local_video_path):
+                remove_temp_file(local_video_path)
+                raise ValueError("Video file could not be downloaded from object storage.")
+            video_path = local_video_path
+            cleanup_video_path = True
+        elif not os.path.exists(video_path):
             raise ValueError(f"Video file not found: {video_path}")
 
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
             raise RuntimeError("FFmpeg is required for frame extraction but was not found.")
 
-        output_dir = os.path.join("output", "storyboard")
-        os.makedirs(output_dir, exist_ok=True)
         validate_safe_id(frame_id, "frame_id")
-        output_filename = f"frame_{frame_id}_lastframe_{uuid.uuid4().hex[:8]}.jpg"
-        output_path = safe_resolve_path(output_dir, output_filename)
+        output_path = create_temp_file_path(prefix=f"dramalab-last-frame-{frame_id}-", suffix=".jpg")
 
         cmd = [
             ffmpeg_path,
@@ -236,15 +238,20 @@ class StoryboardWorkflow:
             output_path,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                raise RuntimeError(f"FFmpeg error: {result.stderr}")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("FFmpeg frame extraction timed out")
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg error: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("FFmpeg frame extraction timed out")
 
-        image_url = self.storage_provider.upload_image(output_path)
-        if not image_url:
-            raise RuntimeError("Failed to upload extracted frame image to OSS.")
+            image_url = self.storage_provider.upload_image(output_path)
+            if not image_url:
+                raise RuntimeError("Failed to upload extracted frame image to OSS.")
+        finally:
+            remove_temp_file(output_path)
+            if cleanup_video_path:
+                remove_temp_file(video_path)
         variant = ImageVariant(
             id=str(uuid.uuid4()),
             url=image_url,

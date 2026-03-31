@@ -25,6 +25,35 @@ export function getAssetUrl(path: string | null | undefined): string {
     return normalizedPath;
 }
 
+export function normalizeComparableAssetPath(path: string | null | undefined): string {
+    if (!path) return "";
+
+    const normalizedPath = path.trim();
+    if (!normalizedPath) return "";
+
+    const withoutHash = normalizedPath.split("#")[0] || "";
+    const withoutQuery = withoutHash.split("?")[0] || "";
+    if (!withoutQuery) return "";
+
+    if (
+        withoutQuery.startsWith("blob:")
+        || withoutQuery.startsWith("data:")
+    ) {
+        return withoutQuery;
+    }
+
+    if (withoutQuery.startsWith("http://") || withoutQuery.startsWith("https://")) {
+        try {
+            const parsed = new URL(withoutQuery);
+            return decodeURIComponent(parsed.pathname).replace(/^\/+/, "");
+        } catch {
+            return withoutQuery;
+        }
+    }
+
+    return withoutQuery.replace(/^\/+/, "");
+}
+
 export function getAssetUrlWithTimestamp(path: string | null | undefined, timestamp?: number): string {
     const baseUrl = getAssetUrl(path);
     if (!baseUrl) return "";

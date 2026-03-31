@@ -1,10 +1,7 @@
-"""
-视频模型 provider。
+"""视频模型 provider。
 
 保留对现有模型实现的兼容，同时把 workflow 和底层视频 SDK 解耦。
 """
-
-import os
 
 try:
     from ..models.kling import KlingModel
@@ -17,6 +14,7 @@ except Exception:
     ViduModel = None
 
 from .video.video_generation_provider import VideoGenerator
+from ..utils.temp_media import create_temp_file_path
 
 
 class VideoModelProvider:
@@ -116,8 +114,5 @@ class VideoModelProvider:
         )
 
     def build_output_path(self, task_id: str) -> str:
-        """构建并创建视频任务默认输出路径。"""
-        output_filename = f"video_{task_id}.mp4"
-        output_path = os.path.join("output", "video", output_filename)
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        return output_path
+        """构建视频任务默认临时输出路径。"""
+        return create_temp_file_path(prefix=f"dramalab-video-{task_id}-", suffix=".mp4")

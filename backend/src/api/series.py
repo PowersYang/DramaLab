@@ -63,8 +63,14 @@ async def create_series(
 @router.get("/series")
 async def list_series(context: RequestContext = Depends(get_request_context)):
     """列出所有系列。"""
+    started_at = time.perf_counter()
     series_list = series_service.list_series(workspace_id=context.current_workspace_id)
-    logger.info("SERIES_API: list_series count=%s", len(series_list))
+    logger.info(
+        "SERIES_API: list_series count=%s workspace_id=%s duration_ms=%.2f",
+        len(series_list),
+        context.current_workspace_id,
+        (time.perf_counter() - started_at) * 1000,
+    )
     return signed_response(series_list)
 
 

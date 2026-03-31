@@ -20,6 +20,8 @@ from ...models.image import WanxImageModel
 from ...utils import get_logger
 from ...utils.datetime import utc_now
 from ...utils.oss_utils import OSSImageUploader, is_object_key
+from ...utils.reference_inputs import resolve_reference_image_input
+from ...utils.temp_media import create_temp_file_path, remove_temp_file
 
 logger = get_logger(__name__)
 
@@ -67,7 +69,12 @@ class AssetGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxImageModel(self.config.get("model", {}))
-        self.output_dir = self.config.get("output_dir", "output/assets")
+
+    def _raise_generation_failure(self, stage_label: str, last_error: Exception | None) -> None:
+        """保留最后一次真实异常，避免任务表只落笼统失败文案。"""
+        if last_error is not None:
+            raise RuntimeError(f"{stage_label}生成失败：{last_error}") from last_error
+        raise RuntimeError(f"{stage_label}生成失败，请检查模型配置或修改描述内容后重试。")
 
     def generate_character(self, character: Character, generation_type: str = "all", prompt: str = "", positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, i2i_model_name: str = None, size: str = None) -> Character:
         """为角色的一个或多个资产槽位生成图片候选。"""
@@ -85,39 +92,30 @@ class AssetGenerator:
                 generation_prompt = f"{base_prompt}, {style_suffix}" if style_suffix and style_suffix not in base_prompt else base_prompt
 
                 ref_image_path = None
-                if character.base_character_id:
-                    base_fullbody_path = os.path.join(self.output_dir, "characters", f"{character.base_character_id}_fullbody.png")
-                    if os.path.exists(base_fullbody_path):
-                        ref_image_path = base_fullbody_path
-
-                if not ref_image_path and character.three_view_asset:
+                if character.three_view_asset:
                     uploaded_variant = next((variant for variant in character.three_view_asset.variants if getattr(variant, "is_uploaded_source", False)), None)
                     if uploaded_variant:
                         ref_url = uploaded_variant.url
-                        if is_object_key(ref_url):
+                        if is_object_key(ref_url) or ref_url.startswith("http"):
                             ref_image_path = ref_url
-                        else:
-                            local_path = os.path.join("output", ref_url)
-                            if os.path.exists(local_path):
-                                ref_image_path = local_path
+                        elif os.path.exists(ref_url):
+                            ref_image_path = ref_url
 
                 if not ref_image_path and character.headshot_asset:
                     uploaded_variant = next((variant for variant in character.headshot_asset.variants if getattr(variant, "is_uploaded_source", False)), None)
                     if uploaded_variant:
                         ref_url = uploaded_variant.url
-                        if is_object_key(ref_url):
+                        if is_object_key(ref_url) or ref_url.startswith("http"):
                             ref_image_path = ref_url
-                        else:
-                            local_path = os.path.join("output", ref_url)
-                            if os.path.exists(local_path):
-                                ref_image_path = local_path
+                        elif os.path.exists(ref_url):
+                            ref_image_path = ref_url
 
                 successful_generations = 0
+                last_generation_error: Exception | None = None
                 for index in range(batch_size):
                     try:
                         variant_id = str(uuid.uuid4())
-                        fullbody_path = os.path.join(self.output_dir, "characters", f"{character.id}_fullbody_{variant_id}.png")
-                        os.makedirs(os.path.dirname(fullbody_path), exist_ok=True)
+                        fullbody_path = create_temp_file_path(prefix=f"dramalab-character-fullbody-{character.id}-{variant_id}-", suffix=".png")
 
                         effective_model_name = model_name
                         effective_generation_prompt = generation_prompt
@@ -128,51 +126,55 @@ class AssetGenerator:
                             if reverse_enhancement.strip() not in effective_generation_prompt:
                                 effective_generation_prompt = f"{reverse_enhancement}{generation_prompt}"
 
-                        self.model.generate(
-                            effective_generation_prompt,
-                            fullbody_path,
-                            ref_image_path=ref_image_path,
-                            negative_prompt=negative_prompt,
-                            model_name=effective_model_name,
-                            size=effective_size,
-                        )
+                        try:
+                            self.model.generate(
+                                effective_generation_prompt,
+                                fullbody_path,
+                                ref_image_path=ref_image_path,
+                                negative_prompt=negative_prompt,
+                                model_name=effective_model_name,
+                                size=effective_size,
+                            )
 
-                        if not character.full_body_asset:
-                            character.full_body_asset = ImageAsset()
-                        uploader = OSSImageUploader()
-                        object_key = uploader.upload_file(fullbody_path, sub_path="assets/characters") if uploader.is_configured else None
-                        if not object_key:
-                            raise RuntimeError("Failed to upload full body variant to OSS.")
-                        variant = ImageVariant(
-                            id=variant_id,
-                            url=object_key,
-                            created_at=utc_now(),
-                            prompt_used=generation_prompt,
-                        )
-                        if not character.full_body:
-                            character.full_body = AssetUnit()
-                        character.full_body_asset.variants.insert(0, variant)
-                        character.full_body.image_variants.insert(0, variant.model_copy(deep=True))
-                        character.full_body.image_prompt = base_prompt
-                        character.full_body.image_updated_at = utc_now()
-                        cleanup_old_variants(character.full_body_asset)
-                        character.full_body.image_variants = [item.model_copy(deep=True) for item in character.full_body_asset.variants]
+                            if not character.full_body_asset:
+                                character.full_body_asset = ImageAsset()
+                            uploader = OSSImageUploader()
+                            object_key = uploader.upload_file(fullbody_path, sub_path="assets/characters") if uploader.is_configured else None
+                            if not object_key:
+                                raise RuntimeError("Failed to upload full body variant to OSS.")
+                            variant = ImageVariant(
+                                id=variant_id,
+                                url=object_key,
+                                created_at=utc_now(),
+                                prompt_used=generation_prompt,
+                            )
+                            if not character.full_body:
+                                character.full_body = AssetUnit()
+                            character.full_body_asset.variants.insert(0, variant)
+                            character.full_body.image_variants.insert(0, variant.model_copy(deep=True))
+                            character.full_body.image_prompt = base_prompt
+                            character.full_body.image_updated_at = utc_now()
+                            cleanup_old_variants(character.full_body_asset)
+                            character.full_body.image_variants = [item.model_copy(deep=True) for item in character.full_body_asset.variants]
 
-                        if not character.full_body_asset.selected_id or batch_size == 1:
-                            character.full_body_asset.selected_id = variant_id
-                            character.full_body_image_url = object_key
-                            character.full_body.selected_image_id = variant_id
+                            if not character.full_body_asset.selected_id or batch_size == 1:
+                                character.full_body_asset.selected_id = variant_id
+                                character.full_body_image_url = object_key
+                                character.full_body.selected_image_id = variant_id
+                        finally:
+                            remove_temp_file(fullbody_path)
 
                         successful_generations += 1
                         if index < batch_size - 1:
                             time.sleep(1)
                     except Exception as exc:
+                        last_generation_error = exc
                         logger.error("Failed to generate full body variant %s/%s: %s", index + 1, batch_size, exc)
                         continue
 
                 character.full_body_updated_at = utc_now()
                 if successful_generations == 0:
-                    raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
+                    self._raise_generation_failure("全身图", last_generation_error)
                 if generation_type == "full_body":
                     character.is_consistent = False
 
@@ -203,13 +205,9 @@ class AssetGenerator:
                 raise ValueError("Full body image is required to generate derived assets. Upload an image or generate a full body first.")
 
             reference_url = current_full_body_url or uploaded_reference_url
-            if reference_url:
-                if is_object_key(reference_url):
-                    fullbody_path = reference_url
-                else:
-                    fullbody_path = os.path.join("output", reference_url)
-            else:
-                fullbody_path = None
+            fullbody_path = resolve_reference_image_input(reference_url)
+            if generation_type in ["three_view", "headshot"] and not fullbody_path:
+                raise ValueError("Reference image is unavailable. Please use an OSS-hosted image or regenerate the source image first.")
 
             if generation_type in ["all", "three_view"]:
                 if not prompt or generation_type == "all":
@@ -221,41 +219,46 @@ class AssetGenerator:
                 sheet_negative = negative_prompt + ", background, scenery, landscape, shadows, complex background, text, watermark, messy, distorted, extra limbs"
 
                 successful_generations = 0
+                last_generation_error: Exception | None = None
                 for index in range(batch_size):
                     try:
                         variant_id = str(uuid.uuid4())
-                        sheet_path = os.path.join(self.output_dir, "characters", f"{character.id}_sheet_{variant_id}.png")
-                        self.model.generate(generation_prompt, sheet_path, ref_image_path=fullbody_path, negative_prompt=sheet_negative, ref_strength=0.8, model_name=i2i_model_name)
-                        if not character.three_view_asset:
-                            character.three_view_asset = ImageAsset()
-                        if not character.three_views:
-                            character.three_views = AssetUnit()
-                        uploader = OSSImageUploader()
-                        object_key = uploader.upload_file(sheet_path, sub_path="assets/characters") if uploader.is_configured else None
-                        if not object_key:
-                            raise RuntimeError("Failed to upload three view variant to OSS.")
-                        variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
-                        character.three_view_asset.variants.insert(0, variant)
-                        character.three_views.image_variants.insert(0, variant.model_copy(deep=True))
-                        character.three_views.image_prompt = base_prompt
-                        character.three_views.image_updated_at = utc_now()
-                        cleanup_old_variants(character.three_view_asset)
-                        character.three_views.image_variants = [item.model_copy(deep=True) for item in character.three_view_asset.variants]
-                        if not character.three_view_asset.selected_id or batch_size == 1:
-                            character.three_view_asset.selected_id = variant_id
-                            character.three_view_image_url = object_key
-                            character.image_url = object_key
-                            character.three_views.selected_image_id = variant_id
+                        sheet_path = create_temp_file_path(prefix=f"dramalab-character-sheet-{character.id}-{variant_id}-", suffix=".png")
+                        try:
+                            self.model.generate(generation_prompt, sheet_path, ref_image_path=fullbody_path, negative_prompt=sheet_negative, ref_strength=0.8, model_name=i2i_model_name)
+                            if not character.three_view_asset:
+                                character.three_view_asset = ImageAsset()
+                            if not character.three_views:
+                                character.three_views = AssetUnit()
+                            uploader = OSSImageUploader()
+                            object_key = uploader.upload_file(sheet_path, sub_path="assets/characters") if uploader.is_configured else None
+                            if not object_key:
+                                raise RuntimeError("Failed to upload three view variant to OSS.")
+                            variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
+                            character.three_view_asset.variants.insert(0, variant)
+                            character.three_views.image_variants.insert(0, variant.model_copy(deep=True))
+                            character.three_views.image_prompt = base_prompt
+                            character.three_views.image_updated_at = utc_now()
+                            cleanup_old_variants(character.three_view_asset)
+                            character.three_views.image_variants = [item.model_copy(deep=True) for item in character.three_view_asset.variants]
+                            if not character.three_view_asset.selected_id or batch_size == 1:
+                                character.three_view_asset.selected_id = variant_id
+                                character.three_view_image_url = object_key
+                                character.image_url = object_key
+                                character.three_views.selected_image_id = variant_id
+                        finally:
+                            remove_temp_file(sheet_path)
                         successful_generations += 1
                         if index < batch_size - 1:
                             time.sleep(1)
                     except Exception as exc:
+                        last_generation_error = exc
                         logger.error("Failed to generate three view variant %s/%s: %s", index + 1, batch_size, exc)
                         continue
 
                 character.three_view_updated_at = utc_now()
                 if successful_generations == 0:
-                    raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
+                    self._raise_generation_failure("三视图", last_generation_error)
 
             if generation_type in ["all", "headshot"]:
                 if not prompt or generation_type == "all":
@@ -266,41 +269,46 @@ class AssetGenerator:
                 generation_prompt = f"{base_prompt}, {style_suffix}" if style_suffix and style_suffix not in base_prompt else base_prompt
 
                 successful_generations = 0
+                last_generation_error: Exception | None = None
                 for index in range(batch_size):
                     try:
                         variant_id = str(uuid.uuid4())
-                        avatar_path = os.path.join(self.output_dir, "characters", f"{character.id}_avatar_{variant_id}.png")
-                        self.model.generate(generation_prompt, avatar_path, ref_image_path=fullbody_path, negative_prompt=negative_prompt, ref_strength=0.8, model_name=i2i_model_name)
-                        if not character.headshot_asset:
-                            character.headshot_asset = ImageAsset()
-                        if not character.head_shot:
-                            character.head_shot = AssetUnit()
-                        uploader = OSSImageUploader()
-                        object_key = uploader.upload_file(avatar_path, sub_path="assets/characters") if uploader.is_configured else None
-                        if not object_key:
-                            raise RuntimeError("Failed to upload headshot variant to OSS.")
-                        variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
-                        character.headshot_asset.variants.insert(0, variant)
-                        character.head_shot.image_variants.insert(0, variant.model_copy(deep=True))
-                        character.head_shot.image_prompt = base_prompt
-                        character.head_shot.image_updated_at = utc_now()
-                        cleanup_old_variants(character.headshot_asset)
-                        character.head_shot.image_variants = [item.model_copy(deep=True) for item in character.headshot_asset.variants]
-                        if not character.headshot_asset.selected_id or batch_size == 1:
-                            character.headshot_asset.selected_id = variant_id
-                            character.headshot_image_url = object_key
-                            character.avatar_url = object_key
-                            character.head_shot.selected_image_id = variant_id
+                        avatar_path = create_temp_file_path(prefix=f"dramalab-character-headshot-{character.id}-{variant_id}-", suffix=".png")
+                        try:
+                            self.model.generate(generation_prompt, avatar_path, ref_image_path=fullbody_path, negative_prompt=negative_prompt, ref_strength=0.8, model_name=i2i_model_name)
+                            if not character.headshot_asset:
+                                character.headshot_asset = ImageAsset()
+                            if not character.head_shot:
+                                character.head_shot = AssetUnit()
+                            uploader = OSSImageUploader()
+                            object_key = uploader.upload_file(avatar_path, sub_path="assets/characters") if uploader.is_configured else None
+                            if not object_key:
+                                raise RuntimeError("Failed to upload headshot variant to OSS.")
+                            variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
+                            character.headshot_asset.variants.insert(0, variant)
+                            character.head_shot.image_variants.insert(0, variant.model_copy(deep=True))
+                            character.head_shot.image_prompt = base_prompt
+                            character.head_shot.image_updated_at = utc_now()
+                            cleanup_old_variants(character.headshot_asset)
+                            character.head_shot.image_variants = [item.model_copy(deep=True) for item in character.headshot_asset.variants]
+                            if not character.headshot_asset.selected_id or batch_size == 1:
+                                character.headshot_asset.selected_id = variant_id
+                                character.headshot_image_url = object_key
+                                character.avatar_url = object_key
+                                character.head_shot.selected_image_id = variant_id
+                        finally:
+                            remove_temp_file(avatar_path)
                         successful_generations += 1
                         if index < batch_size - 1:
                             time.sleep(1)
                     except Exception as exc:
+                        last_generation_error = exc
                         logger.error("Failed to generate headshot variant %s/%s: %s", index + 1, batch_size, exc)
                         continue
 
                 character.headshot_updated_at = utc_now()
                 if successful_generations == 0:
-                    raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
+                    self._raise_generation_failure("头像", last_generation_error)
 
             if generation_type == "all":
                 character.is_consistent = True
@@ -326,20 +334,22 @@ class AssetGenerator:
         try:
             for _ in range(batch_size):
                 variant_id = str(uuid.uuid4())
-                output_path = os.path.join(self.output_dir, "scenes", f"{scene.id}_{variant_id}.png")
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
-                if not scene.image_asset:
-                    scene.image_asset = ImageAsset()
-                uploader = OSSImageUploader()
-                object_key = uploader.upload_file(output_path, sub_path="assets/scenes") if uploader.is_configured else None
-                if not object_key:
-                    raise RuntimeError("Failed to upload scene variant to OSS.")
-                variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=prompt)
-                scene.image_asset.variants.insert(0, variant)
-                if not scene.image_asset.selected_id or batch_size == 1:
-                    scene.image_asset.selected_id = variant_id
-                    scene.image_url = object_key
+                output_path = create_temp_file_path(prefix=f"dramalab-scene-{scene.id}-{variant_id}-", suffix=".png")
+                try:
+                    self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+                    if not scene.image_asset:
+                        scene.image_asset = ImageAsset()
+                    uploader = OSSImageUploader()
+                    object_key = uploader.upload_file(output_path, sub_path="assets/scenes") if uploader.is_configured else None
+                    if not object_key:
+                        raise RuntimeError("Failed to upload scene variant to OSS.")
+                    variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=prompt)
+                    scene.image_asset.variants.insert(0, variant)
+                    if not scene.image_asset.selected_id or batch_size == 1:
+                        scene.image_asset.selected_id = variant_id
+                        scene.image_url = object_key
+                finally:
+                    remove_temp_file(output_path)
             scene.status = GenerationStatus.COMPLETED
         except Exception as exc:
             logger.error("Failed to generate scene %s: %s", scene.name, exc)
@@ -358,20 +368,22 @@ class AssetGenerator:
         try:
             for _ in range(batch_size):
                 variant_id = str(uuid.uuid4())
-                output_path = os.path.join(self.output_dir, "props", f"{prop.id}_{variant_id}.png")
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
-                if not prop.image_asset:
-                    prop.image_asset = ImageAsset()
-                uploader = OSSImageUploader()
-                object_key = uploader.upload_file(output_path, sub_path="assets/props") if uploader.is_configured else None
-                if not object_key:
-                    raise RuntimeError("Failed to upload prop variant to OSS.")
-                variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=prompt)
-                prop.image_asset.variants.insert(0, variant)
-                if not prop.image_asset.selected_id or batch_size == 1:
-                    prop.image_asset.selected_id = variant_id
-                    prop.image_url = object_key
+                output_path = create_temp_file_path(prefix=f"dramalab-prop-{prop.id}-{variant_id}-", suffix=".png")
+                try:
+                    self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+                    if not prop.image_asset:
+                        prop.image_asset = ImageAsset()
+                    uploader = OSSImageUploader()
+                    object_key = uploader.upload_file(output_path, sub_path="assets/props") if uploader.is_configured else None
+                    if not object_key:
+                        raise RuntimeError("Failed to upload prop variant to OSS.")
+                    variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=prompt)
+                    prop.image_asset.variants.insert(0, variant)
+                    if not prop.image_asset.selected_id or batch_size == 1:
+                        prop.image_asset.selected_id = variant_id
+                        prop.image_url = object_key
+                finally:
+                    remove_temp_file(output_path)
             prop.status = GenerationStatus.COMPLETED
         except Exception as exc:
             logger.error("Failed to generate prop %s: %s", prop.name, exc)

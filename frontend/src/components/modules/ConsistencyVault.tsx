@@ -6,6 +6,7 @@ import { User, MapPin, Box, Lock, Unlock, RefreshCw, Image as ImageIcon, X, Chec
 import { useProjectStore } from "@/store/projectStore";
 import { api, crudApi } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
+import { getCharacterPreviewImage } from "@/lib/characterAssets";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
@@ -446,7 +447,7 @@ export default function ConsistencyVault() {
                             isGenerating={isAssetGenerating(selectedAssetId)}
                             stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
                             styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
-                            onGenerateVideo={(prompt: string, duration: number) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, duration, "video")}
+                            onGenerateVideo={(prompt: string, duration: number) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, "", duration, "video")}
                             onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
                             isGeneratingVideo={getAssetGeneratingTypes(selectedAssetId).some((t: any) => t.type.startsWith("video"))}
                         />
@@ -807,27 +808,7 @@ function AssetCard({ asset, type, isGenerating, isLockToggling, onGenerate, onTo
 
     const resolveAssetPreview = () => {
         if (type === "character") {
-            const selectedFullBody = getSelectedVariant(asset.full_body_asset);
-            const selectedHeadshot = getSelectedVariant(asset.headshot_asset);
-            const selectedThreeView = getSelectedVariant(asset.three_view_asset);
-            const previewPath =
-                selectedFullBody?.url
-                || asset.full_body_image_url
-                || selectedHeadshot?.url
-                || asset.headshot_image_url
-                || asset.avatar_url
-                || selectedThreeView?.url
-                || asset.image_url
-                || asset.three_view_image_url
-                || asset.avatar_url;
-            const previewTimestamp =
-                selectedFullBody?.created_at
-                || asset.full_body_updated_at
-                || selectedHeadshot?.created_at
-                || asset.headshot_updated_at
-                || selectedThreeView?.created_at
-                || asset.three_view_updated_at;
-            return { previewPath, previewTimestamp };
+            return getCharacterPreviewImage(asset);
         }
 
         const selectedVariant = getSelectedVariant(asset.image_asset);

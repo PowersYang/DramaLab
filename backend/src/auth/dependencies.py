@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -14,10 +15,12 @@ from ..auth.constants import (
     REFRESH_TOKEN_COOKIE,
     ROLE_PLATFORM_SUPER_ADMIN,
 )
+from ..common.log import get_logger
 from ..schemas.models import User
 
 
 auth_service = AuthService()
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -48,6 +51,8 @@ def get_current_user(
     request: Request,
     authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> User:
+    started_at = time.perf_counter()
+    request_id = getattr(request.state, "request_id", None)
     access_token_cookie = _read_auth_cookie(request, ACCESS_TOKEN_COOKIE, LEGACY_ACCESS_TOKEN_COOKIE)
     token = _extract_bearer_token(authorization) or access_token_cookie
     if not token:
@@ -59,6 +64,12 @@ def get_current_user(
     user = auth_service.user_repository.get(claims.user_id)
     if user is None or user.status != "active":
         raise HTTPException(status_code=401, detail="User is unavailable")
+    logger.info(
+        "AUTH_DEP: get_current_user request_id=%s user_id=%s duration_ms=%.2f",
+        request_id,
+        user.id,
+        (time.perf_counter() - started_at) * 1000,
+    )
     return user
 
 
@@ -67,16 +78,32 @@ def get_request_context(
     user: User = Depends(get_current_user),
     authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> RequestContext:
+    started_at = time.perf_counter()
+    request_id = getattr(request.state, "request_id", None)
     access_token_cookie = _read_auth_cookie(request, ACCESS_TOKEN_COOKIE, LEGACY_ACCESS_TOKEN_COOKIE)
     refresh_token = _read_auth_cookie(request, REFRESH_TOKEN_COOKIE, LEGACY_REFRESH_TOKEN_COOKIE)
     token = _extract_bearer_token(authorization) or access_token_cookie
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
+        decode_started_at = time.perf_counter()
         claims = auth_service.decode_access_token(token)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    decode_duration_ms = (time.perf_counter() - decode_started_at) * 1000
+    build_started_at = time.perf_counter()
     me = auth_service.build_auth_me(user, claims.workspace_id)
+    build_duration_ms = (time.perf_counter() - build_started_at) * 1000
+    logger.info(
+        "AUTH_DEP: get_request_context request_id=%s user_id=%s workspace_id=%s decode_ms=%.2f build_auth_me_ms=%.2f total_ms=%.2f capabilities=%s",
+        request_id,
+        user.id,
+        me.current_workspace_id,
+        decode_duration_ms,
+        build_duration_ms,
+        (time.perf_counter() - started_at) * 1000,
+        len(me.capabilities),
+    )
     return RequestContext(
         user=user,
         current_workspace_id=me.current_workspace_id,

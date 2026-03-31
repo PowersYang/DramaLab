@@ -6,6 +6,7 @@ import { useTaskStore } from "@/store/taskStore";
 import VideoCreator from "./VideoCreator";
 import VideoSidebar from "./VideoSidebar";
 import { api, TaskReceipt, VideoTask } from "@/lib/api";
+import { isVideoQueueTaskType } from "@/lib/videoTaskQueue";
 
 export default function VideoGenerator() {
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -67,7 +68,9 @@ export default function VideoGenerator() {
         const projectJobIds = jobIdsByProject[currentProject.id] || [];
         return projectJobIds.filter((jobId) => {
             const job = jobsById[jobId];
-            return job && ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status);
+            return job
+                && isVideoQueueTaskType(job.task_type)
+                && ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status);
         });
     }, [currentProject, jobIdsByProject, jobsById]);
 

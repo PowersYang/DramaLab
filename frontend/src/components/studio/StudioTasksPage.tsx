@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, RefreshCw, Search, Workflow } from "lucide-react";
 
-import { api, type ProjectBrief, type SeriesBrief, type TaskJob } from "@/lib/api";
+import { api, type ProjectSummary, type SeriesSummary, type TaskJob } from "@/lib/api";
+import {
+  isStudioCacheFresh,
+  loadStudioCacheResource,
+  readStudioCache,
+  writeStudioCache,
+  STUDIO_PROJECT_SUMMARIES_CACHE_KEY,
+  STUDIO_SERIES_SUMMARIES_CACHE_KEY,
+  STUDIO_TASK_LIST_CACHE_KEY,
+} from "@/lib/studioCache";
 import { useTaskStore } from "@/store/taskStore";
 
 const TASK_COPY: Record<string, string> = {
@@ -59,6 +68,21 @@ interface TaskTableRow extends TaskJob {
 }
 
 const TASK_DASHBOARD_LOG_PREFIX = "[tasks-dashboard]";
+const TASK_CACHE_MAX_AGE = 15_000;
+
+const mergeTaskLists = (...lists: TaskJob[][]): TaskJob[] => {
+  const merged = new Map<string, TaskJob>();
+
+  for (const list of lists) {
+    for (const task of list) {
+      const existing = merged.get(task.id);
+      // 中文注释：任务页既吃远端全量列表，也吃 taskStore 里的即时 receipt；相同任务要以后写覆盖前写。
+      merged.set(task.id, existing ? { ...existing, ...task } : task);
+    }
+  }
+
+  return Array.from(merged.values()).sort((a, b) => getTimestamp(b.created_at) - getTimestamp(a.created_at));
+};
 
 const formatTime = (value?: string | number | null) => {
   if (!value) return "-";
@@ -73,10 +97,18 @@ const getTimestamp = (value?: string | number | null) => {
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 };
 
+const formatDurationMinutes = (value: number) => {
+  if (value <= 0) return "刚刚启动";
+  if (value < 60) return `${value} 分钟`;
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+};
+
 const getScopeMeta = (
   task: TaskJob,
-  projectMap: Map<string, ProjectBrief>,
-  seriesMap: Map<string, SeriesBrief>
+  projectMap: Map<string, ProjectSummary>,
+  seriesMap: Map<string, SeriesSummary>
 ): Pick<TaskTableRow, "scopeName" | "scopeType"> => {
   // 任务中心优先展示业务名称，而不是裸 ID，便于运营和排障快速定位上下文。
   if (task.project_id) {
@@ -99,9 +131,10 @@ const getScopeMeta = (
 
 export default function StudioTasksPage() {
   const upsertJobs = useTaskStore((state) => state.upsertJobs);
+  const jobsById = useTaskStore((state) => state.jobsById);
   const [tasks, setTasks] = useState<TaskJob[]>([]);
-  const [projects, setProjects] = useState<ProjectBrief[]>([]);
-  const [seriesList, setSeriesList] = useState<SeriesBrief[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [seriesList, setSeriesList] = useState<SeriesSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,10 +143,27 @@ export default function StudioTasksPage() {
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const [taskTypeFilter, setTaskTypeFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
+  const previousActiveTaskIdsRef = useRef<string[]>([]);
 
   const PAGE_SIZE = 12;
 
   useEffect(() => {
+    const cachedTasks = readStudioCache<TaskJob[]>(STUDIO_TASK_LIST_CACHE_KEY);
+    const cachedProjects = readStudioCache<ProjectSummary[]>(STUDIO_PROJECT_SUMMARIES_CACHE_KEY);
+    const cachedSeries = readStudioCache<SeriesSummary[]>(STUDIO_SERIES_SUMMARIES_CACHE_KEY);
+    const hasCachedTasks = Boolean(cachedTasks?.data?.length);
+
+    if (cachedTasks?.data) {
+      setTasks([...cachedTasks.data].sort((a, b) => getTimestamp(b.created_at) - getTimestamp(a.created_at)));
+      setLoading(false);
+    }
+    if (cachedProjects?.data) {
+      setProjects(cachedProjects.data);
+    }
+    if (cachedSeries?.data) {
+      setSeriesList(cachedSeries.data);
+    }
+
     let cancelled = false;
 
     const logRequestDuration = async <T,>(label: string, request: Promise<T>) => {
@@ -145,13 +195,20 @@ export default function StudioTasksPage() {
 
       try {
         setError(null);
-        const [taskList, projectsData, seriesData] = await Promise.all([
+        const [taskList, projectEnvelope, seriesEnvelope] = await Promise.all([
           logRequestDuration("tasks", api.listTasks(undefined, undefined, { limit: 200 })),
-          logRequestDuration("project-briefs", api.getProjectBriefs()),
-          logRequestDuration("series-briefs", api.listSeriesBriefs()),
+          loadStudioCacheResource(STUDIO_PROJECT_SUMMARIES_CACHE_KEY, () =>
+            logRequestDuration("project-summaries", api.getProjectSummaries())
+          ),
+          loadStudioCacheResource(STUDIO_SERIES_SUMMARIES_CACHE_KEY, () =>
+            logRequestDuration("series-summaries", api.listSeriesSummaries())
+          ),
         ]);
         if (cancelled) return;
 
+        const projectsData = projectEnvelope.data;
+        const seriesData = seriesEnvelope.data;
+        writeStudioCache(STUDIO_TASK_LIST_CACHE_KEY, taskList);
         upsertJobs(taskList);
         setTasks([...taskList].sort((a, b) => getTimestamp(b.created_at) - getTimestamp(a.created_at)));
         setProjects(projectsData);
@@ -181,19 +238,100 @@ export default function StudioTasksPage() {
       }
     };
 
-    void load(true);
+    if (
+      !isStudioCacheFresh(STUDIO_TASK_LIST_CACHE_KEY, TASK_CACHE_MAX_AGE) ||
+      !isStudioCacheFresh(STUDIO_PROJECT_SUMMARIES_CACHE_KEY, 30_000) ||
+      !isStudioCacheFresh(STUDIO_SERIES_SUMMARIES_CACHE_KEY, 30_000)
+    ) {
+      void load(!hasCachedTasks);
+    }
 
     return () => {
       cancelled = true;
     };
   }, [upsertJobs]);
 
+  const mergedTasks = useMemo(
+    () => mergeTaskLists(tasks, Object.values(jobsById)),
+    [jobsById, tasks]
+  );
+
+  const activeTaskIds = useMemo(
+    () => mergedTasks.filter((task) => ACTIVE_STATUSES.includes(task.status)).map((task) => task.id),
+    [mergedTasks]
+  );
+
+  useEffect(() => {
+    if (activeTaskIds.length === 0) {
+      previousActiveTaskIdsRef.current = activeTaskIds;
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    const pollActiveTasks = async () => {
+      try {
+        const activeTasks = await api.listTasks(undefined, [...ACTIVE_STATUSES], { limit: 200 });
+        if (cancelled) return;
+        upsertJobs(activeTasks);
+        setTasks((current) => mergeTaskLists(current, activeTasks));
+      } catch (pollError) {
+        if (!cancelled) {
+          console.error("Failed to poll active tasks dashboard jobs:", pollError);
+        }
+      } finally {
+        if (!cancelled) {
+          timeoutId = window.setTimeout(pollActiveTasks, 3000);
+        }
+      }
+    };
+
+    timeoutId = window.setTimeout(pollActiveTasks, 3000);
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [activeTaskIds, upsertJobs]);
+
+  useEffect(() => {
+    const previousIds = previousActiveTaskIdsRef.current;
+    const activeIdSet = new Set(activeTaskIds);
+    const finishedJobIds = previousIds.filter((jobId) => !activeIdSet.has(jobId));
+    previousActiveTaskIdsRef.current = activeTaskIds;
+
+    if (finishedJobIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const taskList = await api.listTasks(undefined, undefined, { limit: 200 });
+        if (cancelled) return;
+        writeStudioCache(STUDIO_TASK_LIST_CACHE_KEY, taskList);
+        upsertJobs(taskList);
+        setTasks(mergeTaskLists(taskList));
+      } catch (refreshError) {
+        if (!cancelled) {
+          console.error("Failed to refresh tasks dashboard after task completion:", refreshError);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTaskIds, upsertJobs]);
+
   const projectMap = useMemo(() => new Map(projects.map((item) => [item.id, item])), [projects]);
   const seriesMap = useMemo(() => new Map(seriesList.map((item) => [item.id, item])), [seriesList]);
 
   const rows = useMemo<TaskTableRow[]>(
     () =>
-      tasks.map((task) => {
+      mergedTasks.map((task) => {
         const scopeMeta = getScopeMeta(task, projectMap, seriesMap);
         const statusMeta = STATUS_META[task.status as keyof typeof STATUS_META] ?? STATUS_META.queued;
         return {
@@ -203,7 +341,7 @@ export default function StudioTasksPage() {
           statusLabel: statusMeta.label,
         };
       }),
-    [projectMap, seriesMap, tasks]
+    [mergedTasks, projectMap, seriesMap]
   );
 
   const taskTypeOptions = useMemo(
@@ -255,6 +393,66 @@ export default function StudioTasksPage() {
     [rows]
   );
 
+  const attentionRows = useMemo(
+    () =>
+      rows
+        .filter((item) => ["failed", "timed_out", "retry_waiting", "cancel_requested"].includes(item.status))
+        .sort((a, b) => getTimestamp(b.created_at) - getTimestamp(a.created_at))
+        .slice(0, 5),
+    [rows]
+  );
+
+  const taskTypeLeaders = useMemo(() => {
+    const counts = new Map<string, number>();
+    rows.forEach((row) => {
+      counts.set(row.task_type, (counts.get(row.task_type) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([taskType, count]) => ({
+        taskType,
+        label: TASK_COPY[taskType] || taskType,
+        count,
+      }));
+  }, [rows]);
+
+  const oldestActiveMinutes = useMemo(() => {
+    const activeCreatedAt = rows
+      .filter((row) => ACTIVE_STATUSES.includes(row.status))
+      .map((row) => getTimestamp(row.created_at))
+      .filter(Boolean);
+    if (activeCreatedAt.length === 0) return 0;
+    const oldestTimestamp = Math.min(...activeCreatedAt);
+    return Math.max(1, Math.round((Date.now() - oldestTimestamp) / 60000));
+  }, [rows]);
+
+  const signalCards = useMemo(
+    () => [
+      {
+        label: "排队积压",
+        value: rows.filter((item) => ["queued", "claimed"].includes(item.status)).length,
+        note: "尚未进入执行器的任务数量",
+      },
+      {
+        label: "执行中",
+        value: rows.filter((item) => item.status === "running").length,
+        note: oldestActiveMinutes > 0 ? `最老活跃任务已运行 ${formatDurationMinutes(oldestActiveMinutes)}` : "当前无长跑任务",
+      },
+      {
+        label: "等待重试",
+        value: rows.filter((item) => item.status === "retry_waiting").length,
+        note: "通常意味着供应商波动、限流或阶段性失败",
+      },
+      {
+        label: "失败 / 超时",
+        value: rows.filter((item) => ["failed", "timed_out"].includes(item.status)).length,
+        note: attentionRows[0] ? `最近异常：${attentionRows[0].taskLabel}` : "最近没有异常任务",
+      },
+    ],
+    [attentionRows, oldestActiveMinutes, rows]
+  );
+
   if (loading) {
     return (
       <div className="studio-panel flex min-h-[360px] items-center justify-center p-12">
@@ -275,15 +473,100 @@ export default function StudioTasksPage() {
   return (
     <div className="space-y-6">
       <section className="studio-panel overflow-hidden">
-        <div className="border-b px-6 py-6 lg:px-8" style={{ borderColor: "var(--studio-shell-border)", background: "radial-gradient(circle at top left, rgba(244, 162, 97, 0.16), transparent 36%), linear-gradient(135deg, color-mix(in srgb, var(--studio-shell-panel-strong) 96%, transparent) 0%, color-mix(in srgb, var(--studio-shell-panel) 96%, transparent) 100%)" }}>
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {summary.map((item) => (
-                <div key={item.label} className="studio-kpi min-w-[148px]">
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</p>
-                  <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
+        <div
+          className="border-b px-6 py-6 lg:px-8"
+          style={{
+            borderColor: "var(--studio-shell-border)",
+            background:
+              "radial-gradient(circle at top left, rgba(244, 162, 97, 0.16), transparent 36%), linear-gradient(135deg, color-mix(in srgb, var(--studio-shell-panel-strong) 96%, transparent) 0%, color-mix(in srgb, var(--studio-shell-panel) 96%, transparent) 100%)",
+          }}
+        >
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
+            <div>
+              <div className="studio-eyebrow">Task Dispatch</div>
+              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] studio-strong">任务调度总览与异常聚焦</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-7 studio-muted">
+                任务中心不只展示列表，而是先把积压、执行中、重试和异常任务直接暴露出来，方便从后台视角判断调度是否健康。
+              </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {summary.map((item) => (
+                  <div key={item.label} className="studio-kpi min-w-[148px]">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</p>
+                    <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {signalCards.map((item) => (
+                  <div key={item.label} className="studio-kpi">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</p>
+                    <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
+                    <p className="mt-2 text-xs leading-6 studio-muted">{item.note}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="studio-kpi">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="studio-eyebrow">Attention Queue</div>
+                  <h3 className="mt-2 text-xl font-semibold studio-strong">最近需关注任务</h3>
                 </div>
-              ))}
+                {refreshing ? (
+                  <span className="studio-badge studio-badge-soft">
+                    <RefreshCw size={14} className="animate-spin" style={{ color: "var(--studio-shell-accent)" }} />
+                    刷新中
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {attentionRows.length === 0 ? (
+                  <div
+                    className="rounded-[1.2rem] border border-dashed px-4 py-6 text-sm studio-muted"
+                    style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}
+                  >
+                    当前没有失败、超时或等待重试的任务。
+                  </div>
+                ) : (
+                  attentionRows.map((row) => {
+                    const meta = STATUS_META[row.status as keyof typeof STATUS_META] ?? STATUS_META.queued;
+                    return (
+                      <div
+                        key={row.id}
+                        className="rounded-[1.2rem] border px-4 py-3"
+                        style={{ borderColor: "var(--studio-shell-border)", background: "color-mix(in srgb, var(--studio-shell-panel-strong) 96%, transparent)" }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold studio-strong">{row.scopeName}</p>
+                            <p className="mt-1 text-xs studio-muted">{row.taskLabel}</p>
+                          </div>
+                          <span className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold" style={meta.tone}>
+                            <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                            {row.statusLabel}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs studio-muted">创建时间 {formatTime(row.created_at)}</p>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--studio-shell-border)" }}>
+                <div className="studio-eyebrow">Top Task Types</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {taskTypeLeaders.map((item) => (
+                    <span key={item.taskType} className="studio-mini-chip">
+                      {item.label} · {item.count}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

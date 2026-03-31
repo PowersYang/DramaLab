@@ -15,6 +15,17 @@ export interface ImageAsset {
     variants: ImageVariant[];
 }
 
+export interface AssetUnit {
+    selected_image_id?: string | null;
+    image_variants?: ImageVariant[];
+    selected_video_id?: string | null;
+    video_variants?: any[];
+    image_prompt?: string;
+    video_prompt?: string;
+    image_updated_at?: string | number;
+    video_updated_at?: string | number;
+}
+
 export interface VideoTask {
     id: string;
     project_id: string;
@@ -52,6 +63,9 @@ export interface Character {
     full_body_asset?: ImageAsset;
     three_view_asset?: ImageAsset;
     headshot_asset?: ImageAsset;
+    full_body?: AssetUnit;
+    three_views?: AssetUnit;
+    head_shot?: AssetUnit;
 
     // Video Assets
     video_assets?: VideoTask[];

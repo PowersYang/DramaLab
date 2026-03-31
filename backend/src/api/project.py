@@ -122,10 +122,14 @@ async def reparse_project(
 @router.get("/projects/", response_model=list[dict])
 async def list_projects(context: RequestContext = Depends(get_request_context)):
     """列出后端当前保存的全部项目。"""
+    started_at = time.perf_counter()
     projects = project_service.list_projects(workspace_id=context.current_workspace_id)
-    logger.info("PROJECT_API: list_projects count=%s workspace_id=%s", len(projects), context.current_workspace_id)
-    return signed_response(projects)
-    logger.info("PROJECT_API: list_projects count=%s", len(projects))
+    logger.info(
+        "PROJECT_API: list_projects count=%s workspace_id=%s duration_ms=%.2f",
+        len(projects),
+        context.current_workspace_id,
+        (time.perf_counter() - started_at) * 1000,
+    )
     return signed_response(projects)
 
 

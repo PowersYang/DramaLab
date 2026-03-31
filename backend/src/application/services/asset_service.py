@@ -73,20 +73,17 @@ class AssetService:
 
         if asset_type == "character":
             if generation_type == "full_body":
-                variant = self._select_in_image_asset(asset.full_body_asset, variant_id)
+                variant = self._select_character_panel_variant(asset.full_body_asset, asset.full_body, variant_id)
                 if variant:
-                    self._select_in_asset_unit(asset.full_body, variant_id)
                     asset.full_body_image_url = variant.url
                     asset.image_url = variant.url
             elif generation_type == "three_view":
-                variant = self._select_in_image_asset(asset.three_view_asset, variant_id)
+                variant = self._select_character_panel_variant(asset.three_view_asset, asset.three_views, variant_id)
                 if variant:
-                    self._select_in_asset_unit(asset.three_views, variant_id)
                     asset.three_view_image_url = variant.url
             elif generation_type == "headshot":
-                variant = self._select_in_image_asset(asset.headshot_asset, variant_id)
+                variant = self._select_character_panel_variant(asset.headshot_asset, asset.head_shot, variant_id)
                 if variant:
-                    self._select_in_asset_unit(asset.head_shot, variant_id)
                     asset.headshot_image_url = variant.url
                     asset.avatar_url = variant.url
             else:
@@ -95,9 +92,8 @@ class AssetService:
                     (asset.three_view_asset, asset.three_views, lambda v: setattr(asset, "three_view_image_url", v.url)),
                     (asset.headshot_asset, asset.head_shot, lambda v: (setattr(asset, "headshot_image_url", v.url), setattr(asset, "avatar_url", v.url))),
                 ):
-                    variant = self._select_in_image_asset(image_asset, variant_id)
+                    variant = self._select_character_panel_variant(image_asset, asset_unit, variant_id)
                     if variant:
-                        self._select_in_asset_unit(asset_unit, variant_id)
                         setter(variant)
                         break
         elif asset_type in {"scene", "prop"}:
@@ -264,21 +260,13 @@ class AssetService:
         )
         return self.project_repository.get(script_id)
 
-    def upload_frame_image(self, script_id: str, frame_id: str, image_path: str):
-        """上传手工分镜图，并把它作为候选图保存。"""
-        logger.info("ASSET_SERVICE: upload_frame_image script_id=%s frame_id=%s image_path=%s", script_id, frame_id, image_path)
+    def upload_frame_image(self, script_id: str, frame_id: str, image_url: str):
+        """登记手工上传的分镜图对象键，并把它作为候选图保存。"""
+        logger.info("ASSET_SERVICE: upload_frame_image script_id=%s frame_id=%s image_url=%s", script_id, frame_id, image_url)
         project = self._get_project(script_id)
         frame = next((frame for frame in project.frames if frame.id == frame_id), None)
         if not frame:
             raise ValueError("Frame not found")
-
-        safe_path = os.path.join("output", os.path.relpath(image_path, "output")) if os.path.isabs(image_path) else image_path
-        uploader = OSSImageUploader()
-        oss_url = uploader.upload_image(safe_path)
-        if not oss_url:
-            # 分镜上传结果会直接回给前端；既然静态目录不再对外暴露，这里不能再回退本地相对路径。
-            raise RuntimeError("OSS upload failed for frame image.")
-        image_url = oss_url
         variant = ImageVariant(
             id=str(uuid.uuid4()),
             url=image_url,
@@ -320,11 +308,101 @@ class AssetService:
 
     def _save_project(self, project):
         """持久化项目聚合变更，并返回最新读取结果。"""
+        # 保存前先把角色的 legacy/unit 素材容器补齐，避免某一侧图集丢失时被整图 replace_graph 放大成数据清空。
+        self._normalize_character_assets(project)
         # 聚合更新统一走这里落库，便于后续把保存耗时或版本冲突监控集中到同一出口。
         logger.info("ASSET_SERVICE: _save_project project_id=%s", project.id)
         project.updated_at = utc_now()
         self.project_repository.save(project)
         return self.project_repository.get(project.id)
+
+    def _normalize_character_assets(self, project) -> None:
+        """在落库前对角色图片容器做双向补齐，减少 legacy/unit 图集分叉。"""
+        for character in getattr(project, "characters", []) or []:
+            self._normalize_character_panel(
+                character=character,
+                legacy_attr="full_body_asset",
+                unit_attr="full_body",
+                url_attr="full_body_image_url",
+                prompt_attr="full_body_prompt",
+                fallback_variant_id=f"{character.id}-full-body-selected",
+            )
+            self._normalize_character_panel(
+                character=character,
+                legacy_attr="three_view_asset",
+                unit_attr="three_views",
+                url_attr="three_view_image_url",
+                prompt_attr="three_view_prompt",
+                fallback_variant_id=f"{character.id}-three-view-selected",
+            )
+            self._normalize_character_panel(
+                character=character,
+                legacy_attr="headshot_asset",
+                unit_attr="head_shot",
+                url_attr="headshot_image_url",
+                prompt_attr="headshot_prompt",
+                fallback_variant_id=f"{character.id}-headshot-selected",
+            )
+
+    def _normalize_character_panel(
+        self,
+        *,
+        character,
+        legacy_attr: str,
+        unit_attr: str,
+        url_attr: str,
+        prompt_attr: str,
+        fallback_variant_id: str,
+    ) -> None:
+        """确保角色某个分面至少有一份可用的 selected variant，且 legacy/unit 两套结构保持一致。"""
+        legacy_asset = getattr(character, legacy_attr, None) or ImageAsset()
+        unit_asset = getattr(character, unit_attr, None) or AssetUnit()
+        setattr(character, legacy_attr, legacy_asset)
+        setattr(character, unit_attr, unit_asset)
+
+        if legacy_asset.variants and not unit_asset.image_variants:
+            unit_asset.image_variants = [variant.model_copy(deep=True) for variant in legacy_asset.variants]
+        elif unit_asset.image_variants and not legacy_asset.variants:
+            legacy_asset.variants = [variant.model_copy(deep=True) for variant in unit_asset.image_variants]
+
+        if not legacy_asset.selected_id and unit_asset.selected_image_id:
+            legacy_asset.selected_id = unit_asset.selected_image_id
+        if not unit_asset.selected_image_id and legacy_asset.selected_id:
+            unit_asset.selected_image_id = legacy_asset.selected_id
+
+        selected_url = getattr(character, url_attr, None)
+        if not selected_url:
+            selected_variant = self._find_variant_by_id_or_url(legacy_asset.variants, legacy_asset.selected_id, None)
+            if not selected_variant:
+                selected_variant = self._find_variant_by_id_or_url(unit_asset.image_variants, unit_asset.selected_image_id, None)
+            selected_url = selected_variant.url if selected_variant else None
+
+        if selected_url and not legacy_asset.variants and not unit_asset.image_variants:
+            selected_variant_id = legacy_asset.selected_id or unit_asset.selected_image_id or fallback_variant_id
+            synthesized_variant = ImageVariant(
+                id=selected_variant_id,
+                url=selected_url,
+                prompt_used=getattr(character, prompt_attr, None),
+                created_at=getattr(character, "updated_at", None) or getattr(character, "created_at", None) or utc_now(),
+            )
+            legacy_asset.variants = [synthesized_variant]
+            unit_asset.image_variants = [synthesized_variant.model_copy(deep=True)]
+            legacy_asset.selected_id = selected_variant_id
+            unit_asset.selected_image_id = selected_variant_id
+
+    def _find_variant_by_id_or_url(self, variants: list[ImageVariant] | None, variant_id: str | None, url: str | None):
+        """按 ID 优先、URL 次之解析目标候选图。"""
+        if not variants:
+            return None
+        if variant_id:
+            for variant in variants:
+                if variant.id == variant_id:
+                    return variant
+        if url:
+            for variant in variants:
+                if variant.url == url:
+                    return variant
+        return None
 
     def _select_in_image_asset(self, image_asset: ImageAsset | None, variant_id: str):
         """在旧版 ImageAsset 容器中选中一个候选图。"""
@@ -345,6 +423,17 @@ class AssetService:
                 asset_unit.selected_image_id = variant_id
                 return variant
         return None
+
+    def _select_character_panel_variant(self, image_asset: ImageAsset | None, asset_unit: AssetUnit | None, variant_id: str):
+        """角色图片候选允许存在于 legacy 或 unit 任一容器中，选中时两边都尽量同步。"""
+        legacy_variant = self._select_in_image_asset(image_asset, variant_id)
+        unit_variant = self._select_in_asset_unit(asset_unit, variant_id)
+        resolved_variant = legacy_variant or unit_variant
+        if resolved_variant and image_asset and not legacy_variant:
+            image_asset.selected_id = variant_id
+        if resolved_variant and asset_unit and not unit_variant:
+            asset_unit.selected_image_id = variant_id
+        return resolved_variant
 
     def _delete_in_image_asset(self, image_asset: ImageAsset | None, variant_id: str):
         if not image_asset or not image_asset.variants:

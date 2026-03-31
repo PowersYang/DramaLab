@@ -61,18 +61,27 @@ def is_object_key(value: str) -> bool:
     
     # 常见本地相对路径前缀直接排除，避免误把本地文件当成对象键去签名
     local_prefixes = (
-        "assets/", "storyboard/", "video/", "audio/", "export/", "uploads/", "output/", "outputs/",
-        "/assets/", "/storyboard/", "/video/", "/audio/", "/export/", "/uploads/", "/output/", "/outputs/"
+        "assets/", "storyboard/", "video/", "audio/", "export/", "uploads/",
+        "/assets/", "/storyboard/", "/video/", "/audio/", "/export/", "/uploads/"
     )
     if value.startswith(local_prefixes):
         return False
-    
+
+    normalized = value.strip().lstrip("/")
+    if not normalized:
+        return False
+
     # 根路径做一次清洗，避免用户配置里混入引号和多余斜杠
     base_path = get_oss_base_path().strip("'\"/")
-    
+
     # 对象键必须以 OSS 根路径开头，例如 `dramalab/...`
-    # 这里不要再加“模糊兜底”，否则很容易误判本地路径
-    return value.startswith(f"{base_path}/")
+    if normalized.startswith(f"{base_path}/"):
+        return True
+
+    # 历史数据可能仍带旧前缀，但真实对象路径通常仍会落在媒资目录下；
+    # 这里放宽到识别“带命名空间前缀的 OSS 媒资路径”，避免老项目把裸 object key 原样回给前端。
+    object_subpaths = ("/assets/", "/storyboard/", "/video/", "/audio/", "/export/", "/uploads/")
+    return any(marker in f"/{normalized}" for marker in object_subpaths)
 
 
 
@@ -89,7 +98,7 @@ def is_local_path(value: str) -> bool:
     if value.startswith("http://") or value.startswith("https://"):
         return False
     # 常见相对路径前缀直接视为本地路径
-    return value.startswith(("assets/", "storyboard/", "video/", "audio/", "export/", "uploads/", "output/"))
+    return value.startswith(("assets/", "storyboard/", "video/", "audio/", "export/", "uploads/"))
 
 
 class OSSImageUploader:
@@ -349,11 +358,7 @@ def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
 def convert_local_path_to_object_key(local_path: str, project_id: str = None) -> str:
     """把本地相对路径转换成标准 OSS 对象键格式。"""
     base_path = get_oss_base_path()
-    
-    # 如果路径里带了 output/ 前缀，先裁掉
-    if local_path.startswith("output/"):
-        local_path = local_path[7:]
-    
+
     # 按是否带项目 ID 拼出最终对象键
     if project_id:
         return f"{base_path}/{project_id}/{local_path}"

@@ -1,160 +1,106 @@
+import { ArrowRight, Clapperboard, Layers3, Workflow } from "lucide-react";
 import Link from "next/link";
-import { ArrowRight, Building2, Clapperboard, Layers3, PlayCircle, Sparkles, Users2, Workflow } from "lucide-react";
 
-import MarketingShell from "@/components/site/MarketingShell";
 import LegacyHashRedirector from "@/components/site/LegacyHashRedirector";
+import MarketingShell from "@/components/site/MarketingShell";
+import MarketingVideoStage, { type MarketingVideoClip } from "@/components/site/MarketingVideoStage";
 
-const capabilities = [
-  { title: "剧本分析", body: "从文本中提取角色、场景、道具和结构节奏，进入标准化生产流程。" },
-  { title: "风格定调", body: "保留 AI 智能推荐风格与内置预设，快速建立统一视觉语言。" },
-  { title: "资产生成", body: "角色、场景、道具在一个系统里沉淀，服务多项目与系列复用。" },
-  { title: "分镜编排", body: "围绕镜头、画面与对白建立创作协同，不再依赖零散工具跳转。" },
-  { title: "视频生产", body: "统一追踪长耗时生成任务，把 Motion、Assembly、Export 纳入同一工作台。" },
-  { title: "交付导出", body: "从成片输出、版本管理到团队交付，面向真实商业生产场景设计。" },
+// 中文注释：官网首页继续保持“固定舞台 + 滚动叙事”，但正文信息收缩到更少、更安静的几块内容。
+const videoClips: MarketingVideoClip[] = [
+  {
+    src: "/videos/marketing/video_61f4008c-939e-4c60-be56-0ad6053cd932.mp4",
+    poster: "/images/marketing/video_61f4008c-939e-4c60-be56-0ad6053cd932.jpg",
+    objectPosition: "center center",
+  },
+  {
+    src: "/videos/marketing/video_d114e1e9-c60d-4ed1-96c7-814388d7d0ee.mp4",
+    poster: "/images/marketing/video_d114e1e9-c60d-4ed1-96c7-814388d7d0ee.jpg",
+    objectPosition: "center center",
+  },
+  {
+    src: "/videos/marketing/video_12834f7a-acc4-4a48-955c-6a4e4de7e4b7.mp4",
+    poster: "/images/marketing/video_12834f7a-acc4-4a48-955c-6a4e4de7e4b7.jpg",
+    objectPosition: "center center",
+  },
+  {
+    src: "/videos/marketing/video_5c3d75a3-8fd5-4282-b92b-f90a58f98b38.mp4",
+    poster: "/images/marketing/video_5c3d75a3-8fd5-4282-b92b-f90a58f98b38.jpg",
+    objectPosition: "center center",
+  },
+  {
+    src: "/videos/marketing/video_7d2426cb-aef6-487d-a19f-08dd2d4cb470.mp4",
+    poster: "/images/marketing/video_7d2426cb-aef6-487d-a19f-08dd2d4cb470.jpg",
+    objectPosition: "center center",
+  },
 ];
 
-const audience = [
-  { icon: Building2, title: "短剧公司", body: "适合多项目并行、系列化生产、标准化资产复用和多角色协作。" },
-  { icon: Users2, title: "MCN / 内容团队", body: "适合内容流水线、批量题材试产、运营与创作协同交付。" },
-  { icon: Sparkles, title: "个人创作者", body: "适合单人快速验证题材、建立风格资产和完成完整生产闭环。" },
-];
-
-const workflow = [
-  "剧本导入与结构分析",
-  "AI 智能推荐风格与项目定调",
-  "资产生成与系列共享",
-  "分镜生成与镜头编排",
-  "视频任务追踪与输出交付",
+const featureCards = [
+  {
+    icon: Clapperboard,
+    title: "剧本到镜头",
+    body: "把结构拆解、分镜理解与生成入口压进同一条生产链路，不再在多个工具之间来回跳转。",
+  },
+  {
+    icon: Layers3,
+    title: "资产持续复用",
+    body: "角色、场景、风格和参考资产被沉淀为长期可复用素材，而不是一次性内容。",
+  },
+  {
+    icon: Workflow,
+    title: "任务有序推进",
+    body: "异步任务、失败回写与结果导出都保持可追踪，让团队协作不再依赖口头同步。",
+  },
 ];
 
 export default function HomePage() {
   return (
-    <MarketingShell>
+    <MarketingShell ctaMode="auth" theme="dark">
       <LegacyHashRedirector />
+      <MarketingVideoStage clips={videoClips} />
 
-      <section className="mx-auto max-w-7xl px-6 py-20 lg:px-10 lg:py-24">
-        <div className="grid gap-10 xl:grid-cols-[1.15fr_0.85fr]">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">商业化 AI 短剧创作平台</p>
-            <h1 className="mt-5 max-w-4xl font-display text-5xl leading-tight text-slate-950 md:text-6xl">
-              DramaLab 帮团队把短剧创作从“能做”推进到“能商业化交付”。
-            </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-              用统一工作台承接剧本分析、风格定调、资产沉淀、分镜生成、任务追踪和成片导出，让内容团队拥有真正可复用、可扩展、可运营的生产系统。
-            </p>
-            <div className="mt-8 flex flex-wrap gap-4">
-              <Link href="/solutions" className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-sm">
-                查看解决方案
-                <ArrowRight size={16} />
-              </Link>
-              <Link href="/signup" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700">
-                注册账号
-              </Link>
-            </div>
-          </div>
-
-          <div className="studio-panel overflow-hidden border border-slate-200 bg-white p-8 text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.12)]">
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-600">生产流程</p>
-            <h2 className="mt-4 max-w-md font-display text-3xl leading-tight text-slate-950 md:text-[2rem]">
-              把剧本拆解、资产生成与视频交付放进同一条生产链。
-            </h2>
-            <p className="mt-4 max-w-lg text-base leading-7 text-slate-700">
-              这组流程卡片强调 Studio 的完整生产节奏，从剧本解析到交付导出都放在同一个协同工作台里。
-            </p>
-            <div className="mt-8 space-y-4">
-              {/* 中文注释：官网首页这里固定使用深色正文和浅色卡片，避免白底场景里步骤文案对比度不足。 */}
-              {workflow.map((item, index) => (
-                <div
-                  key={item}
-                  className="flex items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4"
+      <div className="relative z-10 overflow-x-clip">
+        <section className="min-h-[100svh] px-6 pb-18 pt-16 lg:px-10 lg:pb-20 lg:pt-24">
+          <div className="mx-auto flex min-h-[calc(100svh-132px)] max-w-7xl items-center">
+            <div className="max-w-[66rem]">
+              <h1 className="marketing-editorial-title max-w-6xl text-balance text-[3.6rem] leading-[0.86] text-white md:text-[5.9rem]">
+                为 AI 短剧生产打造的
+                <span className="block text-white/74">控制台与秩序。</span>
+              </h1>
+              <p className="mt-8 max-w-2xl text-base leading-8 text-white/68 md:text-lg">
+                DramaLab 把剧本分析、角色与场景资产、分镜生成、视频生产和导出交付收进同一个系统，让创作团队能像运营一条内容产线一样稳定推进项目。
+              </p>
+              <div className="mt-10 flex flex-wrap gap-4">
+                <Link
+                  href="/studio"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/14 bg-white/[0.06] px-6 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/[0.1]"
                 >
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-base font-semibold text-primary">
-                    {index + 1}
-                  </div>
-                  <p className="text-base font-semibold leading-7 text-slate-900">{item}</p>
-                </div>
-              ))}
+                  进入 Studio
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="mx-auto max-w-7xl px-6 pb-16 lg:px-10">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: "组织化生产", value: "多项目 / 多系列" },
-            { label: "任务体系", value: "统一排队与重试" },
-            { label: "资产沉淀", value: "跨项目复用" },
-            { label: "交付节奏", value: "从脚本到成片" },
-          ].map((item) => (
-            <div key={item.label} className="studio-panel p-6">
-              <p className="text-sm font-medium text-slate-500">{item.label}</p>
-              <p className="mt-4 text-2xl font-bold text-slate-950">{item.value}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-6 py-16 lg:px-10">
-        <div className="flex items-end justify-between gap-6">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">核心能力</p>
-            <h2 className="mt-3 text-4xl font-bold text-slate-950">适合真实业务的创作能力，不只是开源演示页面。</h2>
-          </div>
-        </div>
-        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {capabilities.map((item) => (
-            <div key={item.title} className="studio-panel p-6">
-              <h3 className="text-xl font-semibold text-slate-950">{item.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-slate-600">{item.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-6 py-16 lg:px-10">
-        <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">适用对象</p>
-            <h2 className="mt-3 text-4xl font-bold text-slate-950">兼顾团队交付与个人创作效率。</h2>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {audience.map((item) => {
-              const Icon = item.icon;
-              return (
-                <div key={item.title} className="studio-panel p-6">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Icon size={20} />
-                  </div>
-                  <h3 className="mt-5 text-lg font-semibold text-slate-950">{item.title}</h3>
-                  <p className="mt-3 text-sm leading-7 text-slate-600">{item.body}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-6 py-20 lg:px-10">
-        <div className="rounded-[2rem] bg-slate-950 px-8 py-10 text-white lg:px-12">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">立即开始</p>
-              <h2 className="mt-3 text-4xl font-bold">把剧本、资产、任务和交付放进同一个商业工作台。</h2>
-              <p className="mt-3 text-sm leading-7 text-slate-300">进入 DramaLab Studio，查看新的商业化首页、项目中心、任务中心与资源库布局。</p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950">
-                <PlayCircle size={16} />
-                创建账号
-              </Link>
-              <Link href="/pricing" className="inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-white">
-                查看套餐
-              </Link>
+        <section className="px-6 pb-24 lg:px-10 lg:pb-28">
+          <div className="mx-auto max-w-7xl">
+            <div className="grid gap-4 md:grid-cols-3">
+              {featureCards.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <article key={item.title} className="marketing-editorial-panel rounded-[1.9rem] p-6 md:p-7">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-[#f1d8ab]">
+                      <Icon size={18} />
+                    </div>
+                    <h2 className="mt-6 font-display text-[2rem] leading-none tracking-[-0.04em] text-white">{item.title}</h2>
+                    <p className="mt-4 text-sm leading-7 text-white/64 md:text-base">{item.body}</p>
+                  </article>
+                );
+              })}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </MarketingShell>
   );
 }

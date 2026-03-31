@@ -18,7 +18,7 @@ from src.api.task import router as task_router
 from src.api.tenant_admin import router as tenant_admin_router
 from src.worker.task_worker import TaskWorker
 from src.common import bootstrap_api_environment
-from src.common.log import setup_logging
+from src.common.log import get_log_dir, setup_logging
 from src.common.request_logging import log_request_response
 
 logger = logging.getLogger(__name__)
@@ -43,13 +43,9 @@ def get_application_path() -> str:
 def bootstrap_runtime() -> None:
     app_dir = get_application_path()
     os.chdir(app_dir)
-
-    log_dir = os.path.join("output", "logs")
-    os.makedirs(log_dir, exist_ok=True)
-
-    setup_logging(log_file=os.path.join(log_dir, "app.log"))
-    # 记录运行目录和日志目录，便于排查打包环境、supervisor 工作目录或挂载目录错误。
-    logger.info("BOOTSTRAP: app_dir=%s log_dir=%s", app_dir, log_dir)
+    setup_logging()
+    # 日志统一写入用户数据目录，避免仓库目录再承载运行时状态。
+    logger.info("BOOTSTRAP: app_dir=%s log_dir=%s", app_dir, get_log_dir())
 
 
 def create_app() -> FastAPI:

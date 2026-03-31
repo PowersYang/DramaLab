@@ -8,6 +8,7 @@ import json
 import math
 import secrets
 import smtplib
+import time
 import uuid
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
@@ -612,15 +613,20 @@ class AuthService:
         )
 
     def build_auth_me(self, user: User, current_workspace_id: str | None = None) -> AuthMeResponse:
+        started_at = time.perf_counter()
+        memberships_started_at = time.perf_counter()
         memberships = self._list_memberships_with_role(user.id)
+        memberships_duration_ms = (time.perf_counter() - memberships_started_at) * 1000
+        workspace_started_at = time.perf_counter()
         workspace_options = self._list_workspace_options(user, memberships)
+        workspace_duration_ms = (time.perf_counter() - workspace_started_at) * 1000
         if current_workspace_id is None and workspace_options:
             current_workspace_id = workspace_options[0].workspace_id
         current_workspace = next((item for item in workspace_options if item.workspace_id == current_workspace_id), None)
         current_role_code = current_workspace.role_code if current_workspace else None
         current_role_name = current_workspace.role_name if current_workspace else None
         capabilities = sorted(self._get_capabilities(user.platform_role, current_role_code))
-        return AuthMeResponse(
+        response = AuthMeResponse(
             user=user,
             current_workspace_id=current_workspace_id,
             current_organization_id=current_workspace.organization_id if current_workspace else None,
@@ -631,6 +637,17 @@ class AuthService:
             workspaces=workspace_options,
             memberships=memberships,
         )
+        logger.info(
+            "AUTH_SERVICE: build_auth_me user_id=%s workspace_id=%s memberships=%s workspaces=%s membership_query_ms=%.2f workspace_build_ms=%.2f total_ms=%.2f",
+            user.id,
+            current_workspace_id,
+            len(memberships),
+            len(workspace_options),
+            memberships_duration_ms,
+            workspace_duration_ms,
+            (time.perf_counter() - started_at) * 1000,
+        )
+        return response
 
     def list_workspace_members(self, workspace_id: str) -> list[MembershipWithRole]:
         with session_scope() as session:

@@ -1,10 +1,4 @@
-"""
-项目素材路由：素材生成、图片版本管理、素材上传与素材视频。
-"""
-
-import os
-import shutil
-import uuid
+"""项目素材路由：素材生成、图片版本管理、素材上传与素材视频。"""
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
@@ -29,6 +23,7 @@ from ..schemas.requests import (
 )
 from ..schemas.task_models import TaskReceipt
 from ..utils.oss_utils import OSSImageUploader
+from ..utils.temp_media import staged_upload_file
 
 
 router = APIRouter(dependencies=[Depends(get_request_context)])
@@ -421,14 +416,8 @@ async def upload_asset(
             upload_type,
             file.filename,
         )
-        file_ext = os.path.splitext(file.filename)[1]
-        filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join("output/uploads", filename)
-
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        oss_url = OSSImageUploader().upload_image(file_path)
+        with staged_upload_file(file.file, file.filename) as file_path:
+            oss_url = OSSImageUploader().upload_image(file_path, sub_path="uploads")
         if not oss_url:
             raise RuntimeError("OSS upload failed. Static file mount has been removed, so local fallback URLs are no longer supported.")
 

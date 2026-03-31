@@ -2,6 +2,7 @@
 
 import { Image as ImageIcon } from "lucide-react";
 import type { Character, Scene, Prop } from "@/store/projectStore";
+import { getCharacterPreviewImage } from "@/lib/characterAssets";
 
 type AssetTab = "characters" | "scenes" | "props";
 
@@ -12,14 +13,7 @@ interface AssetCardProps {
 
 function getImageUrl(asset: Character | Scene | Prop, type: AssetTab): string | undefined {
   if (type === "characters") {
-    const char = asset as Character;
-    if (char.full_body_asset?.variants?.length) {
-      const selected = char.full_body_asset.variants.find(
-        (v) => v.id === char.full_body_asset?.selected_id
-      );
-      return selected?.url || char.full_body_asset.variants[0]?.url;
-    }
-    return char.image_url || char.full_body_image_url;
+    return getCharacterPreviewImage(asset as Character).previewPath;
   }
   if (type === "scenes") {
     const scene = asset as Scene;

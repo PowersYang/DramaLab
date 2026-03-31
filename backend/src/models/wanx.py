@@ -97,7 +97,7 @@ class WanxModel(VideoGenModel):
                 elif img_path.startswith("http"):
                     # 传进来的本身就是可访问链接
                     img_url = img_path
-                elif "/" in img_path and not img_path.startswith("output/"):
+                elif is_object_key(img_path):
                     # 看起来像 OSS 对象键，需要补签名
                     if uploader.is_configured:
                         img_url = uploader.sign_url_for_api(img_path)
@@ -120,10 +120,6 @@ class WanxModel(VideoGenModel):
                 local_audio_path = None
                 if os.path.exists(audio_url):
                     local_audio_path = audio_url
-                elif not audio_url.startswith("http"):
-                    potential_path = os.path.join("output", audio_url)
-                    if os.path.exists(potential_path):
-                        local_audio_path = potential_path
 
                 if local_audio_path:
                     if uploader.is_configured:
@@ -172,14 +168,8 @@ class WanxModel(VideoGenModel):
                     
                     # 先判断是不是本地文件
                     local_path = None
-                    if not ref_url.startswith("http"):
-                        # 先按 output 下的相对路径查
-                        potential_path = os.path.join("output", ref_url)
-                        if os.path.exists(potential_path):
-                            local_path = potential_path
-                        # 再查绝对路径或当前工作目录相对路径
-                        elif os.path.exists(ref_url):
-                            local_path = ref_url
+                    if not ref_url.startswith("http") and os.path.exists(ref_url):
+                        local_path = ref_url
                     
                     if local_path:
                         # 本地文件先上传 OSS
@@ -194,8 +184,8 @@ class WanxModel(VideoGenModel):
                         else:
                             raise RuntimeError("OSS not configured, cannot upload local reference video for R2V")
                     
-                    elif not ref_url.startswith("http") and "/" in ref_url and not ref_url.startswith("output/"):
-                        # 大概率是 OSS 对象键
+                    elif is_object_key(ref_url):
+                        # 这里显式接受 OSS 对象键，不再兼容仓库内持久化相对路径。
                         if uploader.is_configured:
                             final_url = uploader.sign_url_for_api(ref_url)
                             logger.info(f"Reference video (Object Key), signed URL: {final_url[:80]}...")

@@ -8,6 +8,7 @@ import { TaskJob, VideoTask } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
 import { useTaskStore } from "@/store/taskStore";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
+import { filterVideoQueueJobs, getVideoTaskTypeLabel } from "@/lib/videoTaskQueue";
 
 interface VideoQueueProps {
     tasks: VideoTask[];
@@ -20,6 +21,7 @@ export default function VideoQueue({ tasks, jobs, onRemix }: VideoQueueProps) {
     const cancelJob = useTaskStore((state) => state.cancelJob);
     const retryJob = useTaskStore((state) => state.retryJob);
     const { getTaskPrice } = useBillingGuard();
+    const videoJobs = filterVideoQueueJobs(jobs);
 
     const filteredTasks = tasks.filter(t => {
         if (filter === "all") return true;
@@ -27,14 +29,14 @@ export default function VideoQueue({ tasks, jobs, onRemix }: VideoQueueProps) {
         return t.status === filter;
     }).reverse(); // Newest first
 
-    const filteredJobs = jobs.filter((job) => {
+    const filteredJobs = videoJobs.filter((job) => {
         if (filter === "all") return true;
         if (filter === "processing") return ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status);
         if (filter === "failed") return ["failed", "timed_out"].includes(job.status);
         return false;
     }).reverse();
 
-    const processingCount = jobs.filter(job => ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status)).length;
+    const processingCount = videoJobs.filter(job => ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status)).length;
 
     return (
         <div className="flex h-full flex-col border-l border-slate-200/80 bg-slate-50/85 backdrop-blur-sm dark:border-white/5 dark:bg-slate-950/55">
@@ -152,7 +154,6 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
     const isCompleted = task.status === "completed";
     const isProcessing = task.status === "processing" || task.status === "pending";
     const isFailed = task.status === "failed";
-
 
     const getDisplayUrl = (url: string) => {
         return getAssetUrl(url);
@@ -335,12 +336,7 @@ function inferVideoTaskType(task: VideoTask): string {
 }
 
 function formatJobType(taskType: string): string {
-    if (taskType === "video.generate.frame") return "分镜视频生成";
-    if (taskType === "video.generate.asset") return "资产视频生成";
-    if (taskType === "video.generate.project") return "项目视频生成";
-    if (taskType === "video.polish_prompt") return "视频提示词润色";
-    if (taskType === "video.polish_r2v_prompt") return "R2V 提示词润色";
-    return taskType;
+    return getVideoTaskTypeLabel(taskType);
 }
 
 function formatJobLabel(taskType: string, status: TaskJob["status"]): string {

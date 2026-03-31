@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendEmailCode = vi.fn();
 const mockGetAuthCaptcha = vi.fn();
@@ -8,8 +9,22 @@ const mockSignInWithPassword = vi.fn();
 const mockSignUpWithPassword = vi.fn();
 const mockResetPasswordWithCode = vi.fn();
 
+interface MockLinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+  children: ReactNode;
+  href: string;
+}
+
+interface MockAuthState {
+  sendEmailCode: typeof mockSendEmailCode;
+  getAuthCaptcha: typeof mockGetAuthCaptcha;
+  verifyEmailCode: typeof mockVerifyEmailCode;
+  signInWithPassword: typeof mockSignInWithPassword;
+  signUpWithPassword: typeof mockSignUpWithPassword;
+  resetPasswordWithCode: typeof mockResetPasswordWithCode;
+}
+
 vi.mock("next/link", () => ({
-  default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
+  default: ({ children, href, ...props }: MockLinkProps) => <a href={href} {...props}>{children}</a>,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -19,11 +34,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/site/MarketingShell", () => ({
-  default: ({ children }: any) => <div>{children}</div>,
+  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("@/store/authStore", () => ({
-  useAuthStore: (selector: any) =>
+  useAuthStore: (selector: (state: MockAuthState) => unknown) =>
     selector({
       sendEmailCode: mockSendEmailCode,
       getAuthCaptcha: mockGetAuthCaptcha,
@@ -37,6 +52,13 @@ vi.mock("@/store/authStore", () => ({
 import AuthEntryPage from "../AuthEntryPage";
 
 describe("AuthEntryPage", () => {
+  const originalLocation = window.location;
+
+  const renderAuth = async (mode: "signin" | "signup") => {
+    render(<AuthEntryPage mode={mode} />);
+    await screen.findByAltText("图形验证码");
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetAuthCaptcha.mockResolvedValue({ captcha_id: "captcha-1", image_svg: "<svg></svg>", expires_in_seconds: 300, debug_code: "ABCD1" });
@@ -45,11 +67,24 @@ describe("AuthEntryPage", () => {
     mockSignInWithPassword.mockResolvedValue({ user: { id: "u1" } });
     mockSignUpWithPassword.mockResolvedValue({ user: { id: "u1" } });
     mockResetPasswordWithCode.mockResolvedValue({ user: { id: "u1" } });
-    vi.spyOn(window.location, "assign").mockImplementation(() => undefined);
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        assign: vi.fn(),
+      },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
   });
 
   it("submits password sign in by default", async () => {
-    render(<AuthEntryPage mode="signin" />);
+    await renderAuth("signin");
 
     fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
@@ -68,7 +103,7 @@ describe("AuthEntryPage", () => {
   });
 
   it("submits org admin signup with organization name", async () => {
-    render(<AuthEntryPage mode="signup" />);
+    await renderAuth("signup");
 
     fireEvent.click(screen.getByText("创建团队空间"));
     fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
@@ -103,7 +138,7 @@ describe("AuthEntryPage", () => {
       },
     });
 
-    render(<AuthEntryPage mode="signin" />);
+    await renderAuth("signin");
 
     fireEvent.click(screen.getByText("邮箱验证码"));
     fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "577790911@qq.com" } });
@@ -118,7 +153,7 @@ describe("AuthEntryPage", () => {
   it("shows a clear password length error during signup", async () => {
     mockSignUpWithPassword.mockRejectedValueOnce(new Error("Password must be at least 6 characters"));
 
-    render(<AuthEntryPage mode="signup" />);
+    await renderAuth("signup");
 
     fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
@@ -134,7 +169,7 @@ describe("AuthEntryPage", () => {
   it("submits forgot-password reset flow", async () => {
     mockSendEmailCode.mockResolvedValueOnce({ status: "sent", target: "owner@example.com", channel: "email", purpose: "reset_password", debug_code: "654321" });
 
-    render(<AuthEntryPage mode="signin" />);
+    await renderAuth("signin");
 
     fireEvent.change(screen.getByPlaceholderText("you@studio.com"), { target: { value: "owner@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("输入图中字符"), { target: { value: "ABCD1" } });
@@ -166,7 +201,7 @@ describe("AuthEntryPage", () => {
   });
 
   it("supports phone password sign in", async () => {
-    render(<AuthEntryPage mode="signin" />);
+    await renderAuth("signin");
 
     fireEvent.click(screen.getByText("手机号"));
     fireEvent.change(screen.getByPlaceholderText("例如：13800138000"), { target: { value: "13800138000" } });

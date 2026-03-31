@@ -1,12 +1,4 @@
-"""
-视频任务应用服务。
-
-这里负责创建持久化视频生成任务，
-并把请求侧的任务准备逻辑从控制器中拆出来。
-"""
-
 import os
-import shutil
 import uuid
 
 from ..tasks import TaskService
@@ -14,7 +6,7 @@ from ...common.log import get_logger
 from ...repository import ProjectRepository, VideoTaskRepository
 from ...schemas.models import VideoTask
 from ...schemas.task_models import TaskReceipt, TaskType
-from ...utils.path_safety import safe_resolve_path, validate_safe_id
+from ...utils.oss_utils import OSSImageUploader, is_object_key
 from .character_service import CharacterService
 from .model_provider_service import ModelProviderService
 
@@ -213,21 +205,23 @@ class VideoTaskService:
         return CharacterService().update_voice_params(script_id, char_id, speed, pitch, volume)
 
     def _snapshot_input_image(self, task_id: str, image_url: str) -> str:
-        """复制本地输入图片，避免后续编辑影响已创建任务。"""
+        """把任务输入图固化成可长期复用的 OSS 对象键。"""
         snapshot_url = image_url
         try:
-            if image_url and not image_url.startswith("http"):
-                src_path = safe_resolve_path("output", image_url)
-                if os.path.exists(src_path) and os.path.isfile(src_path):
-                    snapshot_dir = os.path.join("output", "video_inputs")
-                    os.makedirs(snapshot_dir, exist_ok=True)
-                    ext = os.path.splitext(os.path.basename(image_url))[1] or ".png"
-                    validate_safe_id(task_id, "task_id")
-                    snapshot_filename = f"{task_id}{ext}"
-                    snapshot_path = safe_resolve_path(snapshot_dir, snapshot_filename)
-                    shutil.copy2(src_path, snapshot_path)
-                    snapshot_url = f"video_inputs/{snapshot_filename}"
-                    logger.info("VIDEO_TASK_SERVICE: snapshot_input_image task_id=%s snapshot_url=%s", task_id, snapshot_url)
+            if not image_url or image_url.startswith("http") or is_object_key(image_url):
+                return snapshot_url
+            if os.path.exists(image_url) and os.path.isfile(image_url):
+                ext = os.path.splitext(os.path.basename(image_url))[1] or ".png"
+                uploader = OSSImageUploader()
+                if uploader.is_configured:
+                    object_key = uploader.upload_file(
+                        image_url,
+                        sub_path="video_inputs",
+                        custom_filename=f"{task_id}{ext}",
+                    )
+                    if object_key:
+                        snapshot_url = object_key
+                        logger.info("VIDEO_TASK_SERVICE: snapshot_input_image task_id=%s snapshot_url=%s", task_id, snapshot_url)
         except Exception:
             logger.exception("VIDEO_TASK_SERVICE: snapshot_input_image failed task_id=%s", task_id)
             snapshot_url = image_url
