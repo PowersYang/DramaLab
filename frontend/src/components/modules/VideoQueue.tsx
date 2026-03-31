@@ -39,18 +39,18 @@ export default function VideoQueue({ tasks, jobs, onRemix }: VideoQueueProps) {
     const processingCount = videoJobs.filter(job => ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status)).length;
 
     return (
-        <div className="flex h-full flex-col border-l border-slate-200/80 bg-slate-50/85 backdrop-blur-sm dark:border-white/5 dark:bg-slate-950/55">
+        <div className="video-queue-shell flex h-full flex-col border-l video-workspace-divider">
             {/* Header & Tabs */}
-            <div className="border-b border-slate-200/80 p-4 dark:border-white/5">
+            <div className="video-workspace-divider border-b p-4">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="font-display font-bold text-slate-900 dark:text-white">任务队列</h3>
-                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                    <div className="video-muted-note flex items-center gap-2 text-xs font-medium">
                         <div className={`h-2 w-2 rounded-full ${processingCount > 0 ? "bg-emerald-500 animate-pulse" : "bg-slate-300 dark:bg-slate-600"}`} />
                         {processingCount > 0 ? "生成中" : "空闲"}
                     </div>
                 </div>
 
-                <div className="flex gap-1 rounded-xl border border-slate-200/80 bg-white/80 p-1 shadow-sm dark:border-white/10 dark:bg-white/5">
+                <div className="video-segmented flex gap-1 rounded-xl p-1">
                     {[
                         { id: "all", label: "全部" },
                         { id: "processing", label: "进行中" },
@@ -60,9 +60,9 @@ export default function VideoQueue({ tasks, jobs, onRemix }: VideoQueueProps) {
                         <button
                             key={tab.id}
                             onClick={() => setFilter(tab.id as any)}
-                            className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${filter === tab.id
-                                ? "bg-slate-900 text-white font-medium shadow-sm dark:bg-white dark:text-slate-950"
-                                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                            className={`video-segmented-button flex-1 rounded-md py-1.5 text-xs transition-colors ${filter === tab.id
+                                ? "video-segmented-button-active font-medium"
+                                : ""
                                 }`}
                         >
                             {tab.label}
@@ -82,7 +82,7 @@ export default function VideoQueue({ tasks, jobs, onRemix }: VideoQueueProps) {
                     ))}
 
                     {filteredTasks.length === 0 && filteredJobs.length === 0 && (
-                        <div className="py-10 text-center text-sm text-slate-500 dark:text-slate-500">
+                        <div className="video-muted-note py-10 text-center text-sm">
                             暂无任务
                         </div>
                     )}
@@ -103,26 +103,26 @@ function JobCard({ job, priceCredits, onCancel, onRetry }: { job: TaskJob; price
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96 }}
-            className={`rounded-2xl border p-3.5 shadow-[0_12px_36px_rgba(15,23,42,0.08)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.22)] ${isFailed
+            className={`video-card rounded-2xl p-3.5 ${isFailed
                 ? "border-rose-200 bg-rose-50/90 dark:border-rose-500/25 dark:bg-rose-500/10"
-                : "border-slate-200/80 bg-white/90 dark:border-white/10 dark:bg-white/5"
+                : ""
                 }`}
         >
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                         {isActive ? <Loader2 size={14} className="animate-spin text-primary" /> : <AlertCircle size={14} className="text-rose-500 dark:text-rose-300" />}
-                        <span className="text-xs font-mono text-slate-400 dark:text-slate-500">#{job.id.slice(0, 8)}</span>
+                        <span className="video-helper-text font-mono">#{job.id.slice(0, 8)}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-medium text-slate-900 dark:text-white">{formatJobLabel(job.task_type, job.status)}</p>
                         {priceCredits != null && (
-                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+                            <span className="video-status-badge video-status-badge-warning inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold">
                                 消耗 {priceCredits} 算力豆
                             </span>
                         )}
                     </div>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    <p className="video-helper-text mt-1">
                         {sourceVideoTaskId ? `video_task=${sourceVideoTaskId.slice(0, 8)}` : formatJobType(job.task_type)}
                     </p>
                     {job.error_message && <p className="mt-2 line-clamp-2 text-xs text-rose-600 dark:text-rose-200">{job.error_message}</p>}
@@ -131,7 +131,7 @@ function JobCard({ job, priceCredits, onCancel, onRetry }: { job: TaskJob; price
                     {isActive && (
                         <button
                             onClick={() => void onCancel(job.id)}
-                            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                            className="video-chip-button rounded-lg px-2 py-1 text-xs transition-colors"
                         >
                             取消
                         </button>
@@ -139,7 +139,7 @@ function JobCard({ job, priceCredits, onCancel, onRetry }: { job: TaskJob; price
                     {isFailed && (
                         <button
                             onClick={() => void onRetry(job.id)}
-                            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                            className="video-chip-button rounded-lg px-2 py-1 text-xs transition-colors"
                         >
                             重试
                         </button>
@@ -165,15 +165,15 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className={`overflow-hidden rounded-2xl border transition-all ${isProcessing ? "border-slate-200/80 bg-white/90 dark:border-white/10 dark:bg-white/5" :
+            className={`video-card overflow-hidden rounded-2xl transition-all ${isProcessing ? "" :
                 isFailed ? "border-rose-200 bg-rose-50/90 dark:border-rose-500/25 dark:bg-rose-500/10" :
-                    "border-slate-200/80 bg-white/95 hover:border-slate-300 dark:border-white/10 dark:bg-slate-950/50 dark:hover:border-white/20"
+                    "hover:border-slate-300 dark:hover:border-white/20"
                 }`}
         >
             {/* Processing State (Compact) */}
             {isProcessing && (
                 <div className="p-3 flex gap-3 items-center">
-                    <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl bg-slate-200 dark:bg-black/50">
+                    <div className="video-card-soft relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl">
                         {task.image_url ? (
                             <img
                                 src={getDisplayUrl(task.image_url)}
@@ -191,14 +191,14 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
                     </div>
                     <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500">#{task.id.slice(0, 6)}</span>
+                            <span className="video-helper-text font-mono">#{task.id.slice(0, 6)}</span>
                             <span className="text-xs text-primary animate-pulse">
                                 {task.status === "pending" ? "排队中" : "生成中..."}
                             </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             {priceCredits != null && (
-                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+                                <span className="video-status-badge video-status-badge-warning inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold">
                                     消耗 {priceCredits} 算力豆
                                 </span>
                             )}
@@ -212,11 +212,11 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
             {isCompleted && (
                 <div>
                     {/* Header */}
-                    <div className="flex items-center justify-between border-b border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-white/5 dark:bg-white/5">
+                    <div className="video-card-soft flex items-center justify-between border-b video-workspace-divider px-3 py-2">
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-slate-500 dark:text-slate-500">#{task.id.slice(0, 6)}</span>
+                            <span className="video-helper-text font-mono">#{task.id.slice(0, 6)}</span>
                             {priceCredits != null && (
-                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+                                <span className="video-status-badge video-status-badge-warning inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold">
                                     消耗 {priceCredits} 算力豆
                                 </span>
                             )}
@@ -224,7 +224,7 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
                         <div className="flex gap-2">
                             <button
                                 onClick={() => onRemix(task)}
-                                className="flex items-center gap-1 text-xs text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                                className="video-inline-button flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors"
                                 title="使用此参数重做"
                             >
                                 <RefreshCw size={12} /> Remix
@@ -260,7 +260,7 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
                                     R2V Input
                                 </div>
                             )}
-                            <div className="absolute top-2 left-2 rounded bg-slate-950/70 px-1.5 py-0.5 text-[10px] text-slate-100">Input</div>
+                            <div className="video-status-badge absolute top-2 left-2 rounded px-1.5 py-0.5 text-[10px] text-slate-100">Input</div>
                         </div>
 
                         {/* Output Video (Right) */}
@@ -276,7 +276,7 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
                                     Error
                                 </div>
                             )}
-                            <div className="absolute top-2 right-2 rounded bg-primary/80 px-1.5 py-0.5 text-[10px] text-white">Result</div>
+                            <div className="video-status-badge video-status-badge-accent absolute top-2 right-2 rounded px-1.5 py-0.5 text-[10px] text-white">Result</div>
                         </div>
                     </div>
 
@@ -288,10 +288,10 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
 
                         <div className="flex justify-between items-center">
                             <div className="flex gap-2">
-                                <button className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white">
+                                <button className="video-inline-button rounded p-1.5">
                                     <Copy size={14} />
                                 </button>
-                                <button className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white">
+                                <button className="video-inline-button rounded p-1.5">
                                     <Download size={14} />
                                 </button>
                             </div>
@@ -312,7 +312,7 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
                     </div>
                     {priceCredits != null && (
                         <div className="mb-3">
-                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+                            <span className="video-status-badge video-status-badge-warning inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold">
                                 消耗 {priceCredits} 算力豆
                             </span>
                         </div>
@@ -320,7 +320,7 @@ function TaskCard({ task, priceCredits, onRemix }: { task: VideoTask; priceCredi
                     <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">未知错误，请重试</p>
                     <button
                         onClick={() => onRemix(task)}
-                        className="w-full rounded-lg border border-slate-200 bg-white py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                        className="video-chip-button w-full rounded-lg py-1.5 text-xs transition-colors"
                     >
                         重试任务
                     </button>

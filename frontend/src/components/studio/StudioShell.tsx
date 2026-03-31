@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { Boxes, CreditCard, FolderKanban, LayoutDashboard, Library, Palette, Search, Settings2, SlidersHorizontal, Users2, WalletCards, Workflow } from "lucide-react";
+import { Boxes, ChevronDown, Clapperboard, CreditCard, FolderKanban, LayoutDashboard, Library, Palette, Settings2, SlidersHorizontal, Users2, WalletCards, Workflow } from "lucide-react";
 
 import DramaLabBranding from "@/components/layout/DramaLabBranding";
 import { api } from "@/lib/api";
@@ -25,28 +25,32 @@ interface StudioShellProps {
 interface StudioNavItem {
   href: string;
   label: string;
+  shortLabel: string;
+  hint: string;
   icon: typeof LayoutDashboard;
   capability: string;
-  section: "workspace" | "operations" | "governance";
+  section: "overview" | "planning" | "execution" | "operations" | "governance";
   requiresPlatformSuperAdmin?: boolean;
 }
 
 const NAV_ITEMS: StudioNavItem[] = [
-  { href: "/studio", label: "总览", icon: LayoutDashboard, capability: "workspace.view", section: "workspace" },
-  { href: "/studio/projects", label: "项目中心", icon: FolderKanban, capability: "workspace.view", section: "workspace" },
-  { href: "/studio/library", label: "资产库", icon: Library, capability: "workspace.view", section: "workspace" },
-  { href: "/studio/styles", label: "美术风格", icon: Palette, capability: "workspace.view", section: "workspace" },
-  { href: "/studio/tasks", label: "任务中心", icon: Workflow, capability: "task.run", section: "operations" },
-  { href: "/studio/team", label: "团队", icon: Users2, capability: "workspace.manage_members", section: "operations" },
-  { href: "/studio/billing", label: "算力豆账本", icon: CreditCard, capability: "workspace.view", section: "operations" },
-  { href: "/studio/settings", label: "设置", icon: Settings2, capability: "workspace.view", section: "operations" },
-  { href: "/studio/billing-admin", label: "计费配置", icon: WalletCards, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
-  { href: "/studio/model-config", label: "模型配置", icon: Boxes, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
-  { href: "/studio/task-concurrency", label: "任务并发", icon: SlidersHorizontal, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
+  { href: "/studio", label: "工作台总览", shortLabel: "总览", hint: "经营态势、告警与生产信号", icon: LayoutDashboard, capability: "workspace.view", section: "overview" },
+  { href: "/studio/projects", label: "项目与系列", shortLabel: "项目", hint: "剧本母体、系列编排与单集台账", icon: FolderKanban, capability: "workspace.view", section: "planning" },
+  { href: "/studio/library", label: "角色场景资产", shortLabel: "资产", hint: "角色、场景、道具与复用资源", icon: Library, capability: "workspace.view", section: "planning" },
+  { href: "/studio/styles", label: "美术风格策略", shortLabel: "风格", hint: "视觉风格沉淀与项目复用", icon: Palette, capability: "workspace.view", section: "planning" },
+  { href: "/studio/tasks", label: "生产调度中心", shortLabel: "任务", hint: "分镜、视频与异步任务队列", icon: Workflow, capability: "task.run", section: "execution" },
+  { href: "/studio/team", label: "团队协同", shortLabel: "团队", hint: "成员、角色与协作边界", icon: Users2, capability: "workspace.manage_members", section: "operations" },
+  { href: "/studio/billing", label: "算力与成本", shortLabel: "成本", hint: "算力消耗、扣费和预算感知", icon: CreditCard, capability: "workspace.view", section: "operations" },
+  { href: "/studio/settings", label: "工作台设置", shortLabel: "设置", hint: "账号、工作区与系统偏好", icon: Settings2, capability: "workspace.view", section: "operations" },
+  { href: "/studio/billing-admin", label: "平台计费规则", shortLabel: "计费", hint: "扣费规则、赠送策略与手工充值", icon: WalletCards, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
+  { href: "/studio/model-config", label: "模型资源编排", shortLabel: "模型", hint: "模型目录、供应商与可见范围", icon: Boxes, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
+  { href: "/studio/task-concurrency", label: "并发与执行位", shortLabel: "并发", hint: "组织级执行配额与任务上限", icon: SlidersHorizontal, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
 ];
 
 const SECTION_LABELS: Record<StudioNavItem["section"], string> = {
-  workspace: "工作区业务",
+  overview: "控制台总览",
+  planning: "内容策划",
+  execution: "生产执行",
   operations: "运营协同",
   governance: "平台治理",
 };
@@ -60,6 +64,7 @@ export default function StudioShell({ children, title, description, actions }: S
   const hasCapability = useAuthStore((state) => state.hasCapability);
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const visibleNavItems = useMemo(
     () =>
@@ -79,7 +84,7 @@ export default function StudioShell({ children, title, description, actions }: S
   const activeNavItem = visibleNavItems.find((item) => pathname === item.href || (item.href !== "/studio" && pathname.startsWith(`${item.href}/`)));
   const navSections = useMemo(
     () =>
-      (["workspace", "operations", "governance"] as const)
+      (["overview", "planning", "execution", "operations", "governance"] as const)
         .map((section) => ({
           section,
           label: SECTION_LABELS[section],
@@ -100,6 +105,7 @@ export default function StudioShell({ children, title, description, actions }: S
 
   useEffect(() => {
     setPendingPath(null);
+    setIsUserMenuOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -122,8 +128,8 @@ export default function StudioShell({ children, title, description, actions }: S
       return () => window.cancelIdleCallback(idleId);
     }
 
-    const timeoutId = window.setTimeout(scheduleWarmup, 160);
-    return () => window.clearTimeout(timeoutId);
+    const timeoutId = globalThis.setTimeout(scheduleWarmup, 160);
+    return () => globalThis.clearTimeout(timeoutId);
   }, []);
 
   return (
@@ -136,8 +142,6 @@ export default function StudioShell({ children, title, description, actions }: S
           <Link href="/studio" className="block">
             <DramaLabBranding size="sm" showSlogan={false} />
           </Link>
-          <p className="mt-3 text-xs uppercase tracking-[0.28em] studio-faint">Operations Console</p>
-          <p className="mt-2 text-sm leading-6 studio-muted">围绕项目、资产、任务、团队与平台配置的统一后台。</p>
         </div>
 
         <div className="mt-6 space-y-5">
@@ -163,8 +167,8 @@ export default function StudioShell({ children, title, description, actions }: S
                       <span className={`studio-nav-icon ${isActive ? "studio-nav-icon-active" : ""}`}>
                         <Icon size={16} />
                       </span>
-                      <span className="flex-1">{item.label}</span>
-                      {isActive ? <span className="studio-nav-pill">当前</span> : null}
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {isActive ? <span className="studio-nav-pill">{item.shortLabel}</span> : null}
                       {isPending ? <span className="studio-nav-pending-dot" aria-hidden="true" /> : null}
                     </Link>
                   );
@@ -185,11 +189,14 @@ export default function StudioShell({ children, title, description, actions }: S
           <div className="mt-4 grid gap-2">
             <div className="rounded-[1rem] border border-slate-200/80 bg-white/70 px-3 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-[0.2em] studio-faint">Console Mode</div>
-              <div className="mt-2 text-sm font-semibold studio-strong">Admin Workspace</div>
+              <div className="mt-2 flex items-center gap-2 text-sm font-semibold studio-strong">
+                <Clapperboard size={14} />
+                Production Console
+              </div>
             </div>
             <div className="rounded-[1rem] border border-slate-200/80 bg-white/70 px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] studio-faint">Route Warmup</div>
-              <div className="mt-2 text-sm studio-muted">项目与任务摘要已预热，降低切页等待。</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] studio-faint">Focus</div>
+              <div className="mt-2 text-sm studio-muted">让项目编排、任务执行与异常处理在同一套后台节奏里完成。</div>
             </div>
           </div>
         </div>
@@ -197,25 +204,12 @@ export default function StudioShell({ children, title, description, actions }: S
 
       <div className="flex min-h-screen flex-1 flex-col">
         <header className="studio-app-topbar">
-          <div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-start lg:justify-between lg:px-8">
-            <div className="max-w-3xl">
-              <div className="studio-eyebrow">Studio Admin</div>
-              <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong lg:text-[2.4rem]">{title}</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 studio-muted">{description}</p>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className="studio-mini-chip">{activeNavItem?.label || "工作台"}</span>
-                <span className="studio-mini-chip">{currentWorkspace?.organization_name || "默认组织"}</span>
-                <span className="studio-mini-chip">浅色控制台</span>
-                <span className="studio-mini-chip">后台管理视图</span>
-              </div>
+          <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+            <div>
+              <h1 className="text-3xl font-semibold tracking-[-0.04em] studio-strong lg:text-[2.2rem]">{title}</h1>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 self-start lg:justify-end">
-              <div className="studio-control-chip hidden xl:flex">
-                <Search size={15} className="studio-faint" />
-                <span className="text-sm studio-muted">后台管理视图</span>
-              </div>
-
               {me?.workspaces?.length ? (
                 <label className="studio-control-chip">
                   <span className="studio-faint">工作区</span>
@@ -232,7 +226,7 @@ export default function StudioShell({ children, title, description, actions }: S
                         setIsSwitchingWorkspace(false);
                       }
                     }}
-                    className="studio-select min-w-[220px] border-none bg-transparent px-0 py-0 font-semibold shadow-none"
+                    className="studio-select min-w-[320px] border-none bg-transparent px-0 py-0 font-semibold shadow-none"
                   >
                     {me.workspaces.map((workspace) => (
                       <option key={workspace.workspace_id} value={workspace.workspace_id}>
@@ -244,20 +238,31 @@ export default function StudioShell({ children, title, description, actions }: S
               ) : null}
 
               {me ? (
-                <div className="studio-control-chip">
-                  <span className="font-semibold studio-strong">{me.user.display_name || me.user.email || "DramaLab 用户"}</span>
-                  <span className="studio-faint">{me.current_role_name || "成员"}</span>
+                <div className="relative">
+                  <button type="button" onClick={() => setIsUserMenuOpen((value) => !value)} className="studio-control-chip">
+                    <span className="font-semibold studio-strong">{me.user.display_name || me.user.email || "DramaLab 用户"}</span>
+                    <span className="studio-faint">{me.current_role_name || "成员"}</span>
+                    <ChevronDown size={14} className="studio-faint" />
+                  </button>
+                  {isUserMenuOpen ? (
+                    <div
+                      className="absolute right-0 top-full z-20 mt-2 min-w-[180px] rounded-[14px] border p-2 shadow-xl"
+                      style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-strong)" }}
+                    >
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          void signOut().then(() => router.replace("/?auth=signin"));
+                        }}
+                        className="flex w-full items-center rounded-[10px] px-3 py-2 text-sm font-semibold studio-muted hover:bg-slate-50"
+                      >
+                        退出登录
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {actions}
-              <button
-                onClick={() => {
-                  void signOut().then(() => router.replace("/?auth=signin"));
-                }}
-                className="studio-button studio-button-ghost"
-              >
-                退出登录
-              </button>
             </div>
           </div>
         </header>

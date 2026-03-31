@@ -13,32 +13,32 @@ interface StudioWorkspaceFrameProps {
 
 const STUDIO_SHELL_META: Record<string, { title: string; description: string }> = {
   "/studio": {
-    title: "商业化总览",
-    description: "查看商业化工作台首页、关键运营指标、最近项目和任务追踪入口。",
+    title: "工作台总览",
+    description: "从短剧生产、任务调度、异常信号和资源沉淀四个维度总览当前工作区。",
   },
   "/studio/projects": {
-    title: "项目中心",
-    description: "以商业化资源管理方式查看系列、独立项目、导入入口与创建入口。",
+    title: "项目与系列",
+    description: "用后台台账视角管理系列母体、项目单元、分集编排与导入入口。",
   },
   "/studio/library": {
-    title: "资产库",
-    description: "统一浏览角色、场景、道具与来源归属，把资产沉淀成可复用资源中心。",
+    title: "角色场景资产",
+    description: "统一管理角色、场景、道具与来源归属，把制作资产沉淀成可复用资源层。",
   },
   "/studio/tasks": {
-    title: "任务中心",
-    description: "聚合查看进行中、失败与已完成的生成任务，用业务语言理解异步生产链路。",
+    title: "生产调度中心",
+    description: "聚合查看排队、执行、重试与异常任务，用业务语言理解 AI 生产链路。",
   },
   "/studio/styles": {
-    title: "美术风格库",
-    description: "按用户统一管理历史保存过的自定义视觉风格，并直接复用到项目美术设定中。",
+    title: "美术风格策略",
+    description: "统一管理视觉风格模板和历史沉淀，让项目风格策略可复用、可治理。",
   },
   "/studio/team": {
-    title: "团队与角色",
-    description: "按工作区角色管理成员、邀请协作者，并控制制作权限边界。",
+    title: "团队协同",
+    description: "按工作区角色管理成员、邀请协作者，并控制制作与运营权限边界。",
   },
   "/studio/billing": {
-    title: "算力豆账本",
-    description: "组织管理员可见所有算力豆数据，组织个人仅可见算力豆余额及自己的扣费记录。",
+    title: "算力与成本",
+    description: "组织管理员可见全部算力与扣费数据，成员查看自己相关消耗与余额。",
   },
   "/studio/billing-admin": {
     title: "计费规则配置",
@@ -54,7 +54,7 @@ const STUDIO_SHELL_META: Record<string, { title: string; description: string }> 
   },
   "/studio/settings": {
     title: "工作台设置",
-    description: "根据当前角色收敛账号、工作区与管理员配置边界。",
+    description: "根据当前角色收敛账号、工作区、后台偏好与管理员配置边界。",
   },
 };
 

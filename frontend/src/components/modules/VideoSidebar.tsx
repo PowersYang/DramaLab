@@ -112,7 +112,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
     };
 
     return (
-        <div className="h-full flex flex-col bg-black/40 backdrop-blur-sm border-l border-white/5">
+        <div className="video-sidebar-shell h-full flex flex-col border-l video-workspace-divider">
             <input
                 type="file"
                 ref={audioInputRef}
@@ -121,12 +121,12 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                 onChange={handleFileUpload}
             />
             {/* Tab Navigation */}
-            <div className="flex border-b border-white/5">
+            <div className="video-workspace-divider flex border-b px-4 pt-4">
                 <button
                     onClick={() => setActiveTab("settings")}
-                    className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "settings"
-                        ? "text-white border-b-2 border-primary bg-white/5"
-                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                    className={`video-segmented-button flex-1 rounded-t-xl px-3 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "settings"
+                        ? "video-segmented-button-active"
+                        : ""
                         }`}
                 >
                     <Settings2 size={16} />
@@ -134,15 +134,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                 </button>
                 <button
                     onClick={() => setActiveTab("queue")}
-                    className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "queue"
-                        ? "text-white border-b-2 border-primary bg-white/5"
-                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                    className={`video-segmented-button flex-1 rounded-t-xl px-3 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "queue"
+                        ? "video-segmented-button-active"
+                        : ""
                         }`}
                 >
                     <List size={16} />
                     Queue
                     {activeJobs.length > 0 && (
-                        <span className="bg-primary text-white text-[10px] px-1.5 rounded-full">
+                        <span className="video-status-badge video-status-badge-accent rounded-full px-1.5 py-0.5 text-[10px] font-semibold">
                             {activeJobs.length}
                         </span>
                     )}
@@ -158,21 +158,21 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: -20 }}
-                            className="absolute inset-0 overflow-y-auto custom-scrollbar p-6 space-y-8"
+                            className="video-scroll-frame absolute inset-0 overflow-y-auto custom-scrollbar p-5 space-y-5"
                         >
                             {/* 1. Basic Settings */}
-                            <section className="space-y-4">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                            <section className="video-card rounded-[1.35rem] p-4 space-y-4">
+                                <h3 className="video-section-title flex items-center gap-2">
                                     <div className="w-1 h-3 bg-primary rounded-full" />
                                     Basic Settings
                                 </h3>
 
                                 {/* Model Selection - R2V mode: only Wan 2.6 is selectable */}
                                 <div>
-                                    <label className="block text-xs text-gray-400 mb-2">
+                                    <label className="video-field-label block mb-2">
                                         Model (模型)
                                         {params.generationMode === "r2v" && (
-                                            <span className="text-purple-400 ml-2">(R2V仅支持 Wan 2.6)</span>
+                                            <span className="ml-2 text-[11px] text-primary">(R2V仅支持 Wan 2.6)</span>
                                         )}
                                     </label>
                                     <div className="space-y-2">
@@ -187,17 +187,17 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                                     key={model.id}
                                                     onClick={() => !isDisabled && updateParam("model", model.id)}
                                                     disabled={isDisabled}
-                                                    className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition-all text-left ${isSelected
-                                                        ? 'border-primary/50 bg-primary/10'
-                                                        : 'border-white/10 hover:border-white/20 bg-white/5'
+                                                    className={`w-full flex items-center justify-between rounded-xl border p-3 transition-all text-left ${isSelected
+                                                        ? 'video-card-selected bg-primary/10'
+                                                        : 'video-card-soft'
                                                         } ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                                                 >
                                                     <div>
-                                                        <span className="text-xs font-medium text-white">{model.name}</span>
-                                                        <p className="text-[10px] text-gray-500">{model.description}</p>
+                                                        <span className="text-xs font-semibold text-white">{model.name}</span>
+                                                        <p className="video-helper-text mt-1">{model.description}</p>
                                                     </div>
                                                     {isSelected && (
-                                                        <div className="w-2 h-2 bg-primary rounded-full" />
+                                                        <div className="h-2 w-2 rounded-full bg-primary" />
                                                     )}
                                                 </button>
                                             );
@@ -212,8 +212,8 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                     if (durationConfig.type === 'fixed') {
                                         return (
                                             <div>
-                                                <label className="block text-xs text-gray-400 mb-2">Duration (生成时长)</label>
-                                                <div className="py-1.5 text-xs text-gray-500 bg-white/5 rounded-lg text-center border border-transparent">
+                                                <label className="video-field-label block mb-2">Duration (生成时长)</label>
+                                                <div className="video-card-soft py-2 text-center text-xs text-gray-500 rounded-xl">
                                                     {durationConfig.value}s (固定)
                                                 </div>
                                             </div>
@@ -223,7 +223,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                     if (durationConfig.type === 'slider') {
                                         return (
                                             <div>
-                                                <label className="block text-xs text-gray-400 mb-2">
+                                                <label className="video-field-label block mb-2">
                                                     Duration (生成时长) <span className="text-primary font-medium">{params.duration}s</span>
                                                 </label>
                                                 <input
@@ -233,9 +233,9 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                                     step={durationConfig.step}
                                                     value={params.duration}
                                                     onChange={(e) => updateParam("duration", parseInt(e.target.value))}
-                                                    className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-lg"
+                                                    className="w-full h-1.5 cursor-pointer appearance-none rounded-full bg-white/10 accent-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-lg"
                                                 />
-                                                <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+                                                <div className="video-helper-text mt-1 flex justify-between">
                                                     <span>{durationConfig.min}s</span>
                                                     <span>{durationConfig.max}s</span>
                                                 </div>
@@ -246,15 +246,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                     // buttons
                                     return (
                                         <div>
-                                            <label className="block text-xs text-gray-400 mb-2">Duration (生成时长)</label>
+                                            <label className="video-field-label block mb-2">Duration (生成时长)</label>
                                             <div className={`grid ${GRID_COLS_CLASS[durationConfig.options.length] ?? 'grid-cols-3'} gap-2`}>
                                                 {durationConfig.options.map(dur => (
                                                     <button
                                                         key={dur}
                                                         onClick={() => updateParam("duration", dur)}
-                                                        className={`py-1.5 text-xs rounded-lg border transition-all ${params.duration === dur
-                                                            ? "bg-primary/20 border-primary text-primary"
-                                                            : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                        className={`video-chip-button py-2 text-xs rounded-xl transition-all ${params.duration === dur
+                                                            ? "video-chip-button-active"
+                                                            : ""
                                                             }`}
                                                     >
                                                         {dur}s
@@ -268,37 +268,37 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Shot Type - Only when model supports it and promptExtend is enabled */}
                                 {modelParams.shotType && (
                                     <div>
-                                        <label className="block text-xs text-gray-400 mb-2">
+                                        <label className="video-field-label block mb-2">
                                             Shot Type (镜头类型)
                                             {!params.promptExtend && (
-                                                <span className="text-yellow-500 ml-2">(需开启智能扩写)</span>
+                                                <span className="ml-2 text-[11px] text-amber-500">(需开启智能扩写)</span>
                                             )}
                                         </label>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <button
-                                                onClick={() => updateParam("shotType", "single")}
-                                                disabled={!params.promptExtend}
-                                                className={`py-2 text-xs rounded-lg border transition-all flex flex-col items-center gap-1 ${params.shotType === "single"
-                                                    ? "bg-primary/20 border-primary text-primary"
-                                                    : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                <button
+                                                    onClick={() => updateParam("shotType", "single")}
+                                                    disabled={!params.promptExtend}
+                                                    className={`video-chip-button flex flex-col items-center gap-1 rounded-xl py-2 text-xs transition-all ${params.shotType === "single"
+                                                    ? "video-chip-button-active"
+                                                    : ""
                                                     } ${!params.promptExtend ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 <span className="font-medium">Single</span>
                                                 <span className="text-[10px] text-gray-500">单镜头</span>
                                             </button>
-                                            <button
-                                                onClick={() => updateParam("shotType", "multi")}
-                                                disabled={!params.promptExtend}
-                                                className={`py-2 text-xs rounded-lg border transition-all flex flex-col items-center gap-1 ${params.shotType === "multi"
-                                                    ? "bg-primary/20 border-primary text-primary"
-                                                    : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                <button
+                                                    onClick={() => updateParam("shotType", "multi")}
+                                                    disabled={!params.promptExtend}
+                                                    className={`video-chip-button flex flex-col items-center gap-1 rounded-xl py-2 text-xs transition-all ${params.shotType === "multi"
+                                                    ? "video-chip-button-active"
+                                                    : ""
                                                     } ${!params.promptExtend ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 <span className="font-medium">Multi</span>
                                                 <span className="text-[10px] text-gray-500">多镜头叙事</span>
                                             </button>
                                         </div>
-                                        <p className="text-[10px] text-gray-600 mt-1.5">
+                                        <p className="video-helper-text mt-1.5">
                                             多镜头模式会生成包含多个切换镜头的叙事视频
                                         </p>
                                     </div>
@@ -307,33 +307,33 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Kling: Mode (std/pro) */}
                                 {modelParams.mode && (
                                     <div>
-                                        <label className="block text-xs text-gray-400 mb-2">Mode (生成模式)</label>
+                                        <label className="video-field-label block mb-2">Mode (生成模式)</label>
                                         <div className="grid grid-cols-2 gap-2">
                                             {modelParams.mode.options.map(opt => (
                                                 <button
                                                     key={opt}
                                                     onClick={() => updateParam("mode", opt)}
-                                                    className={`py-1.5 text-xs rounded-lg border transition-all ${params.mode === opt
-                                                        ? "bg-primary/20 border-primary text-primary"
-                                                        : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                    className={`video-chip-button rounded-xl py-2 text-xs transition-all ${params.mode === opt
+                                                        ? "video-chip-button-active"
+                                                        : ""
                                                         }`}
                                                 >
                                                     {opt.toUpperCase()}
                                                 </button>
                                             ))}
                                         </div>
-                                        <p className="text-[10px] text-gray-600 mt-1.5">
+                                        <p className="video-helper-text mt-1.5">
                                             Pro 模式质量更高但耗时更长
                                         </p>
                                     </div>
                                 )}
                             </section>
 
-                            <div className="w-full h-px bg-white/5" />
+                            <div className="video-section-rule w-full" />
 
                             {/* 2. Quality & Specs */}
-                            <section className="space-y-4">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                            <section className="video-card rounded-[1.35rem] p-4 space-y-4">
+                                <h3 className="video-section-title flex items-center gap-2">
                                     <div className="w-1 h-3 bg-blue-500 rounded-full" />
                                     Quality & Specs
                                 </h3>
@@ -341,15 +341,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Resolution - only when model supports it */}
                                 {modelParams.resolution && (
                                     <div>
-                                        <label className="block text-xs text-gray-400 mb-2">Resolution (画质)</label>
+                                        <label className="video-field-label block mb-2">Resolution (画质)</label>
                                         <div className={`grid ${GRID_COLS_CLASS[modelParams.resolution.options.length] ?? 'grid-cols-3'} gap-2`}>
                                             {modelParams.resolution.options.map(res => (
                                                 <button
                                                     key={res}
                                                     onClick={() => updateParam("resolution", res)}
-                                                    className={`py-1.5 text-xs rounded-lg border transition-all ${params.resolution === res
-                                                        ? "bg-blue-500/20 border-blue-500 text-blue-500"
-                                                        : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                    className={`video-chip-button rounded-xl py-2 text-xs transition-all ${params.resolution === res
+                                                        ? "video-chip-button-active"
+                                                        : ""
                                                         }`}
                                                 >
                                                     {res}
@@ -361,15 +361,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
 
                                 {/* Batch Size */}
                                 <div>
-                                    <label className="block text-xs text-gray-400 mb-2">Batch Size (生成数量)</label>
+                                    <label className="video-field-label block mb-2">Batch Size (生成数量)</label>
                                     <div className="grid grid-cols-3 gap-2">
                                         {[1, 2, 4].map(size => (
                                             <button
                                                 key={size}
                                                 onClick={() => updateParam("batchSize", size)}
-                                                className={`py-1.5 text-xs rounded-lg border transition-all ${params.batchSize === size
-                                                    ? "bg-blue-500/20 border-blue-500 text-blue-500"
-                                                    : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                className={`video-chip-button rounded-xl py-2 text-xs transition-all ${params.batchSize === size
+                                                    ? "video-chip-button-active"
+                                                    : ""
                                                     }`}
                                             >
                                                 {size}x
@@ -381,7 +381,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Kling: CFG Scale */}
                                 {modelParams.cfgScale && (
                                     <div>
-                                        <label className="block text-xs text-gray-400 mb-2">
+                                        <label className="video-field-label block mb-2">
                                             CFG Scale (创意度) <span className="text-blue-500 font-medium">{params.cfgScale.toFixed(1)}</span>
                                         </label>
                                         <input
@@ -393,7 +393,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                             onChange={(e) => updateParam("cfgScale", parseFloat(e.target.value))}
                                             className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:shadow-lg"
                                         />
-                                        <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+                                        <div className="video-helper-text mt-1 flex justify-between">
                                             <span>{modelParams.cfgScale.min} (自由)</span>
                                             <span>{modelParams.cfgScale.max} (严格)</span>
                                         </div>
@@ -403,15 +403,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Vidu: Movement Amplitude */}
                                 {modelParams.movementAmplitude && (
                                     <div>
-                                        <label className="block text-xs text-gray-400 mb-2">Movement Amplitude (运动幅度)</label>
+                                        <label className="video-field-label block mb-2">Movement Amplitude (运动幅度)</label>
                                         <div className={`grid ${GRID_COLS_CLASS[modelParams.movementAmplitude.options.length] ?? 'grid-cols-4'} gap-2`}>
                                             {modelParams.movementAmplitude.options.map(opt => (
                                                 <button
                                                     key={opt}
                                                     onClick={() => updateParam("movementAmplitude", opt)}
-                                                    className={`py-1.5 text-xs rounded-lg border transition-all capitalize ${params.movementAmplitude === opt
-                                                        ? "bg-blue-500/20 border-blue-500 text-blue-500"
-                                                        : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                    className={`video-chip-button rounded-xl py-2 text-xs capitalize transition-all ${params.movementAmplitude === opt
+                                                        ? "video-chip-button-active"
+                                                        : ""
                                                         }`}
                                                 >
                                                     {opt === 'auto' ? 'Auto' : opt === 'small' ? 'S' : opt === 'medium' ? 'M' : 'L'}
@@ -422,11 +422,11 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 )}
                             </section>
 
-                            <div className="w-full h-px bg-white/5" />
+                            <div className="video-section-rule w-full" />
 
                             {/* 3. Creative & Audio */}
-                            <section className="space-y-4">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                            <section className="video-card rounded-[1.35rem] p-4 space-y-4">
+                                <h3 className="video-section-title flex items-center gap-2">
                                     <div className="w-1 h-3 bg-purple-500 rounded-full" />
                                     Creative & Audio
                                 </h3>
@@ -434,15 +434,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Prompt Enhancer - only when model supports it */}
                                 {modelParams.promptExtend && (
                                     <div className="flex items-center justify-between">
-                                        <label className="text-xs text-gray-400 flex items-center gap-2">
+                                        <label className="video-field-label flex items-center gap-2">
                                             <Wand2 size={12} />
                                             Prompt Enhancer (智能扩写)
                                         </label>
                                         <button
                                             onClick={() => updateParam("promptExtend", !params.promptExtend)}
-                                            className={`w-10 h-5 rounded-full relative transition-colors ${params.promptExtend ? "bg-purple-500" : "bg-white/10"}`}
+                                            className={`video-toggle relative h-5 w-10 rounded-full transition-colors ${params.promptExtend ? "video-toggle-active" : ""}`}
                                         >
-                                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${params.promptExtend ? "left-6" : "left-1"}`} />
+                                            <div className={`video-toggle-thumb absolute top-1 h-3 w-3 rounded-full transition-all ${params.promptExtend ? "left-6" : "left-1"}`} />
                                         </button>
                                     </div>
                                 )}
@@ -450,33 +450,33 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Wan Audio Settings (三模式) - only when model supports it */}
                                 {modelParams.audio && (
                                     <div>
-                                        <label className="block text-xs text-gray-400 mb-2">
+                                        <label className="video-field-label block mb-2">
                                             Audio Settings (音频)
                                         </label>
                                         <div className="grid grid-cols-3 gap-2 mb-2">
                                             <button
                                                 onClick={() => setAudioMode("mute")}
-                                                className={`py-1.5 text-xs rounded-lg border flex items-center justify-center gap-1 transition-all ${audioMode === "mute"
-                                                    ? "bg-purple-500/20 border-purple-500 text-purple-500"
-                                                    : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                className={`video-chip-button flex items-center justify-center gap-1 rounded-xl py-2 text-xs transition-all ${audioMode === "mute"
+                                                    ? "video-chip-button-active"
+                                                    : ""
                                                     }`}
                                             >
                                                 <VolumeX size={12} /> Mute
                                             </button>
                                             <button
                                                 onClick={() => setAudioMode("ai")}
-                                                className={`py-1.5 text-xs rounded-lg border flex items-center justify-center gap-1 transition-all ${audioMode === "ai"
-                                                    ? "bg-purple-500/20 border-purple-500 text-purple-500"
-                                                    : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                className={`video-chip-button flex items-center justify-center gap-1 rounded-xl py-2 text-xs transition-all ${audioMode === "ai"
+                                                    ? "video-chip-button-active"
+                                                    : ""
                                                     }`}
                                             >
                                                 <Mic size={12} /> AI Sound
                                             </button>
                                             <button
                                                 onClick={() => setAudioMode("custom")}
-                                                className={`py-1.5 text-xs rounded-lg border flex items-center justify-center gap-1 transition-all ${audioMode === "custom"
-                                                    ? "bg-purple-500/20 border-purple-500 text-purple-500"
-                                                    : "bg-white/5 border-transparent text-gray-400 hover:bg-white/10"
+                                                className={`video-chip-button flex items-center justify-center gap-1 rounded-xl py-2 text-xs transition-all ${audioMode === "custom"
+                                                    ? "video-chip-button-active"
+                                                    : ""
                                                     }`}
                                             >
                                                 <Music size={12} /> Sound Driven
@@ -490,7 +490,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                                     readOnly
                                                     placeholder={isUploadingAudio ? "Uploading..." : "Click to upload audio"}
                                                     onClick={() => audioInputRef.current?.click()}
-                                                    className="w-full bg-white/5 border border-white/10 rounded-lg py-1.5 px-2 text-xs text-white focus:border-purple-500 focus:outline-none cursor-pointer"
+                                                    className="video-input w-full cursor-pointer rounded-xl px-3 py-2 text-xs"
                                                 />
                                                 {params.audioUrl && (
                                                     <button
@@ -499,7 +499,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                                             updateParam("audioUrl", "");
                                                             setAudioMode("mute");
                                                         }}
-                                                        className="absolute right-2 top-1.5 text-gray-500 hover:text-white"
+                                                        className="video-inline-button absolute right-2 top-1.5 rounded-md p-1"
                                                     >
                                                         <VolumeX size={12} />
                                                     </button>
@@ -512,15 +512,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Kling: Sound on/off */}
                                 {modelParams.sound && (
                                     <div className="flex items-center justify-between">
-                                        <label className="text-xs text-gray-400 flex items-center gap-2">
+                                        <label className="video-field-label flex items-center gap-2">
                                             <Mic size={12} />
                                             Sound (AI音效)
                                         </label>
                                         <button
                                             onClick={() => updateParam("sound", !params.sound)}
-                                            className={`w-10 h-5 rounded-full relative transition-colors ${params.sound ? "bg-purple-500" : "bg-white/10"}`}
+                                            className={`video-toggle relative h-5 w-10 rounded-full transition-colors ${params.sound ? "video-toggle-active" : ""}`}
                                         >
-                                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${params.sound ? "left-6" : "left-1"}`} />
+                                            <div className={`video-toggle-thumb absolute top-1 h-3 w-3 rounded-full transition-all ${params.sound ? "left-6" : "left-1"}`} />
                                         </button>
                                     </div>
                                 )}
@@ -528,15 +528,15 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Vidu: Audio on/off */}
                                 {modelParams.viduAudio && (
                                     <div className="flex items-center justify-between">
-                                        <label className="text-xs text-gray-400 flex items-center gap-2">
+                                        <label className="video-field-label flex items-center gap-2">
                                             <Mic size={12} />
                                             Audio Output (音视频直出)
                                         </label>
                                         <button
                                             onClick={() => updateParam("viduAudio", !params.viduAudio)}
-                                            className={`w-10 h-5 rounded-full relative transition-colors ${params.viduAudio ? "bg-purple-500" : "bg-white/10"}`}
+                                            className={`video-toggle relative h-5 w-10 rounded-full transition-colors ${params.viduAudio ? "video-toggle-active" : ""}`}
                                         >
-                                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${params.viduAudio ? "left-6" : "left-1"}`} />
+                                            <div className={`video-toggle-thumb absolute top-1 h-3 w-3 rounded-full transition-all ${params.viduAudio ? "left-6" : "left-1"}`} />
                                         </button>
                                     </div>
                                 )}
@@ -546,7 +546,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                     <div>
                                         <button
                                             onClick={() => setShowNegative(!showNegative)}
-                                            className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 mb-2"
+                                            className="video-inline-button mb-2 flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs"
                                         >
                                             {showNegative ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
                                             Negative Prompt (负向提示词)
@@ -563,7 +563,7 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                                         value={params.negativePrompt || ""}
                                                         onChange={(e) => updateParam("negativePrompt", e.target.value)}
                                                         placeholder="Low quality, blurry, distorted..."
-                                                        className="w-full h-20 bg-white/5 border border-white/10 rounded-lg p-2 text-xs text-white focus:border-purple-500 focus:outline-none resize-none"
+                                                        className="video-textarea h-20 w-full resize-none rounded-xl p-3 text-xs"
                                                     />
                                                 </motion.div>
                                             )}
@@ -572,11 +572,11 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 )}
                             </section>
 
-                            <div className="w-full h-px bg-white/5" />
+                            <div className="video-section-rule w-full" />
 
                             {/* 4. Advanced / Effects */}
-                            <section className="space-y-4">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                            <section className="video-card rounded-[1.35rem] p-4 space-y-4">
+                                <h3 className="video-section-title flex items-center gap-2">
                                     <div className="w-1 h-3 bg-orange-500 rounded-full" />
                                     Advanced
                                 </h3>
@@ -584,18 +584,18 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                                 {/* Seed - only when model supports it */}
                                 {modelParams.seed && (
                                     <div>
-                                        <label className="block text-xs text-gray-400 mb-2">Seed (随机种子)</label>
+                                        <label className="video-field-label block mb-2">Seed (随机种子)</label>
                                         <div className="relative">
                                             <input
                                                 type="number"
                                                 value={params.seed ?? ""}
                                                 onChange={(e) => updateParam("seed", e.target.value ? parseInt(e.target.value) : undefined)}
                                                 placeholder="Random (-1)"
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg py-1.5 pl-2 pr-8 text-xs text-white focus:border-orange-500 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                className="video-input w-full rounded-xl py-2 pl-3 pr-8 text-xs [&::-webkit-inner-spin-button]:appearance-none"
                                             />
                                             <button
                                                 onClick={() => updateParam("seed", Math.floor(Math.random() * 2147483647))}
-                                                className="absolute right-2 top-1.5 text-gray-500 hover:text-white"
+                                                className="video-inline-button absolute right-2 top-1.5 rounded-md p-1"
                                                 title="Randomize"
                                             >
                                                 <RefreshCw size={12} />

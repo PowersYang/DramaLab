@@ -453,6 +453,27 @@ export default function StudioTasksPage() {
     [attentionRows, oldestActiveMinutes, rows]
   );
 
+  const dispatchBoard = useMemo(
+    () => [
+      {
+        label: "当前队列负载",
+        value: rows.filter((item) => ["queued", "claimed", "running"].includes(item.status)).length,
+        note: "用于判断执行器是否繁忙，以及是否存在积压。",
+      },
+      {
+        label: "异常关注项",
+        value: attentionRows.length,
+        note: "失败、超时、等待重试和取消中的任务会集中暴露在这里。",
+      },
+      {
+        label: "最高频任务",
+        value: taskTypeLeaders[0]?.label || "暂无",
+        note: "帮助判断当前工作区主要在推进哪类 AI 生产环节。",
+      },
+    ],
+    [attentionRows.length, rows, taskTypeLeaders]
+  );
+
   if (loading) {
     return (
       <div className="studio-panel flex min-h-[360px] items-center justify-center p-12">
@@ -486,14 +507,28 @@ export default function StudioTasksPage() {
               <div className="studio-eyebrow">Task Dispatch</div>
               <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] studio-strong">任务调度总览与异常聚焦</h2>
               <p className="mt-3 max-w-3xl text-sm leading-7 studio-muted">
-                任务中心不只展示列表，而是先把积压、执行中、重试和异常任务直接暴露出来，方便从后台视角判断调度是否健康。
+                任务中心不只展示列表，而是优先把积压、执行中、重试和异常任务直接暴露出来，帮助后台快速判断 AI 生产链路是否健康。
               </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className="studio-status-pill"><span className="studio-status-dot" />生产调度后台</span>
+                <span className="studio-status-pill"><Workflow size={14} />排队 / 执行 / 重试</span>
+              </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {summary.map((item) => (
                   <div key={item.label} className="studio-kpi min-w-[148px]">
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</p>
                     <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {dispatchBoard.map((item) => (
+                  <div key={item.label} className="studio-console-strip">
+                    <div className="studio-console-label">{item.label}</div>
+                    <div className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</div>
+                    <p className="mt-2 text-sm leading-6 studio-muted">{item.note}</p>
                   </div>
                 ))}
               </div>
@@ -648,12 +683,12 @@ export default function StudioTasksPage() {
                 <table className="studio-table">
                   <thead>
                     <tr>
-                      <th className="w-[240px]">剧本名称</th>
-                      <th className="w-[110px]">剧本类型</th>
-                      <th>任务类型</th>
+                      <th className="w-[240px]">归属对象</th>
+                      <th className="w-[110px]">归属类型</th>
+                      <th>生产任务</th>
                       <th className="w-[176px]">创建时间</th>
                       <th className="w-[176px]">结束时间</th>
-                      <th className="w-[160px]">任务状态</th>
+                      <th className="w-[160px]">执行状态</th>
                     </tr>
                   </thead>
                   <tbody>

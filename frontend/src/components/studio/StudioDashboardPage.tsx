@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Boxes, FolderKanban, Workflow } from "lucide-react";
+import { AlertTriangle, ArrowRight, Boxes, CheckCheck, Clapperboard, FolderKanban, ScanLine, Workflow } from "lucide-react";
 
 import { api, type ProjectSummary, type SeriesSummary } from "@/lib/api";
 import {
@@ -37,20 +37,27 @@ const scheduleDeferredRefresh = (task: () => void) => {
     return () => undefined;
   }
 
-  // 中文注释：工作台总览优先秒开已有摘要数据，再在浏览器空闲时补刷新，避免导航切换被统计接口拖住。
+  // 中文注释：总览页优先秒开缓存摘要，等浏览器空闲时再补刷新，避免后台切页被统计请求拖慢。
   if ("requestIdleCallback" in window) {
     const idleId = window.requestIdleCallback(() => task(), { timeout: 1000 });
     return () => window.cancelIdleCallback(idleId);
   }
 
-  const timeoutId = window.setTimeout(task, 160);
-  return () => window.clearTimeout(timeoutId);
+  const timeoutId = globalThis.setTimeout(task, 160);
+  return () => globalThis.clearTimeout(timeoutId);
 };
 
 const opsBoard = [
-  { label: "项目治理", body: "汇总项目、系列、资产与分镜沉淀情况，便于判断工作区内容产能。" },
-  { label: "任务调度", body: "把异步生成、排队、失败重试统一进任务中心，不再依赖页面猜状态。" },
-  { label: "后台协同", body: "团队、计费、模型配置与治理入口统一收口到后台壳层。" },
+  { label: "项目母体管理", body: "统一管理系列母体、独立项目和分集关系，适合内容制作排产。" },
+  { label: "AI 生产调度", body: "把资产、分镜、视频与导出任务纳入统一队列和异常追踪。" },
+  { label: "运营协同治理", body: "将团队、算力成本、模型与平台规则纳入同一控制台。" },
+];
+
+const quickActions = [
+  { label: "查看项目台账", href: "/studio/projects", meta: "系列 / 独立项目 / 分集编排" },
+  { label: "处理任务异常", href: "/studio/tasks", meta: "执行队列 / 重试 / 失败任务" },
+  { label: "进入资产资源库", href: "/studio/library", meta: "角色 / 场景 / 道具资源" },
+  { label: "维护风格策略", href: "/studio/styles", meta: "美术风格模板与复用" },
 ];
 
 export default function StudioDashboardPage() {
@@ -151,10 +158,6 @@ export default function StudioDashboardPage() {
     () => [...projects].sort((a, b) => getTimestamp(b.updated_at) - getTimestamp(a.updated_at)).slice(0, 5),
     [projects],
   );
-  const recentSeries = useMemo(
-    () => [...seriesList].sort((a, b) => getTimestamp(b.updated_at) - getTimestamp(a.updated_at)).slice(0, 4),
-    [seriesList],
-  );
 
   const stats = useMemo(
     () => [
@@ -168,29 +171,93 @@ export default function StudioDashboardPage() {
 
   const queueSummary = useMemo(
     () => [
-      { label: "待处理事项", value: runningTasks, note: runningTasks > 0 ? "建议优先查看任务中心中的运行队列。" : "当前没有阻塞中的异步任务。" },
-      { label: "最近更新时间", value: recentProjects[0] ? formatDate(recentProjects[0].updated_at) : "-", note: "来自项目摘要缓存与后台静默刷新。" },
+      { label: "运行队列", value: runningTasks, note: runningTasks > 0 ? "当前存在进行中或等待执行的生产任务。" : "当前任务队列平稳，没有待处理阻塞。" },
+      { label: "最新项目活动", value: recentProjects[0] ? formatDate(recentProjects[0].updated_at) : "-", note: "用于判断工作区最近一次生产或编辑活动。" },
     ],
     [recentProjects, runningTasks],
+  );
+
+  const attentionSummary = useMemo(
+    () => [
+      {
+        label: "待推进项目",
+        value: Math.max(projects.length - projects.filter((item) => (item.frame_count || 0) > 0).length, 0),
+        note: "仍停留在剧本、角色或场景准备阶段的项目。",
+      },
+      {
+        label: "已入分镜",
+        value: projects.filter((item) => (item.frame_count || 0) > 0).length,
+        note: "已经进入镜头生产链路，可继续推进视频生成。",
+      },
+      {
+        label: "调度风险",
+        value: runningTasks > 8 ? "偏高" : runningTasks > 0 ? "可控" : "稳定",
+        note: runningTasks > 8 ? "运行任务偏多，建议关注队列积压与执行时长。" : "当前没有明显积压信号。",
+      },
+    ],
+    [projects, runningTasks],
+  );
+
+  const pipelineCards = useMemo(
+    () => [
+      {
+        label: "剧本与项目立项",
+        value: projects.length,
+        note: "项目母体与独立任务池",
+        icon: FolderKanban,
+      },
+      {
+        label: "系列世界观沉淀",
+        value: seriesList.length,
+        note: "系列共享角色、设定与分集基础",
+        icon: Boxes,
+      },
+      {
+        label: "分镜生产阶段",
+        value: projects.filter((item) => (item.frame_count || 0) > 0).length,
+        note: "已进入分镜或镜头组织流程",
+        icon: ScanLine,
+      },
+      {
+        label: "AI 执行队列",
+        value: runningTasks,
+        note: "运行、排队与重试中的生成任务",
+        icon: Workflow,
+      },
+    ],
+    [projects, runningTasks, seriesList.length],
   );
 
   return (
     <div className="space-y-6">
       <section className="studio-panel overflow-hidden">
-        <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1.25fr)_340px] lg:px-8">
+        <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1.18fr)_360px] lg:px-8">
           <div>
-            <div className="studio-eyebrow">Workspace Snapshot</div>
-            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] studio-strong">工作区经营面板</h2>
+            <div className="studio-eyebrow">Operations Hub</div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] studio-strong">AI 短剧生产与运营工作台</h2>
             <p className="mt-3 max-w-3xl text-sm leading-7 studio-muted">
-              把项目、系列、任务与资产沉淀为可管理的生产资产。这里优先呈现运营判断所需的信息，而不是创作型大卡片。
+              把项目、系列、任务与资产沉淀为可治理的生产资产。首页按控制台思路组织核心数据、流程状态、调度信号和异常关注点，而不是展示型卡片堆叠。
             </p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <Link href="/studio/projects" className="studio-button studio-button-primary">进入项目中心</Link>
-              <Link href="/studio/tasks" className="studio-button studio-button-secondary">查看任务中心</Link>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="studio-status-pill"><span className="studio-status-dot" />内容生产控制台</span>
+              <span className="studio-status-pill"><CheckCheck size={14} />任务统一跟踪</span>
+              <span className="studio-status-pill"><Clapperboard size={14} />短剧业务语境</span>
             </div>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              {attentionSummary.map((item) => (
+                <div key={item.label} className="studio-console-strip">
+                  <div className="studio-console-label">{item.label}</div>
+                  <div className="mt-3 text-3xl font-semibold tracking-[-0.05em] studio-strong">{item.value}</div>
+                  <p className="mt-2 text-sm leading-6 studio-muted">{item.note}</p>
+                </div>
+              ))}
+            </div>
+
             <div className="mt-6 grid gap-3 xl:grid-cols-3">
               {opsBoard.map((item) => (
-                <div key={item.label} className="rounded-[1.35rem] border border-slate-200/80 bg-white/75 px-4 py-4">
+                <div key={item.label} className="rounded-[1rem] border border-slate-200/80 bg-white/75 px-4 py-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.2em] studio-faint">{item.label}</div>
                   <p className="mt-3 text-sm leading-6 studio-muted">{item.body}</p>
                 </div>
@@ -198,16 +265,57 @@ export default function StudioDashboardPage() {
             </div>
           </div>
 
-          <div className="grid gap-3">
-            {queueSummary.map((item) => (
-              <div key={item.label} className="studio-kpi">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</div>
-                <div className="mt-3 text-3xl font-semibold tracking-[-0.05em] studio-strong">{item.value}</div>
-                <p className="mt-2 text-sm leading-6 studio-muted">{item.note}</p>
+          <div className="studio-console-grid">
+            <div className="studio-kpi">
+              <div className="studio-console-label">控制台摘要</div>
+              <div className="mt-4 space-y-3">
+                {queueSummary.map((item) => (
+                  <div key={item.label} className="rounded-[14px] border border-slate-200/70 bg-white/80 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</div>
+                    <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] studio-strong">{item.value}</div>
+                    <p className="mt-2 text-sm leading-6 studio-muted">{item.note}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+
+            <div className="studio-kpi">
+              <div className="flex items-center justify-between">
+                <div className="studio-console-label">快捷动作</div>
+                <AlertTriangle size={14} className="studio-faint" />
+              </div>
+              <div className="mt-4 space-y-2">
+                {quickActions.map((item) => (
+                  <Link key={item.label} href={item.href} className="studio-list-row !rounded-[14px] !px-4 !py-3">
+                    <div>
+                      <p className="text-sm font-semibold studio-strong">{item.label}</p>
+                      <p className="mt-1 text-xs studio-muted">{item.meta}</p>
+                    </div>
+                    <ArrowRight size={16} className="studio-faint" />
+                  </Link>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-4">
+        {pipelineCards.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.label} className="studio-kpi">
+              <div className="flex items-center justify-between">
+                <div className="studio-console-label">{item.label}</div>
+                <span className="studio-stat-icon">
+                  <Icon size={16} />
+                </span>
+              </div>
+              <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] studio-strong">{item.value}</p>
+              <p className="mt-2 text-sm leading-6 studio-muted">{item.note}</p>
+            </div>
+          );
+        })}
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -228,75 +336,29 @@ export default function StudioDashboardPage() {
         })}
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]">
-        <div className="studio-panel p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <div className="studio-eyebrow">Recent Projects</div>
-              <h3 className="mt-2 text-xl font-semibold studio-strong">最近项目</h3>
-            </div>
-            <Link href="/studio/projects" className="studio-button studio-button-ghost">查看全部</Link>
-          </div>
-          <div className="space-y-3">
-            {!hasWarmData && recentProjects.length === 0 ? (
-              [1, 2, 3].map((item) => <div key={item} className="h-[78px] rounded-[1.25rem] bg-slate-100 animate-pulse" />)
-            ) : recentProjects.length === 0 ? (
-              <div className="rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center text-sm text-slate-500">
-                暂无项目，先从创建系列或导入剧本开始。
+      <section className="studio-panel p-6">
+        <div className="studio-eyebrow">流程概览</div>
+        <h3 className="mt-2 text-xl font-semibold studio-strong">短剧生产流程</h3>
+        <div className="mt-4 grid gap-3 xl:grid-cols-4">
+          {[
+            "剧本解析与项目立项",
+            "角色 / 场景 / 道具资产沉淀",
+            "分镜生成与镜头组织",
+            "视频生成、合成与导出",
+          ].map((item, index) => (
+            <div key={item} className="studio-console-strip">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="studio-console-label">阶段 {index + 1}</div>
+                  <p className="mt-2 text-sm font-semibold studio-strong">{item}</p>
+                </div>
+                <span className="studio-status-pill">
+                  <span className="studio-status-dot" />
+                  管理中
+                </span>
               </div>
-            ) : (
-              recentProjects.map((project) => (
-                <Link
-                  key={project.id}
-                  href={`/studio/projects/${project.id}`}
-                  className="studio-list-row"
-                >
-                  <div>
-                    <p className="text-sm font-semibold studio-strong">{project.title}</p>
-                    <p className="mt-1 text-xs studio-muted">
-                      更新于 {formatDate(project.updated_at)} · 角色 {project.character_count || 0} · 分镜 {project.frame_count || 0}
-                    </p>
-                  </div>
-                  <ArrowRight size={16} className="studio-faint" />
-                </Link>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="studio-panel p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <div className="studio-eyebrow">Series Registry</div>
-              <h3 className="mt-2 text-xl font-semibold studio-strong">最近系列</h3>
             </div>
-            <Link href="/studio/projects" className="studio-button studio-button-ghost">进入管理</Link>
-          </div>
-          <div className="space-y-3">
-            {!hasWarmData && recentSeries.length === 0 ? (
-              [1, 2, 3].map((item) => <div key={item} className="h-[78px] rounded-[1.25rem] bg-slate-100 animate-pulse" />)
-            ) : recentSeries.length === 0 ? (
-              <div className="rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center text-sm text-slate-500">
-                暂无系列，适合多集内容的项目会显示在这里。
-              </div>
-            ) : (
-              recentSeries.map((series) => (
-                <Link
-                  key={series.id}
-                  href={`/studio/series/${series.id}`}
-                  className="studio-list-row"
-                >
-                  <div>
-                    <p className="text-sm font-semibold studio-strong">{series.title}</p>
-                    <p className="mt-1 text-xs studio-muted">
-                      集数 {series.episode_count || 0} · 角色 {series.character_count || 0} · 更新于 {formatDate(series.updated_at)}
-                    </p>
-                  </div>
-                  <ArrowRight size={16} className="studio-faint" />
-                </Link>
-              ))
-            )}
-          </div>
+          ))}
         </div>
       </section>
     </div>

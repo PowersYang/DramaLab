@@ -10,12 +10,10 @@ import {
   FileText,
   FileUp,
   FolderKanban,
-  Layers3,
   Play,
   Plus,
   Sparkles,
   Trash2,
-  Workflow,
 } from "lucide-react";
 
 import { api, type EpisodeBrief, type ProjectSummary, type SeriesSummary } from "@/lib/api";
@@ -145,13 +143,6 @@ function SeriesLedgerRow({
 
       {expanded ? (
         <div className="border-t px-5 py-5" style={{ borderColor: "var(--studio-shell-border)" }}>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] studio-faint">Episode Registry</div>
-              <p className="mt-1 text-sm studio-muted">系列分集台账按展开加载，控制首屏请求量。</p>
-            </div>
-          </div>
-
           <div className="flex gap-3 overflow-x-auto pb-2">
             {episodesLoading ? (
               [1, 2, 3].map((item) => <div key={item} className="h-24 w-52 flex-shrink-0 rounded-[1.25rem] bg-slate-100 animate-pulse" />)
@@ -164,8 +155,8 @@ function SeriesLedgerRow({
                     className="block min-h-[104px] w-56 flex-shrink-0 rounded-[1.3rem] border p-4 transition-colors hover:border-[rgba(166,75,42,0.24)] hover:bg-white"
                     style={{ borderColor: "var(--studio-shell-border)", background: "rgba(255,255,255,0.82)" }}
                   >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--studio-shell-accent)" }}>
-                      EP {episode.episode_number || "?"}
+                    <p className="text-[11px] font-semibold tracking-[0.12em]" style={{ color: "var(--studio-shell-accent)" }}>
+                      第 {episode.episode_number || "?"} 集
                     </p>
                     <p className="mt-2 line-clamp-1 text-sm font-semibold studio-strong">{episode.title}</p>
                     <p className="mt-2 text-xs studio-muted">{episode.frame_count || 0} 分镜 · 进入单集编辑</p>
@@ -418,21 +409,6 @@ export default function StudioProjectsPage() {
   const visibleSeries = filter === "project" ? [] : seriesList;
   const visibleProjects = filter === "series" ? [] : standaloneProjects;
 
-  const totals = useMemo(
-    () => [
-      { label: "项目总数", value: projects.length, note: "工作区内全部项目记录", icon: FileText },
-      { label: "系列总数", value: seriesList.length, note: "系列母体与世界观容器", icon: Layers3 },
-      { label: "独立项目", value: standaloneProjects.length, note: "未归属系列的单体项目", icon: FolderKanban },
-      {
-        label: "已进入分镜",
-        value: projects.filter((item) => (item.frame_count || 0) > 0).length,
-        note: "已开始镜头生产的项目",
-        icon: Workflow,
-      },
-    ],
-    [projects, seriesList.length, standaloneProjects.length],
-  );
-
   const handleDeleteProject = async (id: string) => {
     await deleteProject(id);
     await loadWorkspaceData();
@@ -456,56 +432,12 @@ export default function StudioProjectsPage() {
         </section>
       ) : null}
 
-      <section className="studio-panel overflow-hidden">
-        <div className="grid gap-6 border-b px-5 py-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)] lg:px-6" style={{ borderColor: "var(--studio-shell-border)" }}>
-          <div>
-            <div className="studio-eyebrow">Project Registry</div>
-            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] studio-strong">项目台账与系列编排中心</h2>
-            <p className="mt-3 max-w-3xl text-sm leading-7 studio-muted">
-              这里不再强调创作卡片，而是按后台管理视角组织项目母体、系列编排、独立项目和分集状态，便于运营和制作管理一起判断资源分布。
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {totals.slice(0, 2).map((item) => {
-              const Icon = item.icon;
-              return (
-                <div key={item.label} className="studio-kpi">
-                  <div className="flex items-center justify-between">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</div>
-                    <span className="studio-stat-icon"><Icon size={16} /></span>
-                  </div>
-                  <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
-                  <p className="mt-2 text-xs leading-6 studio-muted">{item.note}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-4 lg:px-6">
-          {totals.slice(2).map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.label} className="studio-kpi">
-                <div className="flex items-center justify-between">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] studio-faint">{item.label}</div>
-                  <span className="studio-stat-icon"><Icon size={16} /></span>
-                </div>
-                <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] studio-strong">{item.value}</p>
-                <p className="mt-2 text-xs leading-6 studio-muted">{item.note}</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
       <section className="studio-panel px-5 py-4 lg:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="studio-tab-strip flex flex-wrap items-center gap-1">
             {[
               { id: "all", label: "全部台账" },
-              { id: "series", label: "系列编排" },
+              { id: "series", label: "系列" },
               { id: "project", label: "独立项目" },
             ].map((item) => (
               <button
@@ -550,8 +482,7 @@ export default function StudioProjectsPage() {
       {visibleSeries.length > 0 ? (
         <section className="studio-panel overflow-hidden">
           <div className="border-b px-5 py-4 lg:px-6" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
-            <div className="studio-eyebrow">Series Ledger</div>
-            <h3 className="mt-2 text-xl font-semibold studio-strong">系列编排台账</h3>
+            <h3 className="text-xl font-semibold studio-strong">系列</h3>
           </div>
           <div className="divide-y" style={{ borderColor: "var(--studio-shell-border)" }}>
             {visibleSeries.map((series) => (
@@ -573,8 +504,7 @@ export default function StudioProjectsPage() {
       {visibleProjects.length > 0 ? (
         <section className="studio-panel overflow-hidden">
           <div className="border-b px-5 py-4 lg:px-6" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
-            <div className="studio-eyebrow">Standalone Registry</div>
-            <h3 className="mt-2 text-xl font-semibold studio-strong">独立项目台账</h3>
+            <h3 className="text-xl font-semibold studio-strong">独立项目</h3>
           </div>
           <div className="divide-y" style={{ borderColor: "var(--studio-shell-border)" }}>
             {visibleProjects.map((project) => (
