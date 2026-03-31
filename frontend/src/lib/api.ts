@@ -1089,6 +1089,7 @@ export const api = {
         assetType: 'full_body' | 'head_shot' | 'scene' | 'prop',
         prompt?: string,
         audioUrl?: string,
+        negativePrompt?: string,
         duration: number = 5,
         batchSize: number = 1
     ): Promise<TaskReceipt> => {
@@ -1098,6 +1099,7 @@ export const api = {
             asset_type: assetType,
             prompt,
             audio_url: audioUrl,
+            negative_prompt: negativePrompt,
             duration,
             batch_size: batchSize
         }, {
@@ -1425,18 +1427,6 @@ export const api = {
 
     getAvailableModels: async (): Promise<AvailableModelCatalog> => {
         const res = await axios.get(`${API_URL}/system/models/available`);
-        return res.data;
-    },
-
-    getEnvConfig: async () => {
-        const res = await axios.get(`${API_URL}/config/env`);
-        return res.data;
-    },
-
-    saveEnvConfig: async (config: Record<string, string | Record<string, string> | undefined>) => {
-        const res = await axios.post(`${API_URL}/config/env`, config, {
-            timeout: 60000, // 60 seconds timeout
-        });
         return res.data;
     },
 

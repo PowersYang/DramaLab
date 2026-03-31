@@ -1,30 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, Loader2, Key, ChevronDown, ChevronRight, Settings, MessageSquareCode } from "lucide-react";
-import { api } from "@/lib/api";
+import { Save, Settings, MessageSquareCode } from "lucide-react";
 import { T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from "@/store/projectStore";
 import { Image, Video, Layout, Check, User, Building, Box } from "lucide-react";
-
-interface EnvConfig {
-  DASHSCOPE_API_KEY: string;
-  ALIBABA_CLOUD_ACCESS_KEY_ID: string;
-  ALIBABA_CLOUD_ACCESS_KEY_SECRET: string;
-  OSS_BUCKET_NAME: string;
-  OSS_ENDPOINT: string;
-  OSS_BASE_PATH: string;
-  KLING_ACCESS_KEY: string;
-  KLING_SECRET_KEY: string;
-  VIDU_API_KEY: string;
-  endpoint_overrides: Record<string, string>;
-  [key: string]: string | Record<string, string>;
-}
-
-const ENDPOINT_PROVIDERS = [
-  { key: "DASHSCOPE_BASE_URL", label: "DashScope", placeholder: "https://dashscope.aliyuncs.com" },
-  { key: "KLING_BASE_URL", label: "Kling", placeholder: "https://api-beijing.klingai.com/v1" },
-  { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
-];
 
 const LS_KEY_MODEL = "dramalab_default_model_settings";
 const LEGACY_LS_KEY_MODEL = "lumenx_default_model_settings";
@@ -63,24 +42,6 @@ function loadFromLS<T>(keys: string[], fallback: T): T {
 }
 
 export default function SettingsPage() {
-  // ── API Config ──
-  const [config, setConfig] = useState<EnvConfig>({
-    DASHSCOPE_API_KEY: "",
-    ALIBABA_CLOUD_ACCESS_KEY_ID: "",
-    ALIBABA_CLOUD_ACCESS_KEY_SECRET: "",
-    OSS_BUCKET_NAME: "",
-    OSS_ENDPOINT: "",
-    OSS_BASE_PATH: "",
-    KLING_ACCESS_KEY: "",
-    KLING_SECRET_KEY: "",
-    VIDU_API_KEY: "",
-    endpoint_overrides: {},
-  });
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [endpointsOpen, setEndpointsOpen] = useState(false);
-
   // ── Default Model Settings ──
   const [modelSettings, setModelSettings] = useState<DefaultModelSettings>({
     t2i_model: "wan2.5-t2i-preview",
@@ -94,10 +55,6 @@ export default function SettingsPage() {
 
   // ── Default Prompt Config ──
   const [promptConfig, setPromptConfig] = useState<DefaultPromptConfig>({ storyboard_polish: "", video_polish: "", r2v_polish: "" });
-
-  useEffect(() => {
-    loadConfig();
-  }, []);
 
   useEffect(() => {
     // 中文注释：默认设置延后到挂载后恢复，避免 localStorage 让首屏 hydration 前后不一致。
@@ -115,42 +72,6 @@ export default function SettingsPage() {
     setPromptConfig(loadFromLS([LS_KEY_PROMPT, LEGACY_LS_KEY_PROMPT], { storyboard_polish: "", video_polish: "", r2v_polish: "" }));
   }, []);
 
-  const loadConfig = async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await api.getEnvConfig();
-      setConfig((prev) => ({ ...prev, ...data, endpoint_overrides: data.endpoint_overrides ?? {} }));
-    } catch {
-      setLoadError("Failed to load configuration. Is the backend running?");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveApiConfig = async () => {
-    setSaving(true);
-    try {
-      await api.saveEnvConfig(config);
-      alert("Configuration saved successfully!");
-    } catch {
-      alert("Failed to save configuration.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleChange = (key: keyof EnvConfig, value: string) => {
-    setConfig((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleEndpointChange = (envKey: string, value: string) => {
-    setConfig((prev) => ({
-      ...prev,
-      endpoint_overrides: { ...prev.endpoint_overrides, [envKey]: value },
-    }));
-  };
-
   const handleSaveModelDefaults = () => {
     // 中文注释：统一写入新品牌键名，并清掉旧键，避免后续读取来源分叉。
     localStorage.setItem(LS_KEY_MODEL, JSON.stringify(modelSettings));
@@ -165,136 +86,9 @@ export default function SettingsPage() {
     alert("Default prompt configuration saved!");
   };
 
-  const inputClass =
-    "w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 transition-colors";
-
   return (
     <div className="container mx-auto px-6 py-8 max-w-4xl space-y-8">
       <h1 className="text-2xl font-display font-bold text-white">设置</h1>
-
-      {/* ── Section 1: API Configuration ── */}
-      <section className="glass-panel rounded-xl p-6 space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-br from-amber-500/20 to-orange-500/20 rounded-lg">
-            <Key size={20} className="text-amber-400" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-white">API 配置</h2>
-            <p className="text-xs text-gray-500">Configure API keys and cloud service credentials</p>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 size={24} className="animate-spin text-amber-400" />
-            <span className="ml-2 text-gray-400">Loading configuration...</span>
-          </div>
-        ) : loadError ? (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
-            {loadError}
-          </div>
-        ) : (
-          <>
-            <div>
-              <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                <span>DashScope API Key <span className="text-red-500">*</span></span>
-                <span className="text-gray-600 font-normal text-xs">e.g. sk-xxx</span>
-              </label>
-              <input type="password" value={config.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder="For Qwen and other DashScope models" className={inputClass} />
-            </div>
-
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-              <p className="text-xs text-gray-400">For OSS storage service</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Alibaba Cloud Access Key ID <span className="text-red-500">*</span></label>
-                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_ID} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_ID", e.target.value)} placeholder="LTAI5t..." className={inputClass} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Alibaba Cloud Access Key Secret <span className="text-red-500">*</span></label>
-                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_SECRET} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_SECRET", e.target.value)} placeholder="Access key secret" className={inputClass} />
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">OSS Configuration</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>OSS Bucket Name <span className="text-red-500">*</span></span>
-                  </label>
-                  <input type="text" value={config.OSS_BUCKET_NAME} onChange={(e) => handleChange("OSS_BUCKET_NAME", e.target.value)} placeholder="your_bucket_name" className={inputClass} />
-                </div>
-                <div>
-                  <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>OSS Endpoint <span className="text-red-500">*</span></span>
-                  </label>
-                  <input type="text" value={config.OSS_ENDPOINT} onChange={(e) => handleChange("OSS_ENDPOINT", e.target.value)} placeholder="oss-cn-beijing.aliyuncs.com" className={inputClass} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">OSS Base Path</label>
-                  <input type="text" value={config.OSS_BASE_PATH} onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)} placeholder="dramalab" className={inputClass} />
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">Kling AI</h3>
-              <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Kling Access Key</label>
-                  <input type="password" value={config.KLING_ACCESS_KEY} onChange={(e) => handleChange("KLING_ACCESS_KEY", e.target.value)} placeholder="Kling API Access Key" className={inputClass} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Kling Secret Key</label>
-                  <input type="password" value={config.KLING_SECRET_KEY} onChange={(e) => handleChange("KLING_SECRET_KEY", e.target.value)} placeholder="Kling API Secret Key" className={inputClass} />
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">Vidu AI</h3>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Vidu API Key</label>
-                <input type="password" value={config.VIDU_API_KEY} onChange={(e) => handleChange("VIDU_API_KEY", e.target.value)} placeholder="Vidu API Key" className={inputClass} />
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-white/10">
-              <button type="button" onClick={() => setEndpointsOpen(!endpointsOpen)} className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors">
-                {endpointsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Advanced: API Endpoints
-              </button>
-              {endpointsOpen && (
-                <div className="mt-4 space-y-4">
-                  <p className="text-xs text-gray-500">Custom API endpoint URLs. Leave empty to use defaults.</p>
-                  {ENDPOINT_PROVIDERS.map(({ key, label, placeholder }) => (
-                    <div key={key}>
-                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>{label} Base URL</span>
-                        <span className="text-gray-600 font-normal text-xs">{placeholder}</span>
-                      </label>
-                      <input type="text" value={config.endpoint_overrides[key] || ""} onChange={(e) => handleEndpointChange(key, e.target.value)} placeholder={placeholder} className={inputClass + " text-sm"} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={handleSaveApiConfig}
-                disabled={saving || loading}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50"
-              >
-                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                {saving ? "Saving..." : "Save Configuration"}
-              </button>
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* ── Section 2: Default Model Settings ── */}
       <section className="glass-panel rounded-xl p-6 space-y-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-lg">
@@ -397,7 +191,6 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* ── Section 3: Default Prompt Config ── */}
       <section className="glass-panel rounded-xl p-6 space-y-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-purple-500/20 rounded-lg">

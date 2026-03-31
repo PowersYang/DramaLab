@@ -26,7 +26,7 @@ class DoubaoModel(VideoGenModel):
         self.model_name = config.get('params', {}).get('model_name', provider.settings_json.get('default_video_model', 'doubao-seedance-1-0-pro-fast-251015'))
         
         if not self.api_key:
-            logger.warning("ARK_API_KEY not found in environment variables.")
+            logger.warning("ARK provider credential is missing in platform model settings.")
             
         if Ark:
             self.client = Ark(

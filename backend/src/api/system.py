@@ -4,7 +4,6 @@
 
 import os
 import shutil
-import sys
 import uuid
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
@@ -13,22 +12,13 @@ from ..application.tasks import TaskService
 from ..application.services import SystemService
 from ..application.services.model_provider_service import ModelProviderService
 from ..auth.dependencies import RequestContext, get_request_context
-from src.settings.env_settings import (
-    get_env,
-    get_env_path,
-    has_env,
-    reload_env_settings,
-    remove_env_keys,
-    save_env_values,
-)
-from ..utils.endpoints import PROVIDER_DEFAULTS
+from src.settings.env_settings import get_env, has_env
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.system_check import run_system_checks
 from ..common import logger, signed_response
 from ..schemas.requests import (
     AnalyzeStyleRequest,
     ConfirmImportRequest,
-    EnvConfig,
     PolishR2VPromptRequest,
     PolishVideoPromptRequest,
     SaveArtDirectionRequest,
@@ -180,137 +170,6 @@ async def import_file_confirm(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("SYSTEM_API: import_file_confirm unexpected_error title=%s", request.title)
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-def get_user_config_path() -> str:
-    """
-    返回当前环境下用户配置文件的存放路径。
-
-    开发环境使用后端根目录下的 `.env`；
-    打包应用使用用户目录下的 `config.json`。
-    """
-    return str(get_env_path())
-
-
-def load_user_config():
-    """从 .env 重新加载用户配置到当前进程缓存。"""
-    try:
-        reload_env_settings()
-        logger.info("SYSTEM_API: load_user_config reloaded path=%s", get_user_config_path())
-    except Exception as exc:
-        logger.warning("Failed to reload config from %s: %s", get_user_config_path(), exc)
-
-
-def save_user_config(config_dict: dict):
-    """把用户配置持久化到 .env 文件。"""
-    save_env_values(config_dict)
-
-
-def remove_user_config_keys(keys: list):
-    """从持久化配置中删除指定键。"""
-    if not keys:
-        return
-    remove_env_keys(keys)
-
-
-load_user_config()
-
-
-@router.get("/config/info")
-async def get_config_info():
-    """返回当前配置存储模式与路径信息。"""
-    logger.info("SYSTEM_API: get_config_info")
-    config_path = get_user_config_path()
-    return {
-        "mode": "packaged" if getattr(sys, "frozen", False) else "development",
-        "config_path": config_path,
-        "config_exists": os.path.exists(config_path),
-    }
-
-
-@router.post("/config/env")
-async def update_env_config(config: EnvConfig):
-    """更新环境配置，并落盘保存。"""
-    try:
-        logger.info("SYSTEM_API: update_env_config")
-        config_dict = config.model_dump(exclude_unset=True)
-        endpoint_overrides = config_dict.pop("endpoint_overrides", {})
-        config_dict = {key: value for key, value in config_dict.items() if value is not None}
-
-        allowed_keys = {meta["env_base_url"] for meta in PROVIDER_DEFAULTS.values() if meta.get("env_base_url")}
-        keys_to_remove = []
-        for env_key, value in endpoint_overrides.items():
-            if env_key not in allowed_keys:
-                logger.warning("Ignoring unknown endpoint key: %s", env_key)
-                continue
-            if value and value.strip():
-                config_dict[env_key] = value.strip()
-            else:
-                keys_to_remove.append(env_key)
-
-        save_user_config(config_dict)
-        remove_user_config_keys(keys_to_remove)
-        reload_env_settings()
-
-        try:
-            OSSImageUploader.reset_instance()
-            logger.info("OSS instance reset successfully")
-        except Exception as oss_exc:
-            logger.warning("OSS reset failed (non-critical): %s", oss_exc)
-
-        config_path = get_user_config_path()
-        return {
-            "status": "success",
-            "message": f"Configuration saved to {config_path}",
-        }
-    except Exception as exc:
-        logger.exception("SYSTEM_API: update_env_config unexpected_error")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/config/env")
-async def get_env_config():
-    """读取当前环境配置。"""
-    try:
-        logger.info("SYSTEM_API: get_env_config")
-        endpoint_overrides = {}
-        for meta in PROVIDER_DEFAULTS.values():
-            env_key = meta.get("env_base_url")
-            if not env_key:
-                continue
-            value = get_env(env_key)
-            if value:
-                endpoint_overrides[env_key] = value
-
-        return {
-            "DASHSCOPE_API_KEY": get_env("DASHSCOPE_API_KEY", ""),
-            "ALIBABA_CLOUD_ACCESS_KEY_ID": get_env("ALIBABA_CLOUD_ACCESS_KEY_ID", ""),
-            "ALIBABA_CLOUD_ACCESS_KEY_SECRET": get_env("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""),
-            "OSS_BUCKET_NAME": get_env("OSS_BUCKET_NAME", ""),
-            "OSS_ENDPOINT": get_env("OSS_ENDPOINT", ""),
-            "OSS_BASE_PATH": get_env("OSS_BASE_PATH", ""),
-            "OSS_PUBLIC_BASE_URL": get_env("OSS_PUBLIC_BASE_URL", ""),
-            "KLING_ACCESS_KEY": get_env("KLING_ACCESS_KEY", ""),
-            "KLING_SECRET_KEY": get_env("KLING_SECRET_KEY", ""),
-            "VIDU_API_KEY": get_env("VIDU_API_KEY", ""),
-            "ARK_API_KEY": get_env("ARK_API_KEY", ""),
-            "LLM_PROVIDER": get_env("LLM_PROVIDER", ""),
-            "LLM_REQUEST_TIMEOUT_SECONDS": get_env("LLM_REQUEST_TIMEOUT_SECONDS", ""),
-            "LLM_MAX_RETRIES": get_env("LLM_MAX_RETRIES", ""),
-            "OPENAI_API_KEY": get_env("OPENAI_API_KEY", ""),
-            "OPENAI_BASE_URL": get_env("OPENAI_BASE_URL", ""),
-            "OPENAI_MODEL": get_env("OPENAI_MODEL", ""),
-            "POSTGRES_HOST": get_env("POSTGRES_HOST", ""),
-            "POSTGRES_PORT": get_env("POSTGRES_PORT", ""),
-            "POSTGRES_DB": get_env("POSTGRES_DB", ""),
-            "POSTGRES_SCHEMA": get_env("POSTGRES_SCHEMA", ""),
-            "POSTGRES_USER": get_env("POSTGRES_USER", ""),
-            "POSTGRES_PASSWORD": get_env("POSTGRES_PASSWORD", ""),
-            "DATABASE_URL": get_env("DATABASE_URL", ""),
-            "endpoint_overrides": endpoint_overrides,
-        }
-    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 

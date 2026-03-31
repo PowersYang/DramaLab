@@ -35,7 +35,6 @@ def bootstrap_api_environment(logger: logging.Logger) -> None:
     auth_service.ensure_existing_users_have_initial_password()
     model_provider_service = ModelProviderService()
     model_provider_service.ensure_defaults()
-    model_provider_service.migrate_from_env()
     logger.info("STARTUP: style preset bootstrap completed")
 
     # 输出目录在分布式部署里通常会被映射到共享存储，这里显式创建并记录状态，便于排查挂载问题。

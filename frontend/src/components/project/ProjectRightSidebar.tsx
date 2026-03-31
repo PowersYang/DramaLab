@@ -50,13 +50,13 @@ export default function ProjectRightSidebar({ activeStep }: ProjectRightSidebarP
 
     return (
         <aside className="studio-inspector w-72 h-full flex flex-col z-50">
-            <div className="flex h-14 border-b border-white/10 bg-black/20">
+            <div className="studio-panel-header flex h-14">
                 <button
                     type="button"
                     onClick={() => setActiveTab("properties")}
                     className={`flex-1 h-full text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "properties"
-                        ? "text-white border-b-2 border-primary bg-white/5"
-                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                        ? "border-b-2 border-primary bg-white/80 text-slate-950 dark:bg-white/10 dark:text-white"
+                        : "text-slate-500 hover:bg-white/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100"
                         }`}
                 >
                     <Settings2 size={16} />
@@ -66,14 +66,14 @@ export default function ProjectRightSidebar({ activeStep }: ProjectRightSidebarP
                     type="button"
                     onClick={() => setActiveTab("queue")}
                     className={`flex-1 h-full text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "queue"
-                        ? "text-white border-b-2 border-primary bg-white/5"
-                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                        ? "border-b-2 border-primary bg-white/80 text-slate-950 dark:bg-white/10 dark:text-white"
+                        : "text-slate-500 hover:bg-white/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100"
                         }`}
                 >
                     <List size={16} />
                     任务队列
                     {activeQueueCount > 0 && (
-                        <span className="bg-primary text-white text-[10px] px-1.5 rounded-full">
+                        <span className="rounded-full bg-primary px-1.5 text-[10px] text-white">
                             {activeQueueCount}
                         </span>
                     )}

@@ -2,7 +2,7 @@
 Kling 视频模型适配层。
 
 接口地址：`https://api-beijing.klingai.com/v1`
-鉴权方式：使用 `KLING_ACCESS_KEY` 与 `KLING_SECRET_KEY` 生成 JWT
+鉴权方式：使用平台模型供应商配置中的 `access_key` 与 `secret_key` 生成 JWT
 常用模型：`kling-v2-6`、`kling-v2-5-turbo`
 """
 

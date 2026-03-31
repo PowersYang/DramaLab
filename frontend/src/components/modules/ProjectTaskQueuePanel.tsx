@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, Loader2, Tag } from "lucide-react";
 import { TaskJob } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 type QueueFilter = "all" | "processing" | "completed" | "failed";
@@ -63,6 +64,7 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
     const fetchProjectJobs = useTaskStore((state) => state.fetchProjectJobs);
     const jobsById = useTaskStore((state) => state.jobsById);
     const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
+    const { getTaskPrice } = useBillingGuard();
     const [filter, setFilter] = useState<QueueFilter>("all");
     const previousActiveJobIdsRef = useRef<string[]>([]);
 
@@ -182,18 +184,18 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
     const processingCount = activeJobIds.length;
 
     return (
-        <div className="h-full flex flex-col bg-black/10">
-            <div className="border-b border-white/10">
+        <div className="studio-inspector h-full flex flex-col text-slate-900 dark:text-slate-100">
+            <div className="border-b border-slate-200/80 dark:border-white/10">
                 <div className={PANEL_HEADER_CLASS}>
                     <h3 className={PANEL_TITLE_CLASS}>任务队列</h3>
-                    <div className="text-xs font-mono text-gray-500 flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${processingCount > 0 ? "bg-green-500 animate-pulse" : "bg-gray-600"}`} />
+                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        <div className={`h-2 w-2 rounded-full ${processingCount > 0 ? "bg-emerald-500 animate-pulse" : "bg-slate-300 dark:bg-slate-600"}`} />
                         {processingCount > 0 ? `${processingCount} 个进行中` : "空闲"}
                     </div>
                 </div>
 
                 <div className="p-4 pt-3">
-                    <div className="flex bg-white/5 rounded-lg p-1 gap-1">
+                    <div className="flex gap-1 rounded-xl border border-slate-200/80 bg-white/80 p-1 shadow-sm dark:border-white/10 dark:bg-white/5">
                         {[
                             { id: "all", label: "全部" },
                             { id: "processing", label: "进行中" },
@@ -204,8 +206,8 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
                                 key={tab.id}
                                 onClick={() => setFilter(tab.id as QueueFilter)}
                                 className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${filter === tab.id
-                                    ? "bg-white/10 text-white font-medium shadow-sm"
-                                    : "text-gray-500 hover:text-gray-300"
+                                    ? "bg-slate-900 text-white font-medium shadow-sm dark:bg-white dark:text-slate-950"
+                                    : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
                                     }`}
                             >
                                 {tab.label}
@@ -218,12 +220,12 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <AnimatePresence mode="popLayout">
                     {visibleJobs.map((job) => (
-                        <QueueJobCard key={job.id} job={job} step={step} project={currentProject} />
+                        <QueueJobCard key={job.id} job={job} step={step} project={currentProject} priceCredits={getTaskPrice(job.task_type)} />
                     ))}
                 </AnimatePresence>
 
                 {visibleJobs.length === 0 && (
-                    <div className="text-center py-10 text-gray-600 text-sm">
+                    <div className="py-10 text-center text-sm text-slate-500 dark:text-slate-500">
                         暂无任务
                     </div>
                 )}
@@ -232,7 +234,7 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
     );
 }
 
-function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; project: any }) {
+function QueueJobCard({ job, step, project, priceCredits }: { job: TaskJob; step: QueueStep; project: any; priceCredits: number | null }) {
     const cancelJob = useTaskStore((state) => state.cancelJob);
     const retryJob = useTaskStore((state) => state.retryJob);
     const isActive = ACTIVE_STATUSES.includes(job.status as typeof ACTIVE_STATUSES[number]);
@@ -247,22 +249,25 @@ function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; p
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96 }}
-            className={`rounded-2xl border p-3.5 shadow-[0_8px_30px_rgba(0,0,0,0.18)] ${isFailed ? "border-red-500/25 bg-red-500/8" : "border-white/10 bg-white/6 backdrop-blur-sm"}`}
+            className={`rounded-2xl border p-3.5 shadow-[0_12px_36px_rgba(15,23,42,0.08)] transition-colors dark:shadow-[0_12px_36px_rgba(0,0,0,0.22)] ${isFailed
+                ? "border-rose-200 bg-rose-50/90 dark:border-rose-500/25 dark:bg-rose-500/10"
+                : "border-slate-200/80 bg-white/90 backdrop-blur-sm dark:border-white/10 dark:bg-white/5"
+                }`}
         >
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-2">
                         {isActive && <Loader2 size={14} className="animate-spin text-primary" />}
-                        {isFailed && <AlertCircle size={14} className="text-red-400" />}
-                        {isCompleted && <CheckCircle2 size={14} className="text-emerald-400" />}
-                        <span className="text-xs font-mono text-gray-400">#{job.id.slice(0, 8)}</span>
+                        {isFailed && <AlertCircle size={14} className="text-rose-500 dark:text-rose-300" />}
+                        {isCompleted && <CheckCircle2 size={14} className="text-emerald-500 dark:text-emerald-300" />}
+                        <span className="text-xs font-mono text-slate-400 dark:text-slate-500">#{job.id.slice(0, 8)}</span>
                         <span className={`h-2 w-2 rounded-full ${displayInfo.accentClassName}`} />
                     </div>
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                            <p className="text-sm font-semibold text-white leading-5">{displayInfo.title}</p>
+                            <p className="text-sm font-semibold leading-5 text-slate-900 dark:text-slate-100">{displayInfo.title}</p>
                             {displayInfo.subtitle && (
-                                <p className="text-xs text-gray-400 mt-1">{displayInfo.subtitle}</p>
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{displayInfo.subtitle}</p>
                             )}
                         </div>
                         <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${getStatusClassName(job.status)}`}>
@@ -270,14 +275,19 @@ function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; p
                         </span>
                     </div>
 
-                    {displayInfo.badges.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-3">
+                    {(displayInfo.badges.length > 0 || priceCredits != null) && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                            {priceCredits != null && (
+                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+                                    消耗 {priceCredits} 算力豆
+                                </span>
+                            )}
                             {displayInfo.badges.map((badge) => (
                                 <span
                                     key={`${job.id}-${badge}`}
-                                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-gray-300"
+                                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-slate-100/80 px-2 py-1 text-[10px] text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-slate-300"
                                 >
-                                    <Tag size={10} className="text-gray-500" />
+                                    <Tag size={10} className="text-slate-400 dark:text-slate-500" />
                                     {badge}
                                 </span>
                             ))}
@@ -285,18 +295,18 @@ function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; p
                     )}
 
                     {displayInfo.detail && (
-                        <p className="text-xs text-gray-500 mt-3 leading-5">
+                        <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
                             {displayInfo.detail}
                         </p>
                     )}
 
-                    <p className="text-[11px] text-gray-600 mt-3">
+                    <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
                         创建于 {formatTimestamp(job.created_at)}
                     </p>
                     {job.error_message && (
-                        <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2">
-                            <p className="text-[11px] font-medium text-red-300 mb-1">失败原因</p>
-                            <p className="text-xs text-red-200/90 line-clamp-3">
+                        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2 dark:border-rose-500/20 dark:bg-rose-500/8">
+                            <p className="mb-1 text-[11px] font-medium text-rose-700 dark:text-rose-300">失败原因</p>
+                            <p className="line-clamp-3 text-xs text-rose-600/90 dark:text-rose-100/90">
                             {job.error_message}
                             </p>
                         </div>
@@ -306,7 +316,7 @@ function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; p
                     {isActive && (
                         <button
                             onClick={() => void cancelJob(job.id)}
-                            className="px-2.5 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300"
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
                         >
                             取消
                         </button>
@@ -314,7 +324,7 @@ function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; p
                     {isFailed && (
                         <button
                             onClick={() => void retryJob(job.id)}
-                            className="px-2.5 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300"
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
                         >
                             重试
                         </button>
@@ -340,15 +350,15 @@ function getStatusLabel(status: TaskJob["status"]): string {
 
 function getStatusClassName(status: TaskJob["status"]): string {
     if (ACTIVE_STATUSES.includes(status as typeof ACTIVE_STATUSES[number])) {
-        return "bg-primary/15 text-primary";
+        return "bg-primary/10 text-primary dark:bg-primary/15 dark:text-primary";
     }
     if (FAILED_STATUSES.includes(status as typeof FAILED_STATUSES[number])) {
-        return "bg-red-500/15 text-red-300";
+        return "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300";
     }
     if (status === "succeeded") {
-        return "bg-emerald-500/15 text-emerald-300";
+        return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300";
     }
-    return "bg-white/10 text-gray-300";
+    return "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300";
 }
 
 function formatTimestamp(value: string | number): string {

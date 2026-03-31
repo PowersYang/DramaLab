@@ -90,7 +90,7 @@ class AudioGenerator:
             }
 
         if not self.tts:
-            raise RuntimeError("TTS service not available. Check DASHSCOPE_API_KEY configuration.")
+            raise RuntimeError("TTS service not available. Configure the corresponding provider in platform model settings.")
 
         preview_text = (text or self.DEFAULT_PREVIEW_TEXT).strip() or self.DEFAULT_PREVIEW_TEXT
         output_path = os.path.join(self.output_dir, "voice_preview", f"{provider_key.lower()}_{canonical_voice_id}.mp3")
@@ -130,7 +130,7 @@ class AudioGenerator:
 
         if not self.tts:
             frame.status = GenerationStatus.FAILED
-            frame.audio_error = "TTS service not available. Check DASHSCOPE_API_KEY configuration."
+            frame.audio_error = "TTS service not available. Configure the corresponding provider in platform model settings."
             logger.warning("TTS not initialized, cannot generate audio for frame %s", frame.id)
             return frame
 

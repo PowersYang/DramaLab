@@ -69,6 +69,7 @@ async def generate_motion_ref(
                 "asset_type": request.asset_type,
                 "prompt": request.prompt,
                 "audio_url": request.audio_url,
+                "negative_prompt": request.negative_prompt,
                 "duration": request.duration,
                 "batch_size": request.batch_size,
             },

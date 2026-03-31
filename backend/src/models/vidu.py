@@ -2,7 +2,7 @@
 Vidu 视频模型适配层。
 
 接口地址：`https://api.vidu.cn/ent/v2`
-鉴权方式：通过 `VIDU_API_KEY` 走 Token Header
+鉴权方式：通过平台模型供应商配置中的 `api_key` 走 Token Header
 常用模型：`viduq3-pro`（默认）、`viduq3-turbo`（更快）
 """
 

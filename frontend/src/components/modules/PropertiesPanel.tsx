@@ -218,6 +218,8 @@ function AssetsInspector({ project }: { project: any }) {
 
 function ArtDirectionStyleDisplay({ project }: { project: any }) {
     const artDirectionStyle = project?.art_direction?.style_config;
+    const styleDescription = artDirectionStyle?.description?.trim();
+    const negativePrompt = artDirectionStyle?.negative_prompt?.trim();
 
     return (
         <div className="space-y-4">
@@ -236,20 +238,25 @@ function ArtDirectionStyleDisplay({ project }: { project: any }) {
                     </div>
 
                     <div>
+                        <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">风格描述</label>
+                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-20 max-h-[20vh] overflow-y-auto">
+                            {styleDescription || "暂无风格描述"}
+                        </div>
+                    </div>
+
+                    <div>
                         <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">正向提示词</label>
                         <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-24 max-h-[28vh] overflow-y-auto">
                             {artDirectionStyle.positive_prompt || '暂无正向提示词'}
                         </div>
                     </div>
 
-                    {artDirectionStyle.negative_prompt && (
-                        <div>
-                            <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">负向提示词</label>
-                            <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-20 max-h-[24vh] overflow-y-auto">
-                                {artDirectionStyle.negative_prompt}
-                            </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">负向提示词</label>
+                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-20 max-h-[24vh] overflow-y-auto">
+                            {negativePrompt || "暂无负向提示词"}
                         </div>
-                    )}
+                    </div>
                 </div>
             ) : (
                 <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">

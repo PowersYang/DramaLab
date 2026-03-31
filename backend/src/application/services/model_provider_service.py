@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import uuid
 
-from src.settings.env_settings import get_env
-
 from ...common.log import get_logger
 from ...repository import ModelCatalogEntryRepository, ModelProviderConfigRepository
 from ...schemas.models import AvailableModelCatalog, ModelCatalogEntry, ModelProviderConfig, ModelProviderConfigSummary
@@ -21,8 +19,6 @@ PROVIDER_DEFAULTS: dict[str, dict] = {
         "description": "阿里云百炼 / 通义系列模型供应商",
         "credential_fields": ["api_key"],
         "default_base_url": "https://dashscope.aliyuncs.com",
-        "env_credentials": {"api_key": "DASHSCOPE_API_KEY"},
-        "env_base_url": "DASHSCOPE_BASE_URL",
         "default_settings": {"default_text_model": "qwen3.5-plus"},
     },
     "OPENAI": {
@@ -30,8 +26,6 @@ PROVIDER_DEFAULTS: dict[str, dict] = {
         "description": "OpenAI 兼容文本供应商配置",
         "credential_fields": ["api_key"],
         "default_base_url": "https://api.openai.com/v1",
-        "env_credentials": {"api_key": "OPENAI_API_KEY"},
-        "env_base_url": "OPENAI_BASE_URL",
         "default_settings": {"default_text_model": "gpt-4o"},
     },
     "KLING": {
@@ -39,8 +33,6 @@ PROVIDER_DEFAULTS: dict[str, dict] = {
         "description": "可灵视频生成供应商",
         "credential_fields": ["access_key", "secret_key"],
         "default_base_url": "https://api-beijing.klingai.com/v1",
-        "env_credentials": {"access_key": "KLING_ACCESS_KEY", "secret_key": "KLING_SECRET_KEY"},
-        "env_base_url": "KLING_BASE_URL",
         "default_settings": {},
     },
     "VIDU": {
@@ -48,8 +40,6 @@ PROVIDER_DEFAULTS: dict[str, dict] = {
         "description": "Vidu 视频生成供应商",
         "credential_fields": ["api_key"],
         "default_base_url": "https://api.vidu.cn/ent/v2",
-        "env_credentials": {"api_key": "VIDU_API_KEY"},
-        "env_base_url": "VIDU_BASE_URL",
         "default_settings": {},
     },
     "ARK": {
@@ -57,8 +47,6 @@ PROVIDER_DEFAULTS: dict[str, dict] = {
         "description": "火山引擎 Ark / 豆包视频供应商",
         "credential_fields": ["api_key"],
         "default_base_url": "https://ark.cn-beijing.volces.com/api/v3",
-        "env_credentials": {"api_key": "ARK_API_KEY"},
-        "env_base_url": None,
         "default_settings": {"default_video_model": "doubao-seedance-1-0-pro-fast-251015"},
     },
 }
@@ -174,6 +162,9 @@ MODEL_ID_ALIASES = {
     "wan2.6-r2v": "wan2.6-i2v",
 }
 
+TEXT_PROVIDER_KEYS = {"OPENAI", "DASHSCOPE"}
+TEXT_PROVIDER_DEFAULT_FLAGS = ("is_default_text_provider", "default_for_text")
+
 
 class ModelProviderService:
     """统一管理模型供应商配置、模型目录和运行时读取。"""
@@ -224,33 +215,6 @@ class ModelProviderService:
                     updated_at=now,
                 )
             )
-
-    def migrate_from_env(self, *, force: bool = False) -> None:
-        """把旧 .env 中的模型供应商配置迁移到数据库。"""
-        for provider_key, meta in PROVIDER_DEFAULTS.items():
-            existing = self.provider_repository.get(provider_key)
-            if existing is None:
-                continue
-            if existing.credentials_json and not force:
-                continue
-            credentials = {}
-            for field_name, env_key in meta.get("env_credentials", {}).items():
-                value = (get_env(env_key) or "").strip()
-                if value:
-                    credentials[field_name] = value
-            base_url_key = meta.get("env_base_url")
-            base_url = (get_env(base_url_key) or "").strip() if base_url_key else ""
-            if not credentials and not base_url:
-                continue
-            patch = {
-                "enabled": True,
-                "credentials_json": credentials or existing.credentials_json,
-                "settings_json": existing.settings_json or dict(meta.get("default_settings", {})),
-            }
-            if base_url:
-                patch["base_url"] = base_url
-            self.provider_repository.update(provider_key, patch)
-            logger.info("MODEL_PROVIDER_SERVICE: migrated provider from env provider_key=%s", provider_key)
 
     def list_provider_summaries(self) -> list[ModelProviderConfigSummary]:
         """返回脱敏后的供应商摘要列表。"""
@@ -500,22 +464,120 @@ class ModelProviderService:
         fallback = default or PROVIDER_DEFAULTS.get(provider_key, {}).get("default_base_url", "")
         return fallback.rstrip("/")
 
-    def select_text_provider(self) -> str:
-        openai = self.provider_repository.get("OPENAI")
-        if openai and openai.enabled and (openai.credentials_json or {}).get("api_key"):
-            return "openai"
-        dashscope = self.provider_repository.get("DASHSCOPE")
-        if dashscope and dashscope.enabled and (dashscope.credentials_json or {}).get("api_key"):
-            return "dashscope"
-        return "dashscope"
+    def _list_text_provider_bindings(self) -> list[dict[str, object]]:
+        """收集当前可用于文本能力路由的 provider 绑定信息。"""
+        bindings: list[dict[str, object]] = []
+        for provider_key in sorted(TEXT_PROVIDER_KEYS):
+            provider = self.provider_repository.get(provider_key)
+            if provider is None or not provider.enabled:
+                continue
 
-    def get_default_text_model(self, provider_name: str) -> str:
-        provider_key = "OPENAI" if provider_name.lower() == "openai" else "DASHSCOPE"
-        config = self.provider_repository.get(provider_key)
-        settings = config.settings_json if config else {}
-        if provider_name.lower() == "openai":
-            return str(settings.get("default_text_model") or "gpt-4o")
-        return str(settings.get("default_text_model") or "qwen3.5-plus")
+            credentials = provider.credentials_json or {}
+            api_key = credentials.get("api_key")
+            if not isinstance(api_key, str) or not api_key.strip():
+                continue
+
+            settings = provider.settings_json or {}
+            default_model = str(
+                settings.get("default_text_model")
+                or PROVIDER_DEFAULTS.get(provider_key, {}).get("default_settings", {}).get("default_text_model")
+                or ""
+            ).strip()
+            supported_models_raw = settings.get("supported_text_models")
+            supported_models = []
+            if isinstance(supported_models_raw, list):
+                supported_models = [
+                    str(item).strip()
+                    for item in supported_models_raw
+                    if isinstance(item, str) and str(item).strip()
+                ]
+            if default_model and default_model not in supported_models:
+                supported_models.insert(0, default_model)
+
+            bindings.append(
+                {
+                    "provider_key": provider_key,
+                    "provider_name": provider_key.lower(),
+                    "default_model": default_model,
+                    "supported_models": supported_models,
+                    "is_default": any(bool(settings.get(flag)) for flag in TEXT_PROVIDER_DEFAULT_FLAGS),
+                }
+            )
+        return bindings
+
+    def resolve_text_binding(self, model_id: str | None = None) -> dict[str, str]:
+        """根据显式模型或平台默认配置解析文本模型与 provider 的绑定关系。"""
+        requested_model_id = str(model_id or "").strip()
+        bindings = self._list_text_provider_bindings()
+
+        if requested_model_id:
+            normalized_model_id = MODEL_ID_ALIASES.get(requested_model_id, requested_model_id)
+            catalog_entry = self.catalog_repository.get(normalized_model_id)
+            if catalog_entry is not None:
+                provider = self.provider_repository.get(catalog_entry.provider_key)
+                if provider is None or not provider.enabled:
+                    raise ValueError(f"Model provider is unavailable: {catalog_entry.provider_key}")
+                api_key = (provider.credentials_json or {}).get("api_key")
+                if not isinstance(api_key, str) or not api_key.strip():
+                    raise ValueError(f"Model provider is missing API credentials: {catalog_entry.provider_key}")
+                return {
+                    "provider_key": catalog_entry.provider_key,
+                    "provider_name": catalog_entry.provider_key.lower(),
+                    "model_id": catalog_entry.model_id,
+                }
+
+            matches = [
+                binding
+                for binding in bindings
+                if requested_model_id == binding["default_model"] or requested_model_id in binding["supported_models"]
+            ]
+            if len(matches) == 1:
+                match = matches[0]
+                return {
+                    "provider_key": str(match["provider_key"]),
+                    "provider_name": str(match["provider_name"]),
+                    "model_id": requested_model_id,
+                }
+            if len(matches) > 1:
+                providers = ", ".join(sorted(str(match["provider_key"]) for match in matches))
+                raise ValueError(f"Text model {requested_model_id} is ambiguous across providers: {providers}")
+            raise ValueError(f"Text model is not registered or configured: {requested_model_id}")
+
+        default_bindings = [binding for binding in bindings if binding["is_default"]]
+        if len(default_bindings) == 1:
+            default_binding = default_bindings[0]
+            if not default_binding["default_model"]:
+                raise ValueError(
+                    f"Default text provider {default_binding['provider_key']} is missing default_text_model configuration"
+                )
+            return {
+                "provider_key": str(default_binding["provider_key"]),
+                "provider_name": str(default_binding["provider_name"]),
+                "model_id": str(default_binding["default_model"]),
+            }
+        if len(default_bindings) > 1:
+            providers = ", ".join(sorted(str(binding["provider_key"]) for binding in default_bindings))
+            raise ValueError(f"Multiple default text providers are configured: {providers}")
+
+        if len(bindings) == 1:
+            binding = bindings[0]
+            if not binding["default_model"]:
+                raise ValueError(f"Text provider {binding['provider_key']} is missing default_text_model configuration")
+            return {
+                "provider_key": str(binding["provider_key"]),
+                "provider_name": str(binding["provider_name"]),
+                "model_id": str(binding["default_model"]),
+            }
+
+        if not bindings:
+            raise ValueError("No enabled text provider with API credentials is configured")
+
+        providers = ", ".join(sorted(str(binding["provider_key"]) for binding in bindings))
+        raise ValueError(
+            "Multiple text providers are enabled but no explicit default is configured: "
+            f"{providers}. Set settings_json.is_default_text_provider=true on exactly one provider "
+            "or pass a model_id explicitly."
+        )
 
     def ensure_model_settings_allowed(self, settings_updates: dict[str, str]) -> None:
         mapping = {"t2i_model": "t2i", "i2i_model": "i2i", "i2v_model": "i2v"}
@@ -523,11 +585,3 @@ class ModelProviderService:
             model_id = settings_updates.get(field_name)
             if model_id:
                 self.require_model_enabled(model_id, task_type)
-
-    def next_env_cleanup_keys(self) -> list[str]:
-        keys: list[str] = []
-        for meta in PROVIDER_DEFAULTS.values():
-            keys.extend(list(meta.get("env_credentials", {}).values()))
-            if meta.get("env_base_url"):
-                keys.append(meta["env_base_url"])
-        return sorted(set(keys))

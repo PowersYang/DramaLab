@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { X, RefreshCw, Check, Image as ImageIcon, Lock, Video, Sparkles, Eye } from "lucide-react";
+import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import BillingTaskHint from "@/components/billing/BillingTaskHint";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { api } from "@/lib/api";
@@ -12,15 +12,55 @@ import { Image as PhotoIcon } from "lucide-react";
 import { getAssetUrl } from "@/lib/utils";
 
 type PanelKey = "full_body" | "three_view" | "headshot";
+type MotionAssetType = "full_body" | "head_shot";
+type VariantLike = {
+    id: string;
+    url?: string | null;
+    created_at?: string | number | null;
+    prompt_used?: string | null;
+    is_uploaded_source?: boolean;
+};
+type VideoVariantLike = {
+    url?: string | null;
+};
+type PanelAssetData = {
+    selected_id: string | null;
+    variants: VariantLike[];
+};
+type LegacyPanelAsset = {
+    selected_id?: string | null;
+    variants?: VariantLike[];
+    video_variants?: VideoVariantLike[];
+};
+type UnitPanelAsset = {
+    selected_image_id?: string | null;
+    image_variants?: VariantLike[];
+    video_variants?: VideoVariantLike[];
+};
+type CharacterAsset = {
+    id: string;
+    name?: string | null;
+    description?: string | null;
+    updated_at?: string | number | null;
+    created_at?: string | number | null;
+    full_body_prompt?: string | null;
+    three_view_prompt?: string | null;
+    headshot_prompt?: string | null;
+    video_prompt?: string | null;
+    full_body_image_url?: string | null;
+    three_view_image_url?: string | null;
+    headshot_image_url?: string | null;
+    avatar_url?: string | null;
+    full_body_asset?: LegacyPanelAsset | null;
+    three_view_asset?: LegacyPanelAsset | null;
+    headshot_asset?: LegacyPanelAsset | null;
+    full_body?: UnitPanelAsset | null;
+    three_views?: UnitPanelAsset | null;
+    head_shot?: UnitPanelAsset | null;
+};
 
 const DEFAULT_NEGATIVE_PROMPT = "low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, jpeg artifacts, signature, watermark, blurry";
 const LATEST_BATCH_WINDOW_MS = 5000;
-const CANDIDATE_GRID_CLASS: Record<number, string> = {
-    1: "grid-cols-1",
-    2: "grid-cols-2",
-    3: "grid-cols-3",
-    4: "grid-cols-4",
-};
 
 const parseVariantTime = (value: string | number | undefined | null) => {
     if (typeof value === "number") {
@@ -42,8 +82,7 @@ const getLatestBatchVariants = <T extends { created_at?: string | number; prompt
     const sortedVariants = [...variants].sort((a, b) => parseVariantTime(b.created_at) - parseVariantTime(a.created_at));
     const latestTime = parseVariantTime(sortedVariants[0]?.created_at);
     const latestPrompt = sortedVariants[0]?.prompt_used || "";
-
-    return sortedVariants.filter((variant, index) => {
+    const strictBatch = sortedVariants.filter((variant, index) => {
         if (index === 0) {
             return true;
         }
@@ -56,6 +95,14 @@ const getLatestBatchVariants = <T extends { created_at?: string | number; prompt
         }
         return true;
     }).slice(0, 4);
+
+    // 历史数据里同批图片可能分批入库，或 prompt_used 存在轻微差异。
+    // 如果严格窗口只剩 1 张，就回退到最近的 4 张，避免“明明生成了 4 张却只显示 1 张”。
+    if (strictBatch.length <= 1 && sortedVariants.length > 1) {
+        return sortedVariants.slice(0, 4);
+    }
+
+    return strictBatch;
 };
 
 const getAspectRatioCardClass = (aspectRatio: string) => {
@@ -70,26 +117,28 @@ const getAspectRatioCardClass = (aspectRatio: string) => {
     }
 };
 
-const getCandidateGridClass = (count: number) => {
-    const safeCount = Math.min(Math.max(count, 1), 4);
-    return CANDIDATE_GRID_CLASS[safeCount];
-};
-
-
 interface CharacterWorkbenchProps {
-    asset: any;
+    asset: CharacterAsset;
     onClose: () => void;
     onUpdateDescription: (desc: string) => void;
     onGenerate: (type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number) => void;
     generatingTypes: { type: string; batchSize: number }[];
     stylePrompt?: string;
     styleNegativePrompt?: string;
-    onGenerateVideo?: (prompt: string, duration: number, subType?: string) => void;
+    onGenerateVideo?: (prompt: string, negativePrompt: string, duration: number, subType?: string) => void;
     onDeleteVideo?: (videoId: string) => void;
     isGeneratingVideo?: boolean;
 }
 
-export default function CharacterWorkbench({ asset, onClose, onUpdateDescription, onGenerate, generatingTypes = [], stylePrompt = "", styleNegativePrompt = "", onGenerateVideo, onDeleteVideo, isGeneratingVideo }: CharacterWorkbenchProps) {
+export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
+    const {
+        asset,
+        onClose,
+        onGenerate,
+        generatingTypes = [],
+        styleNegativePrompt = "",
+        onGenerateVideo,
+    } = props;
     const [activePanel, setActivePanel] = useState<PanelKey>("full_body");
     const updateProject = useProjectStore(state => state.updateProject);
     const currentProject = useProjectStore(state => state.currentProject);
@@ -101,11 +150,8 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     // Motion Ref prompts (initialized with PRD templates)
     const [fullBodyMotionPrompt, setFullBodyMotionPrompt] = useState('');
     const [headshotMotionPrompt, setHeadshotMotionPrompt] = useState('');
-
-    // Motion Ref audio URLs
-    const [fullBodyAudioUrl, setFullBodyAudioUrl] = useState('');
-    const [headshotAudioUrl, setHeadshotAudioUrl] = useState('');
-    const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+    const [fullBodyMotionNegativePrompt, setFullBodyMotionNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
+    const [headshotMotionNegativePrompt, setHeadshotMotionNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
 
     // Motion Ref generation state
     const [isVideoLoading, setIsVideoLoading] = useState(false);
@@ -114,15 +160,15 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
 
     // === Reverse Generation: Detect uploaded images ===
-    const hasUploadedThreeViews = asset.three_view_asset?.variants?.some((v: any) => v.is_uploaded_source) || false;
-    const hasUploadedHeadshot = asset.headshot_asset?.variants?.some((v: any) => v.is_uploaded_source) || false;
-    const hasUploadedFullBody = asset.full_body_asset?.variants?.some((v: any) => v.is_uploaded_source) || false;
+    const hasUploadedThreeViews = asset.three_view_asset?.variants?.some((v: VariantLike) => v.is_uploaded_source) || false;
+    const hasUploadedHeadshot = asset.headshot_asset?.variants?.some((v: VariantLike) => v.is_uploaded_source) || false;
+    const hasUploadedFullBody = asset.full_body_asset?.variants?.some((v: VariantLike) => v.is_uploaded_source) || false;
     const hasAnyUpload = hasUploadedThreeViews || hasUploadedHeadshot || hasUploadedFullBody;
     const hasNonFullBodyUpload = hasUploadedThreeViews || hasUploadedHeadshot;
     const hasFullBodyImage = !!(asset.full_body_image_url || (asset.full_body_asset?.variants?.length > 0));
 
     // Local state for prompts
-    const getInitialPrompt = (type: string, existingPrompt: string) => {
+    const getInitialPrompt = useCallback((type: string, existingPrompt: string) => {
         if (existingPrompt) return existingPrompt;
 
         const baseDesc = asset.description || "";
@@ -141,43 +187,40 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
             return `${prefix}Close-up portrait of the SAME character ${name}. ${baseDesc}. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece.`;
         }
         return "";
-    };
+    }, [asset.description, asset.name, hasAnyUpload, hasFullBodyImage, hasNonFullBodyUpload]);
 
     const [fullBodyPrompt, setFullBodyPrompt] = useState(getInitialPrompt("full_body", asset.full_body_prompt));
     const [threeViewPrompt, setThreeViewPrompt] = useState(getInitialPrompt("three_view", asset.three_view_prompt));
     const [headshotPrompt, setHeadshotPrompt] = useState(getInitialPrompt("headshot", asset.headshot_prompt));
-    const [videoPrompt, setVideoPrompt] = useState(asset.video_prompt || "");
     const [fullBodyBatchSize, setFullBodyBatchSize] = useState(1);
     const [threeViewBatchSize, setThreeViewBatchSize] = useState(1);
     const [headshotBatchSize, setHeadshotBatchSize] = useState(1);
 
     // New State for Style Control
-    const [applyStyle, setApplyStyle] = useState(true);
+    const [applyStyle] = useState(true);
     // User's own negative prompt (initially empty or with sensible defaults)
     const [negativePrompt, setNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
-    // Art Direction Style expanded state (collapsed by default to save space)
-    const [showStyleExpanded, setShowStyleExpanded] = useState(false);
     const { account, getTaskPrice, canAffordTask } = useBillingGuard();
     const assetGeneratePrice = getTaskPrice("asset.generate");
-    const motionRefPrice = getTaskPrice("asset.motion_ref.generate");
+    const motionRefGeneratePrice = getTaskPrice("asset.motion_ref.generate");
     const assetGenerateAffordable = canAffordTask("asset.generate");
     const motionRefAffordable = canAffordTask("asset.motion_ref.generate");
 
     // Get the uploaded image URL for reverse generation reference
     const getUploadedReferenceUrl = () => {
         if (hasUploadedThreeViews) {
-            const uploadedVariant = asset.three_view_asset?.variants?.find((v: any) => v.is_uploaded_source);
+            const uploadedVariant = asset.three_view_asset?.variants?.find((v: VariantLike) => v.is_uploaded_source);
             return uploadedVariant?.url || asset.three_view_image_url;
         }
         if (hasUploadedHeadshot) {
-            const uploadedVariant = asset.headshot_asset?.variants?.find((v: any) => v.is_uploaded_source);
+            const uploadedVariant = asset.headshot_asset?.variants?.find((v: VariantLike) => v.is_uploaded_source);
             return uploadedVariant?.url || asset.headshot_image_url;
         }
         return null;
     };
 
     // Motion Ref generation handler with validation
-    const handleGenerateMotionRef = async (assetType: 'full_body' | 'head_shot', prompt: string, audioUrl?: string) => {
+    const handleGenerateMotionRef = async (assetType: MotionAssetType, prompt: string, negativePromptForMotion: string) => {
         if (!onGenerateVideo) return;
         if (!motionRefAffordable) {
             alert("当前组织算力豆余额不足，无法提交动态参考视频任务。");
@@ -195,94 +238,26 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         }
 
         setIsVideoLoading(true); // Start loading state (will be reset by onCanPlay or if no video)
-        onGenerateVideo(prompt, 5, assetType);
-    };
-
-
-    // Audio upload handler for Motion Ref
-    const handleAudioUpload = async (file: File, assetType: 'full_body' | 'head_shot') => {
-        if (!file) return;
-
-        // Validate file type
-        if (!file.type.startsWith('audio/')) {
-            alert('请上传有效的音频文件（MP3, WAV, etc.）');
-            return;
-        }
-
-        // Validate file size (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-            alert('音频文件不能超过 10MB');
-            return;
-        }
-
-        setIsUploadingAudio(true);
-
-        try {
-            const result = await api.uploadFile(file);
-            const url = result.url;
-
-            if (assetType === 'full_body') {
-                setFullBodyAudioUrl(url);
-                // Automatically update prompt if it's the default "counting" one
-                const currentDefault = `Full-body character reference video.\n${asset.description}.\nStanding pose, shifting weight slightly, natural hand gestures while talking, turning body 30 degrees left and right. The character is speaking naturally, counting numbers from one to five in English.\nHead to toe shot, stable camera, flat lighting.`;
-                const oldDefault = `Full-body character reference video.\n${asset.description}.\nStanding pose, shifting weight slightly, natural hand gestures while talking, turning body 30 degrees left and right to show costume details. No walking away.\nHead to toe shot, stable camera, flat lighting.`;
-
-                if (fullBodyMotionPrompt === currentDefault || fullBodyMotionPrompt === oldDefault || !fullBodyMotionPrompt) {
-                    setFullBodyMotionPrompt(`Full-body character reference video.\n${asset.description}.\nStanding pose, shifting weight slightly, natural hand gestures, turning body 30 degrees left and right. The character is speaking naturally matching the audio, with accurate lip-sync and facial expressions.\nHead to toe shot, stable camera, flat lighting.`);
-                }
-            } else {
-                setHeadshotAudioUrl(url);
-                // Automatically update prompt if it's the default "counting" one
-                const currentDefault = `High-fidelity portrait video reference.\n${asset.description}.\nFacing camera, speaking naturally, counting numbers from one to five in English, subtle head movements, blinking, rich micro-expressions.\n4k, studio lighting, stable camera.`;
-                const oldDefault = `High-fidelity portrait video reference.\n${asset.description}.\nFacing camera, speaking naturally matching the audio, subtle head movements, blinking, rich micro-expressions.\n4k, studio lighting, stable camera.`;
-
-                if (headshotMotionPrompt === currentDefault || headshotMotionPrompt === oldDefault || !headshotMotionPrompt) {
-                    setHeadshotMotionPrompt(`High-fidelity portrait video reference.\n${asset.description}.\nFacing camera, speaking naturally matching the audio, with accurate lip-sync and facial expressions, subtle head movements, blinking, rich micro-expressions.\n4k, studio lighting, stable camera.`);
-                }
-            }
-        } catch (error: any) {
-            console.error('Failed to upload audio:', error);
-            alert(`音频上传失败：${error.message}`);
-        } finally {
-            setIsUploadingAudio(false);
-        }
+        onGenerateVideo(prompt, negativePromptForMotion, 5, assetType);
     };
 
     // PRD Motion Prompt Templates
-    const getMotionDefault = (type: 'full_body' | 'headshot', hasAudio: boolean) => {
+    const getMotionDefault = useCallback((type: 'full_body' | 'headshot') => {
         if (type === 'full_body') {
-            return hasAudio
-                ? `Full-body character reference video.\n${asset.description}.\nStanding pose, shifting weight slightly, natural hand gestures, turning body 30 degrees left and right. The character is speaking naturally matching the audio, with accurate lip-sync and facial expressions.\nHead to toe shot, stable camera, flat lighting.`
-                : `Full-body character reference video.\n${asset.description}.\nStanding pose, shifting weight slightly, natural hand gestures while talking, turning body 30 degrees left and right. The character is speaking naturally, counting numbers from one to five in English.\nHead to toe shot, stable camera, flat lighting.`;
+            return `Full-body character reference video.\n${asset.description}.\nStanding pose, shifting weight slightly, natural hand gestures while talking, turning body 30 degrees left and right. Stable camera, flat lighting, keep the costume and face consistent.`;
         } else {
-            return hasAudio
-                ? `High-fidelity portrait video reference.\n${asset.description}.\nFacing camera, speaking naturally matching the audio, with accurate lip-sync and facial expressions, subtle head movements, blinking, rich micro-expressions.\n4k, studio lighting, stable camera.`
-                : `High-fidelity portrait video reference.\n${asset.description}.\nFacing camera, speaking naturally, counting numbers from one to five in English, subtle head movements, blinking, rich micro-expressions.\n4k, studio lighting, stable camera.`;
+            return `High-fidelity portrait video reference.\n${asset.description}.\nFacing camera, subtle head movements, blinking, micro-expressions, stable framing, keep face details consistent.`;
         }
-    };
+    }, [asset.description]);
 
     // Initialize prompts if empty (first time load)
     useEffect(() => {
-        if (!fullBodyPrompt) {
-            setFullBodyPrompt(`Full body character design of ${asset.name}, concept art. ${asset.description}. Standing pose, neutral expression, no emotion, looking at viewer. Clean white background, isolated, no other objects, no scenery, simple background, high quality, masterpiece.`);
-        }
-        if (!threeViewPrompt) {
-            setThreeViewPrompt(`Character Reference Sheet for ${asset.name}. ${asset.description}. Three-view character design: Front view, Side view, and Back view. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background.`);
-        }
-        if (!headshotPrompt) {
-            setHeadshotPrompt(`Close-up portrait of the SAME character ${asset.name}. ${asset.description}. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece.`);
-        }
-        if (!videoPrompt) {
-            setVideoPrompt(`Cinematic shot of ${asset.name}, ${asset.description}, looking around, breathing, slight movement, high quality, 4k`);
-        }
-
-        if (!fullBodyMotionPrompt) {
-            setFullBodyMotionPrompt(getMotionDefault('full_body', !!fullBodyAudioUrl));
-        }
-        if (!headshotMotionPrompt) {
-            setHeadshotMotionPrompt(getMotionDefault('headshot', !!headshotAudioUrl));
-        }
-    }, [asset.name, asset.description]);
+        setFullBodyPrompt((currentPrompt) => currentPrompt || `Full body character design of ${asset.name}, concept art. ${asset.description}. Standing pose, neutral expression, no emotion, looking at viewer. Clean white background, isolated, no other objects, no scenery, simple background, high quality, masterpiece.`);
+        setThreeViewPrompt((currentPrompt) => currentPrompt || `Character Reference Sheet for ${asset.name}. ${asset.description}. Three-view character design: Front view, Side view, and Back view. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background.`);
+        setHeadshotPrompt((currentPrompt) => currentPrompt || `Close-up portrait of the SAME character ${asset.name}. ${asset.description}. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece.`);
+        setFullBodyMotionPrompt((currentPrompt) => currentPrompt || getMotionDefault('full_body'));
+        setHeadshotMotionPrompt((currentPrompt) => currentPrompt || getMotionDefault('headshot'));
+    }, [asset.name, asset.description, getMotionDefault]);
 
     useEffect(() => {
         setOptimisticSelectedIds({});
@@ -292,38 +267,36 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         if (styleNegativePrompt && (!negativePrompt || negativePrompt === DEFAULT_NEGATIVE_PROMPT)) {
             setNegativePrompt(styleNegativePrompt);
         }
-    }, [styleNegativePrompt]);
-
-    const handleResetMotionPrompt = (type: 'full_body' | 'headshot') => {
-        const hasAudio = type === 'full_body' ? !!fullBodyAudioUrl : !!headshotAudioUrl;
-        const defaultPrompt = getMotionDefault(type, hasAudio);
-        if (type === 'full_body') {
-            setFullBodyMotionPrompt(defaultPrompt);
-        } else {
-            setHeadshotMotionPrompt(defaultPrompt);
-        }
-    };
-
+    }, [negativePrompt, styleNegativePrompt]);
 
     // Update local state when asset updates (e.g. after generation)
     useEffect(() => {
-        if (asset.full_body_prompt) setFullBodyPrompt(asset.full_body_prompt);
-        else if (hasNonFullBodyUpload && !fullBodyPrompt.includes("STRICTLY MAINTAIN")) {
-            setFullBodyPrompt(getInitialPrompt("full_body", ""));
+        if (asset.full_body_prompt) {
+            setFullBodyPrompt(asset.full_body_prompt);
+        } else if (hasNonFullBodyUpload) {
+            setFullBodyPrompt((currentPrompt) => currentPrompt.includes("STRICTLY MAINTAIN") ? currentPrompt : getInitialPrompt("full_body", ""));
         }
 
-        if (asset.three_view_prompt) setThreeViewPrompt(asset.three_view_prompt);
-        else if (hasAnyUpload && !threeViewPrompt.includes("STRICTLY MAINTAIN")) {
-            setThreeViewPrompt(getInitialPrompt("three_view", ""));
+        if (asset.three_view_prompt) {
+            setThreeViewPrompt(asset.three_view_prompt);
+        } else if (hasAnyUpload) {
+            setThreeViewPrompt((currentPrompt) => currentPrompt.includes("STRICTLY MAINTAIN") ? currentPrompt : getInitialPrompt("three_view", ""));
         }
 
-        if (asset.headshot_prompt) setHeadshotPrompt(asset.headshot_prompt);
-        else if (hasAnyUpload && !headshotPrompt.includes("STRICTLY MAINTAIN")) {
-            setHeadshotPrompt(getInitialPrompt("headshot", ""));
+        if (asset.headshot_prompt) {
+            setHeadshotPrompt(asset.headshot_prompt);
+        } else if (hasAnyUpload) {
+            setHeadshotPrompt((currentPrompt) => currentPrompt.includes("STRICTLY MAINTAIN") ? currentPrompt : getInitialPrompt("headshot", ""));
         }
-
-        if (asset.video_prompt) setVideoPrompt(asset.video_prompt);
-    }, [asset, hasAnyUpload, hasNonFullBodyUpload]);
+    }, [
+        asset,
+        asset.full_body_prompt,
+        asset.headshot_prompt,
+        asset.three_view_prompt,
+        hasAnyUpload,
+        getInitialPrompt,
+        hasNonFullBodyUpload,
+    ]);
 
     const handleGenerateClick = (type: "full_body" | "three_view" | "headshot", batchSize: number) => {
         if (!assetGenerateAffordable) {
@@ -352,8 +325,22 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         setOptimisticSelectedIds((current) => ({ ...current, [type]: variantId }));
 
         try {
-            const updatedProject = await api.selectAssetVariant(currentProject.id, asset.id, "character", variantId, type);
-            updateProject(currentProject.id, updatedProject);
+            const panelAsset = getPanelAsset(type);
+            const selectedVariantUrl = panelAsset.variants?.find((variant) => variant.id === variantId)?.url;
+            await api.selectAssetVariant(currentProject.id, asset.id, "character", variantId, type);
+            if (selectedVariantUrl) {
+                const attributes =
+                    type === "full_body"
+                        ? { full_body_image_url: selectedVariantUrl, image_url: selectedVariantUrl }
+                        : type === "three_view"
+                            ? { three_view_image_url: selectedVariantUrl }
+                            : { headshot_image_url: selectedVariantUrl, avatar_url: selectedVariantUrl };
+                await api.updateAssetAttributes(currentProject.id, asset.id, "character", attributes);
+            }
+
+            // 选中主图后直接刷新整份项目，避免角色卡片列表、弹窗和局部 store 合并状态出现分叉。
+            const refreshedProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, refreshedProject);
         } catch (error) {
             console.error("Failed to select variant:", error);
             setOptimisticSelectedIds((current) => {
@@ -452,10 +439,10 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
         else handleGenerateClick("headshot", headshotBatchSize);
     };
 
-    const resolvePanelAsset = (legacyAsset: any, unitAsset: any, legacyUrl?: string, fallbackVariantId?: string) => {
+    const resolvePanelAsset = (legacyAsset: LegacyPanelAsset | null | undefined, unitAsset: UnitPanelAsset | null | undefined, legacyUrl?: string, fallbackVariantId?: string): PanelAssetData => {
         const legacyVariants = Array.isArray(legacyAsset?.variants) ? legacyAsset.variants : [];
         const unitVariants = Array.isArray(unitAsset?.image_variants) ? unitAsset.image_variants : [];
-        const mergedVariantsById = new Map<string, any>();
+        const mergedVariantsById = new Map<string, VariantLike>();
 
         [...legacyVariants, ...unitVariants].forEach((variant) => {
             if (!variant?.id) return;
@@ -464,7 +451,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
             }
         });
 
-        const mergedVariants = Array.from(mergedVariantsById.values()).sort((a: any, b: any) => {
+        const mergedVariants = Array.from(mergedVariantsById.values()).sort((a, b) => {
             const timeA = a?.created_at ? new Date(a.created_at).getTime() : 0;
             const timeB = b?.created_at ? new Date(b.created_at).getTime() : 0;
             return timeB - timeA;
@@ -497,7 +484,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     const getPanelSelectedVariantId = (panelKey: PanelKey) => {
         const panelAsset = getPanelAsset(panelKey);
         const optimisticSelectedId = optimisticSelectedIds[panelKey];
-        if (optimisticSelectedId && panelAsset.variants?.some((variant: any) => variant.id === optimisticSelectedId)) {
+        if (optimisticSelectedId && panelAsset.variants?.some((variant) => variant.id === optimisticSelectedId)) {
             return optimisticSelectedId;
         }
         return panelAsset.selected_id;
@@ -505,18 +492,19 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
     const getPanelSelectedUrl = (panelKey: PanelKey) => {
         if (panelKey === "full_body") {
-            const selected = fullBodyPanelAsset.variants?.find((variant: any) => variant.id === getPanelSelectedVariantId("full_body"));
+            const selected = fullBodyPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("full_body"));
             return getAssetUrl(selected?.url || asset.full_body_image_url);
         }
         if (panelKey === "three_view") {
-            const selected = threeViewPanelAsset.variants?.find((variant: any) => variant.id === getPanelSelectedVariantId("three_view"));
+            const selected = threeViewPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("three_view"));
             return getAssetUrl(selected?.url || asset.three_view_image_url);
         }
-        const selected = headshotPanelAsset.variants?.find((variant: any) => variant.id === getPanelSelectedVariantId("headshot"));
+        const selected = headshotPanelAsset.variants?.find((variant) => variant.id === getPanelSelectedVariantId("headshot"));
         return getAssetUrl(selected?.url || asset.headshot_image_url || asset.avatar_url);
     };
 
     const activeSelectedImageUrl = getPanelSelectedUrl(activePanel);
+    const activePanelConfig = panelConfigs.find((panel) => panel.key === activePanel);
 
     return (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8">
@@ -524,18 +512,18 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="asset-surface-strong asset-workbench-shell relative border border-white/10 rounded-2xl w-full max-w-[1500px] h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+                className="asset-surface-strong asset-workbench-shell relative flex h-[90vh] w-full max-w-[1520px] flex-col overflow-hidden rounded-[30px] border border-white/10 shadow-2xl"
             >
-                <div className="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-black/20">
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-3">
+                <div className="flex h-16 items-center justify-between border-b border-white/10 bg-black/15 px-6">
+                    <div className="flex min-w-0 items-center gap-4">
+                        <div className="flex min-w-0 items-center gap-3">
                             <h2 className="text-xl font-bold text-white">{asset.name} <span className="text-gray-500 font-normal text-sm ml-2">角色工作台</span></h2>
                             <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
                                 <span className="text-xs text-gray-400">制作进度</span>
                                 <span className="text-xs font-semibold text-white">{completedPanels}/{panelConfigs.length}</span>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
+                        <div className="hidden items-center gap-2 rounded-full border border-sky-400/15 bg-sky-400/10 px-3 py-1 xl:flex">
                             <span className="text-xs text-blue-400 font-medium">建议保持三张图风格一致，生成效果会更稳定</span>
                         </div>
                     </div>
@@ -544,10 +532,10 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                     </button>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
-                    <aside className="asset-workbench-sidebar border-r border-white/10 overflow-hidden">
-                        <div className="flex h-full flex-col">
-                            <div className="grid grid-cols-3 border-b border-white/10">
+                <div className="flex-1 grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
+                    <aside className="asset-workbench-sidebar overflow-hidden border-r border-white/10">
+                        <div className="flex h-full flex-col px-5 pb-5 pt-4">
+                            <div className="asset-workbench-tab-strip grid grid-cols-3">
                                 {panelConfigs.map((panel, index) => {
                                     const isActive = panel.key === activePanel;
                                     return (
@@ -555,9 +543,9 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                             key={panel.key}
                                             type="button"
                                             onClick={() => setActivePanel(panel.key)}
-                                            className={`asset-workbench-tab flex min-w-0 items-center justify-start gap-1.5 border-r border-white/10 px-4 py-3 text-sm font-medium transition-colors last:border-r-0 ${isActive
-                                                ? "asset-workbench-toggle-active text-white"
-                                                : "text-gray-300 hover:bg-white/5 hover:text-white"
+                                            className={`asset-workbench-tab flex min-w-0 items-center justify-center gap-1.5 px-3 py-3 text-sm font-medium transition-all ${isActive
+                                                ? "asset-workbench-tab-active text-white"
+                                                : "text-gray-300 hover:text-white"
                                                 }`}
                                         >
                                             <span className="shrink-0 text-xs font-semibold text-gray-400">{index + 1}</span>
@@ -567,13 +555,21 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                 })}
                             </div>
 
-                            <div className="flex-1 p-5">
-                                <div className="flex h-full min-h-0 flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] p-4">
+                            <div className="flex items-start justify-between gap-3 px-1 pb-3 pt-5">
+                                <div className="min-w-0">
+                                    <div className="text-[11px] uppercase tracking-[0.22em] text-gray-500">Selected</div>
+                                    <div className="mt-2 text-sm font-semibold text-white">{activePanelConfig?.title || "当前图片"}</div>
+                                    <p className="mt-1 text-xs leading-5 text-gray-400">{activePanelConfig?.hint || "右侧候选图单击后，这里会同步更新。"}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex-1">
+                                <div className="asset-workbench-preview relative flex h-full min-h-0 flex-col overflow-hidden p-4">
                                     {activeSelectedImageUrl ? (
                                         <button
                                             type="button"
                                             onClick={() => setZoomedImageUrl(activeSelectedImageUrl)}
-                                            className="h-full w-full overflow-hidden rounded-[1.4rem] bg-black/20"
+                                            className="asset-workbench-preview-image h-full w-full overflow-hidden"
                                             title="点击放大查看"
                                         >
                                             <img
@@ -594,14 +590,14 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                     </aside>
 
                     <div className="overflow-hidden flex flex-col">
-                        <div className="asset-workbench-toolbar px-6 pt-2 pb-2">
+                        <div className="asset-workbench-toolbar px-6 pt-4 pb-3">
                             <div className="flex items-center justify-between gap-4">
-                                <div className="asset-workbench-toggle flex items-center gap-1 rounded-2xl border p-1 w-fit">
+                                <div className="asset-workbench-toggle flex w-fit items-center gap-1 rounded-[16px] p-1">
                                     <button
                                         type="button"
                                         onClick={() => handleActiveModeChange("static")}
-                                        className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] transition-colors ${activeMode === "static"
-                                            ? "border border-cyan-400/25 bg-cyan-400/15 text-cyan-100"
+                                        className={`flex items-center gap-1.5 rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${activeMode === "static"
+                                            ? "asset-workbench-toggle-active text-white"
                                             : "text-gray-400 hover:bg-white/5 hover:text-white"
                                             }`}
                                     >
@@ -612,8 +608,8 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                         type="button"
                                         onClick={() => supportsActiveMotion && handleActiveModeChange("motion")}
                                         disabled={!supportsActiveMotion}
-                                        className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] transition-colors ${activeMode === "motion"
-                                            ? "border border-amber-400/25 bg-amber-400/15 text-amber-100"
+                                        className={`flex items-center gap-1.5 rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${activeMode === "motion"
+                                            ? "asset-workbench-toggle-active asset-workbench-toggle-active-motion text-white"
                                             : supportsActiveMotion
                                                 ? "text-gray-400 hover:bg-white/5 hover:text-white"
                                                 : "text-gray-600 cursor-not-allowed"
@@ -626,16 +622,16 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                                 {activeMode === "static" && (
                                     <div className="flex items-center gap-3">
-                                        <div className="variant-selector-batch flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
+                                        <div className="variant-selector-batch flex items-center gap-1 rounded-[16px] p-1">
                                             {[1, 2, 3, 4].map((size) => {
                                                 return (
                                                     <button
                                                         key={size}
                                                         type="button"
                                                         onClick={() => setActiveBatchSize(size)}
-                                                        className={`px-3 py-1.5 text-[11px] rounded-lg transition-colors ${activeBatchSize === size
-                                                            ? "bg-white text-slate-950"
-                                                            : "text-gray-300 hover:bg-white/5 hover:text-white"
+                                                        className={`variant-selector-batch-button rounded-[12px] px-3 py-2 text-[11px] font-medium transition-all ${activeBatchSize === size
+                                                            ? "variant-selector-batch-button-active"
+                                                            : "text-gray-300 hover:text-white"
                                                             }`}
                                                     >
                                                         x{size}
@@ -651,13 +647,13 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                                 : activePanel === "three_view"
                                                     ? getGeneratingInfo("three_view").isGenerating
                                                     : getGeneratingInfo("headshot").isGenerating) || !assetGenerateAffordable}
-                                            className={`variant-selector-generate flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-medium transition-all ${((activePanel === "full_body"
+                                            className={`variant-selector-generate flex items-center gap-1.5 rounded-[14px] px-4 py-2 text-[11px] font-semibold transition-all ${((activePanel === "full_body"
                                                 ? getGeneratingInfo("full_body").isGenerating
                                                 : activePanel === "three_view"
                                                     ? getGeneratingInfo("three_view").isGenerating
                                                     : getGeneratingInfo("headshot").isGenerating) || !assetGenerateAffordable)
                                                 ? "bg-white/5 text-gray-400 cursor-not-allowed"
-                                                : "bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow-lg shadow-emerald-500/20"
+                                                : "variant-selector-generate-active"
                                                 }`}
                                             title={!assetGenerateAffordable ? "当前组织算力豆余额不足，无法提交资产生成任务" : undefined}
                                         >
@@ -670,7 +666,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-hidden">
+                        <div className="flex-1 overflow-hidden px-2 pb-2">
                             {activePanel === "full_body" && (
                                 <WorkbenchPanel
                                     asset={fullBodyPanelAsset}
@@ -688,16 +684,17 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                     supportsMotion={true}
                                     mode={fullBodyMode}
                                     motionRefVideos={asset.full_body?.video_variants || []}
-                                    onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('full_body', prompt, audioUrl)}
+                                    onGenerateMotionRef={(prompt: string, negativePromptForMotion: string) => handleGenerateMotionRef('full_body', prompt, negativePromptForMotion)}
                                     isGeneratingMotion={generatingTypes.some(t => t.type === "video_full_body")}
                                     motionPrompt={fullBodyMotionPrompt}
                                     setMotionPrompt={setFullBodyMotionPrompt}
-                                    audioUrl={fullBodyAudioUrl}
-                                    onAudioUpload={(file: File) => handleAudioUpload(file, 'full_body')}
-                                    isUploadingAudio={isUploadingAudio}
+                                    motionNegativePrompt={fullBodyMotionNegativePrompt}
+                                    setMotionNegativePrompt={setFullBodyMotionNegativePrompt}
                                     isVideoLoading={isVideoLoading}
                                     setIsVideoLoading={setIsVideoLoading}
-                                    onResetPrompt={() => handleResetMotionPrompt('full_body')}
+                                    motionRefAffordable={motionRefAffordable}
+                                    motionRefPrice={motionRefGeneratePrice}
+                                    balanceCredits={account?.balance_credits}
                                     onZoomImage={setZoomedImageUrl}
                                 />
                             )}
@@ -735,16 +732,17 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                     supportsMotion={true}
                                     mode={headshotMode}
                                     motionRefVideos={asset.head_shot?.video_variants || []}
-                                    onGenerateMotionRef={(prompt: string, audioUrl?: string) => handleGenerateMotionRef('head_shot', prompt, audioUrl)}
+                                    onGenerateMotionRef={(prompt: string, negativePromptForMotion: string) => handleGenerateMotionRef('head_shot', prompt, negativePromptForMotion)}
                                     isGeneratingMotion={generatingTypes.some(t => t.type === "video_head_shot")}
                                     motionPrompt={headshotMotionPrompt}
                                     setMotionPrompt={setHeadshotMotionPrompt}
-                                    audioUrl={headshotAudioUrl}
-                                    onAudioUpload={(file: File) => handleAudioUpload(file, 'head_shot')}
-                                    isUploadingAudio={isUploadingAudio}
+                                    motionNegativePrompt={headshotMotionNegativePrompt}
+                                    setMotionNegativePrompt={setHeadshotMotionNegativePrompt}
                                     isVideoLoading={isVideoLoading}
                                     setIsVideoLoading={setIsVideoLoading}
-                                    onResetPrompt={() => handleResetMotionPrompt('headshot')}
+                                    motionRefAffordable={motionRefAffordable}
+                                    motionRefPrice={motionRefGeneratePrice}
+                                    balanceCredits={account?.balance_credits}
                                     onZoomImage={setZoomedImageUrl}
                                 />
                             )}
@@ -776,6 +774,37 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     );
 }
 
+interface WorkbenchPanelProps {
+    asset: PanelAssetData;
+    selectedVariantId: string | null;
+    onSelect: (id: string) => void;
+    prompt: string;
+    setPrompt: (value: string) => void;
+    negativePrompt: string;
+    setNegativePrompt: (value: string) => void;
+    isGenerating: boolean;
+    generatingBatchSize: number;
+    isLocked?: boolean;
+    aspectRatio?: "9:16" | "16:9" | "1:1";
+    supportsMotion?: boolean;
+    mode?: "static" | "motion";
+    motionRefVideos?: VideoVariantLike[];
+    onGenerateMotionRef?: (prompt: string, negativePrompt: string) => void;
+    isGeneratingMotion?: boolean;
+    motionPrompt?: string;
+    setMotionPrompt?: (value: string) => void;
+    motionNegativePrompt?: string;
+    setMotionNegativePrompt?: (value: string) => void;
+    isVideoLoading?: boolean;
+    setIsVideoLoading?: (loading: boolean) => void;
+    reverseGenerationMode?: boolean;
+    reverseReferenceUrl?: string | null;
+    motionRefAffordable?: boolean;
+    motionRefPrice?: number;
+    balanceCredits?: number;
+    onZoomImage?: (url: string) => void;
+}
+
 function WorkbenchPanel({
     asset,
     selectedVariantId,
@@ -796,24 +825,47 @@ function WorkbenchPanel({
     isGeneratingMotion = false,
     motionPrompt = '',
     setMotionPrompt,
-    audioUrl = '',
-    onAudioUpload,
-    isUploadingAudio = false,
+    motionNegativePrompt = '',
+    setMotionNegativePrompt,
     isVideoLoading = false,
     setIsVideoLoading,
-    onResetPrompt,
     // Reverse Generation Props
     reverseGenerationMode = false,
     reverseReferenceUrl = null,
+    motionRefAffordable = true,
+    motionRefPrice,
+    balanceCredits,
     onZoomImage,
-}: any) {
+}: WorkbenchPanelProps) {
     const latestVariants = getLatestBatchVariants(Array.isArray(asset?.variants) ? asset.variants : []);
+    const railRef = useRef<HTMLDivElement | null>(null);
     const aspectRatioClass = getAspectRatioCardClass(aspectRatio);
+    const candidateCardBasis = latestVariants.length <= 1
+        ? "min(100%, 540px)"
+        : latestVariants.length === 2
+            ? "clamp(240px, calc((100% - 16px) / 2), 420px)"
+            : latestVariants.length === 3
+                ? "clamp(220px, calc((100% - 32px) / 3), 320px)"
+                : "clamp(200px, calc((100% - 48px) / 4), 280px)";
+    const candidateHeightClass = aspectRatio === "1:1"
+        ? "h-[220px] sm:h-[240px] lg:h-[260px]"
+        : aspectRatio === "16:9"
+            ? "h-[200px] sm:h-[220px] lg:h-[240px]"
+            : "h-[220px] sm:h-[250px] lg:h-[280px]";
+    const showCarouselControls = latestVariants.length >= 4;
+    const scrollCandidates = (direction: "prev" | "next") => {
+        if (!railRef.current) return;
+        const viewportWidth = railRef.current.clientWidth;
+        railRef.current.scrollBy({
+            left: direction === "next" ? viewportWidth * 0.72 : -viewportWidth * 0.72,
+            behavior: "smooth",
+        });
+    };
 
     return (
         <div className="h-full overflow-y-auto">
-            <div className="grid h-full min-w-0 grid-cols-1 gap-4 p-4">
-                <div className="asset-workbench-stage relative min-h-0 overflow-hidden rounded-3xl p-4">
+            <div className="grid h-full min-w-0 grid-cols-1 gap-4 p-4 pt-0">
+                <div className="asset-workbench-stage relative min-h-0 overflow-hidden rounded-[28px] p-4 md:p-5">
                     {isLocked && (
                         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-6 text-center">
                             <div className="flex flex-col items-center gap-2 text-gray-500">
@@ -848,7 +900,29 @@ function WorkbenchPanel({
 
                     {mode === "motion" && supportsMotion ? (
                         <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
-                            <div className={`relative flex min-h-[320px] items-center justify-center overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/20 p-4 ${aspectRatioClass}`}>
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0">
+                                    <div className="text-[11px] uppercase tracking-[0.22em] text-gray-500">Motion</div>
+                                    <div className="mt-2 text-sm font-semibold text-white">动态视频预览</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => onGenerateMotionRef?.(motionPrompt, motionNegativePrompt)}
+                                        disabled={isGeneratingMotion || !motionRefAffordable}
+                                        className={`variant-selector-generate flex items-center gap-1.5 rounded-[14px] px-4 py-2 text-[11px] font-semibold transition-all ${isGeneratingMotion || !motionRefAffordable
+                                            ? 'bg-white/5 text-gray-500 cursor-not-allowed'
+                                            : 'variant-selector-generate-active'
+                                            }`}
+                                        title={!motionRefAffordable ? "当前组织算力豆余额不足，无法提交动态参考视频任务" : undefined}
+                                    >
+                                        <Video size={14} />
+                                        生成视频
+                                    </button>
+                                    <BillingTaskHint priceCredits={motionRefPrice} balanceCredits={balanceCredits} compact />
+                                </div>
+                            </div>
+
+                            <div className={`relative flex min-h-[220px] items-center justify-center overflow-hidden border border-white/10 bg-black/20 p-4 ${aspectRatioClass}`}>
                                 {isGeneratingMotion ? (
                                     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/60 backdrop-blur-md">
                                         <div className="relative">
@@ -871,8 +945,8 @@ function WorkbenchPanel({
                                     <video
                                         key={motionRefVideos[motionRefVideos.length - 1]?.url}
                                         src={getAssetUrl(motionRefVideos[motionRefVideos.length - 1]?.url)}
-                                        onCanPlay={() => setIsVideoLoading(false)}
-                                        onLoadStart={() => setIsVideoLoading(true)}
+                                        onCanPlay={() => setIsVideoLoading?.(false)}
+                                        onLoadStart={() => setIsVideoLoading?.(true)}
                                         className="h-full w-full object-contain"
                                         controls
                                         loop
@@ -888,84 +962,48 @@ function WorkbenchPanel({
                                 )}
                             </div>
 
-                            <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-                                <div className="asset-workbench-inspector rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
-                                    <label className="mb-3 block text-xs font-semibold text-gray-300">音频文件</label>
-                                    <label className={`asset-workbench-upload flex min-h-[160px] cursor-pointer items-center justify-center gap-2 rounded-[1.25rem] border border-dashed px-3 py-3 transition-all ${audioUrl
-                                        ? 'border-green-500/50 bg-green-500/10 text-green-400'
-                                        : 'border-white/15 hover:border-white/25 text-gray-400'
-                                        }`}>
-                                        <input
-                                            type="file"
-                                            accept="audio/*"
-                                            className="hidden"
-                                            onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) onAudioUpload?.(file);
-                                            }}
-                                            disabled={isUploadingAudio}
-                                        />
-                                        {isUploadingAudio ? (
-                                            <>
-                                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary"></div>
-                                                <span className="text-xs">上传中...</span>
-                                            </>
-                                        ) : audioUrl ? (
-                                            <>
-                                                <Check size={14} />
-                                                <span className="text-xs font-medium">音频已上传</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <ImageIcon size={14} />
-                                                <span className="text-xs">上传音频</span>
-                                            </>
-                                        )}
-                                    </label>
-                                </div>
+                            <PromptField
+                                label="正向提示词"
+                                value={motionPrompt}
+                                onChange={(value: string) => setMotionPrompt?.(value)}
+                                placeholder="请输入动态视频正向提示词..."
+                                disabled={isLocked}
+                            />
 
-                                <PromptField
-                                    label="动态视频提示词"
-                                    value={motionPrompt}
-                                    onChange={(value: string) => setMotionPrompt?.(value)}
-                                    placeholder="请输入动态视频提示词..."
-                                    disabled={isLocked}
-                                    action={(
-                                        <button
-                                            type="button"
-                                            onClick={() => onResetPrompt?.()}
-                                            className="flex items-center gap-1 text-[10px] text-primary transition-colors hover:text-primary/80"
-                                            title="恢复推荐提示词"
-                                        >
-                                            <RefreshCw size={10} />
-                                            重置
-                                        </button>
-                                    )}
-                                />
-                            </div>
-
-                            <button
-                                onClick={() => onGenerateMotionRef?.(motionPrompt, audioUrl)}
-                                disabled={isGeneratingMotion || !motionRefAffordable}
-                                className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${isGeneratingMotion
-                                    ? 'bg-white/5 text-gray-500 cursor-not-allowed'
-                                    : !motionRefAffordable
-                                        ? 'bg-white/5 text-gray-500 cursor-not-allowed'
-                                        : 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-lg shadow-amber-500/20'
-                                    }`}
-                                title={!motionRefAffordable ? "当前组织算力豆余额不足，无法提交动态参考视频任务" : undefined}
-                            >
-                                <Video size={16} />
-                                生成动态视频
-                            </button>
-                            <BillingTaskHint priceCredits={motionRefPrice} balanceCredits={account?.balance_credits} />
+                            <PromptField
+                                label="负向提示词"
+                                value={motionNegativePrompt}
+                                onChange={(value: string) => setMotionNegativePrompt?.(value)}
+                                placeholder="请输入动态视频负向提示词..."
+                                disabled={isLocked}
+                            />
                         </div>
                     ) : (
-                        <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
+                        <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
                             <div className="relative">
+                                {showCarouselControls && (
+                                    <div className="mb-3 flex items-center justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => scrollCandidates("prev")}
+                                            className="asset-workbench-carousel-button"
+                                            title="查看上一张候选图"
+                                        >
+                                            <ChevronLeft size={16} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => scrollCandidates("next")}
+                                            className="asset-workbench-carousel-button"
+                                            title="查看下一张候选图"
+                                        >
+                                            <ChevronRight size={16} />
+                                        </button>
+                                    </div>
+                                )}
                                 {latestVariants.length > 0 ? (
-                                    <div className={`grid gap-4 ${getCandidateGridClass(latestVariants.length)}`}>
-                                        {latestVariants.map((variant: any, index: number) => {
+                                    <div ref={railRef} className="asset-workbench-candidate-rail flex gap-4 overflow-x-auto pb-2 pr-1">
+                                        {latestVariants.map((variant, index) => {
                                             const imageUrl = getAssetUrl(variant.url);
                                             const isSelected = selectedVariantId === variant.id;
                                             return (
@@ -974,28 +1012,26 @@ function WorkbenchPanel({
                                                     type="button"
                                                     onClick={() => onSelect(variant.id)}
                                                     onDoubleClick={() => onZoomImage?.(imageUrl)}
-                                                    className={`group flex min-w-0 flex-col overflow-hidden rounded-[1.5rem] border bg-black/15 text-left transition-all ${isSelected
-                                                        ? 'border-cyan-400/60 shadow-[0_0_0_1px_rgba(34,211,238,0.22)]'
+                                                    className={`asset-workbench-candidate group flex min-w-0 shrink-0 snap-start flex-col overflow-hidden border text-left transition-all ${isSelected
+                                                        ? 'asset-workbench-candidate-active border-white/20'
                                                         : 'border-white/10 hover:border-white/20'
                                                         }`}
+                                                    style={{ flexBasis: candidateCardBasis }}
                                                     title="单击设为当前图片，双击放大查看"
                                                 >
-                                                    <div className={`relative w-full ${aspectRatioClass} overflow-hidden bg-black/20`}>
+                                                    <div className={`relative w-full overflow-hidden ${candidateHeightClass}`}>
                                                         <img
                                                             src={imageUrl}
                                                             alt={`候选图${index + 1}`}
                                                             className="h-full w-full object-contain"
                                                         />
                                                     </div>
-                                                    <div className="border-t border-white/10 px-3 py-2 text-center text-xs text-gray-300">
-                                                        候选图{index + 1}
-                                                    </div>
                                                 </button>
                                             );
                                         })}
                                     </div>
                                 ) : (
-                                    <div className="flex min-h-[260px] items-center justify-center rounded-[1.5rem] border border-dashed border-white/12 bg-white/[0.03] text-sm text-gray-500">
+                                    <div className="flex min-h-[240px] items-center justify-center rounded-[22px] border border-dashed border-white/12 bg-white/[0.03] text-sm text-gray-500">
                                         暂无候选图
                                     </div>
                                 )}
@@ -1049,7 +1085,7 @@ function PromptField({
     action?: ReactNode;
 }) {
     return (
-        <div className="asset-workbench-inspector rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+        <div className="asset-workbench-inspector border border-white/10 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
                 <span className="text-xs font-semibold text-gray-300">{label}</span>
                 {action}
@@ -1058,7 +1094,7 @@ function PromptField({
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
                 disabled={disabled}
-                className="asset-workbench-textarea min-h-[160px] w-full resize-none rounded-[1.25rem] border border-white/10 bg-black/10 px-4 py-3 text-sm leading-relaxed text-white shadow-none outline-none focus:border-white/20"
+                className="asset-workbench-textarea min-h-[156px] w-full resize-none px-0 py-2 text-sm leading-7 text-white shadow-none outline-none"
                 placeholder={placeholder}
             />
         </div>

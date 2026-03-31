@@ -1115,7 +1115,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             </div>
 
             {/* 4. Fixed Action Bar */}
-            <div className="p-6 border-t border-white/10 bg-black/40 backdrop-blur-md z-10">
+            <div className="z-10 border-t border-slate-200/80 bg-white/80 p-6 backdrop-blur-md dark:border-white/10 dark:bg-black/40">
                 <div className="max-w-4xl mx-auto w-full">
                     <button
                         onClick={handleSubmit}
@@ -1124,7 +1124,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                             ? "bg-green-500 text-white"
                             : "bg-primary hover:bg-primary/90 text-white"
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
-                        title={!videoAffordable ? `当前组织算力豆余额不足，预计需要 ${estimatedVideoCost ?? videoPrice ?? 0} 豆` : undefined}
+                        title={!videoAffordable ? `当前组织算力豆余额不足，预计消耗 ${estimatedVideoCost ?? videoPrice ?? 0} 个算力豆` : undefined}
                     >
                         {isSubmitting ? (
                             <>
@@ -1140,10 +1140,10 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                             </>
                         )}
                     </button>
-                    <BillingTaskHint priceCredits={estimatedVideoCost} balanceCredits={account?.balance_credits} className="mt-3 text-center" />
+                    <BillingTaskHint priceCredits={estimatedVideoCost} balanceCredits={account?.balance_credits} className="mt-3 mx-auto" />
                     <div className="flex justify-center mt-3">
-                        <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer hover:text-gray-400">
-                            <input type="checkbox" className="rounded bg-white/10 border-white/20" />
+                        <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                            <input type="checkbox" className="rounded border-slate-300 bg-white dark:border-white/20 dark:bg-white/10" />
                             提交后清空内容
                         </label>
                     </div>

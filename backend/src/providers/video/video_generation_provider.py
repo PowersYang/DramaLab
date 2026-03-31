@@ -25,7 +25,7 @@ class VideoGenerator:
         self.model = WanxModel(self.config.get("model", {}))
         self.output_dir = self.config.get("output_dir", "output/video")
 
-    def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str = None) -> Dict[str, Any]:
+    def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str = None, negative_prompt: str | None = None) -> Dict[str, Any]:
         """根据输入图片生成动作参考视频。"""
 
         logger.info("Generating I2V motion reference: prompt=%s..., duration=%s", prompt[:50], duration)
@@ -49,6 +49,8 @@ class VideoGenerator:
                 output_path=output_path,
                 img_path=img_path,
                 img_url=image_url if not img_path else None,
+                audio_url=audio_url,
+                negative_prompt=negative_prompt,
             )
 
             uploader = OSSImageUploader()

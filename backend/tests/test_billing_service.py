@@ -182,6 +182,7 @@ class BillingServiceTest(unittest.TestCase):
     def test_task_service_create_job_charges_and_persists_job_together(self):
         from src.application.services import BillingService
         from src.application.tasks import TaskService
+        from src.repository import TaskEventRepository
         from src.repository import ProjectRepository
         from src.schemas.models import Script
         from src.utils.datetime import utc_now
@@ -224,6 +225,7 @@ class BillingServiceTest(unittest.TestCase):
         account = billing_service.get_account(org.id)
         self.assertEqual(account.balance_credits, 35)
         self.assertIsNotNone(TaskService().get_job(receipt.job_id))
+        self.assertEqual(len(TaskEventRepository().list_by_job(receipt.job_id)), 1)
         self.assertEqual(len(billing_service.list_transactions(org.id, transaction_type="task_debit")), 1)
 
 

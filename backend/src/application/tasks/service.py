@@ -92,6 +92,8 @@ class TaskService:
                 session=session,
             )
             self.task_job_repository.create(job, session=session)
+            # 中文注释：先把 task_jobs flush 到当前事务，确保后续 video_task / task_event 的外键引用稳定可见。
+            session.flush()
             video_task.source_job_id = job.id
             self.video_task_repository.save(video_task, session=session)
             self.task_event_repository.create(
@@ -189,6 +191,8 @@ class TaskService:
                 session=session,
             )
             self.task_job_repository.create(job, session=session)
+            # 中文注释：job.created 事件依赖 task_jobs 外键，先 flush 父记录可避免 PostgreSQL 先插子表时报 FK 错误。
+            session.flush()
             self.task_event_repository.create(
                 TaskEvent(
                     id=f"evt_{uuid.uuid4().hex[:16]}",

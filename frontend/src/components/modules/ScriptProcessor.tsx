@@ -253,7 +253,7 @@ export default function ScriptProcessor() {
                         initial={{ width: 0, opacity: 0 }}
                         animate={{ width: 400, opacity: 1 }}
                         exit={{ width: 0, opacity: 0 }}
-                        className="border-l border-white/10 bg-black/40 backdrop-blur-md flex flex-col h-full"
+                        className="studio-inspector border-l border-white/10 flex flex-col h-full"
                     >
                         <div className={PANEL_HEADER_CLASS}>
                             <h3 className={PANEL_TITLE_CLASS}>实体识别面板</h3>
@@ -266,7 +266,7 @@ export default function ScriptProcessor() {
                             </button>
                         </div>
 
-                        <div className="px-4 py-2 border-b border-white/10 bg-black/10">
+                        <div className="studio-panel-subheader px-4 py-2">
                             <p className="text-[11px] text-gray-500">已识别 {nodes.length} 个关键要素</p>
                         </div>
 

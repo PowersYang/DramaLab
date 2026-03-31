@@ -27,13 +27,14 @@ class VideoModelProvider:
         self._kling_model = None
         self._vidu_model = None
 
-    def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str | None = None):
+    def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str | None = None, negative_prompt: str | None = None):
         """根据静态图片生成动作参考视频。"""
         return self._video_generator.generate_i2v(
             image_url=image_url,
             prompt=prompt,
             duration=duration,
             audio_url=audio_url,
+            negative_prompt=negative_prompt,
         )
 
     def generate_clip(self, frame):

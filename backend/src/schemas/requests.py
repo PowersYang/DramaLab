@@ -98,45 +98,6 @@ class ConfirmImportRequest(BaseModel):
     episodes: List[Dict[str, Any]]
 
 
-class EnvConfig(BaseModel):
-    DATABASE_URL: Optional[str] = None
-    POSTGRES_HOST: Optional[str] = None
-    POSTGRES_PORT: Optional[str] = None
-    POSTGRES_DB: Optional[str] = None
-    POSTGRES_SCHEMA: Optional[str] = None
-    POSTGRES_USER: Optional[str] = None
-    POSTGRES_PASSWORD: Optional[str] = None
-    LLM_PROVIDER: Optional[str] = None
-    LLM_REQUEST_TIMEOUT_SECONDS: Optional[str] = None
-    LLM_MAX_RETRIES: Optional[str] = None
-    DASHSCOPE_API_KEY: Optional[str] = None
-    OPENAI_API_KEY: Optional[str] = None
-    OPENAI_BASE_URL: Optional[str] = None
-    OPENAI_MODEL: Optional[str] = None
-    ALIBABA_CLOUD_ACCESS_KEY_ID: Optional[str] = None
-    ALIBABA_CLOUD_ACCESS_KEY_SECRET: Optional[str] = None
-    OSS_BUCKET_NAME: Optional[str] = None
-    OSS_ENDPOINT: Optional[str] = None
-    OSS_BASE_PATH: Optional[str] = None
-    OSS_PUBLIC_BASE_URL: Optional[str] = None
-    KLING_ACCESS_KEY: Optional[str] = None
-    KLING_SECRET_KEY: Optional[str] = None
-    VIDU_API_KEY: Optional[str] = None
-    ARK_API_KEY: Optional[str] = None
-    AUTH_JWT_SECRET: Optional[str] = None
-    AUTH_ACCESS_TOKEN_TTL_MINUTES: Optional[str] = None
-    AUTH_REFRESH_TOKEN_TTL_DAYS: Optional[str] = None
-    AUTH_EMAIL_CODE_TTL_MINUTES: Optional[str] = None
-    AUTH_CAPTCHA_TTL_SECONDS: Optional[str] = None
-    AUTH_SEND_CODE_COOLDOWN_SECONDS: Optional[str] = None
-    AUTH_SEND_CODE_LIMIT_PER_IDENTIFIER_PER_HOUR: Optional[str] = None
-    AUTH_SEND_CODE_LIMIT_PER_IP_PER_HOUR: Optional[str] = None
-    AUTH_EXPOSE_TEST_CODE: Optional[str] = None
-    AUTH_PLATFORM_SUPER_ADMIN_EMAILS: Optional[str] = None
-    AUTH_APP_BASE_URL: Optional[str] = None
-    endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
-
-
 class AddCharacterRequest(BaseModel):
     name: str
     description: str
@@ -157,6 +118,7 @@ class GenerateMotionRefRequest(BaseModel):
     asset_type: str
     prompt: Optional[str] = None
     audio_url: Optional[str] = None
+    negative_prompt: Optional[str] = None
     duration: int = 5
     batch_size: int = 1
 

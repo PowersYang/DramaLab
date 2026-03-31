@@ -153,7 +153,7 @@ export default function ExportStudio() {
                 >
                     {isExporting ? "正在导出..." : "开始导出"}
                 </button>
-                <BillingTaskHint priceCredits={exportPrice} balanceCredits={account?.balance_credits} className="mt-3 text-center" />
+                <BillingTaskHint priceCredits={exportPrice} balanceCredits={account?.balance_credits} className="mt-3 mx-auto" />
             </div>
 
             {/* Right: Preview & Status */}

@@ -254,6 +254,11 @@ class TenantAdminApiTest(unittest.TestCase):
         self.assertEqual(payload["i2i"], [])
         self.assertEqual(payload["i2v"], [])
 
+    def test_env_config_routes_are_removed(self):
+        self.assertEqual(self.client.get("/config/env").status_code, 404)
+        self.assertEqual(self.client.post("/config/env", json={}).status_code, 404)
+        self.assertEqual(self.client.get("/config/info").status_code, 404)
+
     def test_task_concurrency_limit_management_flow(self):
         organization = self.client.post(
             "/organizations",

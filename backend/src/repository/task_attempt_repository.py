@@ -5,9 +5,10 @@ from ..schemas.task_models import TaskAttempt
 
 
 class TaskAttemptRepository(BaseRepository[TaskAttempt]):
-    def create(self, attempt: TaskAttempt) -> TaskAttempt:
-        with self._with_session() as session:
-            session.merge(_task_attempt_record(attempt))
+    def create(self, attempt: TaskAttempt, session=None) -> TaskAttempt:
+        with self._with_session(session) as session:
+            # 中文注释：attempt 和 event 一样依赖 task_jobs 外键，创建时显式 add 避免顺序不稳定。
+            session.add(_task_attempt_record(attempt))
         return attempt
 
     def list_by_job(self, job_id: str) -> list[TaskAttempt]:

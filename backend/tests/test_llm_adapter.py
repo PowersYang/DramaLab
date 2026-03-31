@@ -112,7 +112,7 @@ class LLMAdapterTest(unittest.TestCase):
                 "OPENAI",
                 enabled=True,
                 credentials_patch={"api_key": "openai-key"},
-                settings_patch={"default_text_model": "gpt-4.1"},
+                settings_patch={"default_text_model": "gpt-4.1", "is_default_text_provider": True},
             )
             service.update_provider(
                 "DASHSCOPE",
@@ -121,3 +121,40 @@ class LLMAdapterTest(unittest.TestCase):
 
             self.assertTrue(adapter.is_configured)
             self.assertEqual(adapter._get_default_model(), "gpt-4.1")
+
+    def test_explicit_model_id_routes_to_matching_provider(self):
+        with TemporaryDirectory() as temp_dir:
+            self._bootstrap_provider_db(temp_dir, {"default_text_model": "qwen3.5-plus"})
+
+            service = ModelProviderService()
+            service.update_provider(
+                "OPENAI",
+                enabled=True,
+                credentials_patch={"api_key": "openai-key"},
+                settings_patch={"default_text_model": "gpt-4.1", "supported_text_models": ["gpt-4.1", "gpt-4.1-mini"]},
+            )
+
+            adapter = LLMAdapter()
+            binding = adapter._resolve_text_binding("gpt-4.1-mini")
+
+            self.assertEqual(binding["provider_key"], "OPENAI")
+            self.assertEqual(binding["model_id"], "gpt-4.1-mini")
+
+    def test_ambiguous_default_text_provider_requires_explicit_config(self):
+        with TemporaryDirectory() as temp_dir:
+            self._bootstrap_provider_db(temp_dir, {"default_text_model": "qwen3.5-plus"})
+
+            service = ModelProviderService()
+            service.update_provider(
+                "OPENAI",
+                enabled=True,
+                credentials_patch={"api_key": "openai-key"},
+                settings_patch={"default_text_model": "gpt-4.1"},
+            )
+
+            adapter = LLMAdapter()
+
+            with self.assertRaises(ValueError) as context:
+                adapter._resolve_text_binding()
+
+            self.assertIn("Multiple text providers are enabled", str(context.exception))

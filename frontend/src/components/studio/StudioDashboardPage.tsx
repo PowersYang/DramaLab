@@ -190,10 +190,10 @@ export default function StudioDashboardPage() {
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {stats.map((item) => (
-          <div key={item.label} className="studio-panel p-6">
-            <p className="text-sm font-medium text-slate-500">{item.label}</p>
-            <p className="mt-4 text-4xl font-bold text-slate-950">{item.value}</p>
-            <p className="mt-2 text-sm text-slate-500">{item.note}</p>
+          <div key={item.label} className="studio-kpi">
+            <div className="studio-badge studio-badge-soft">{item.label}</div>
+            <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] studio-strong">{item.value}</p>
+            <p className="mt-2 text-sm leading-6 studio-muted">{item.note}</p>
           </div>
         ))}
       </section>
@@ -201,26 +201,34 @@ export default function StudioDashboardPage() {
       <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <div className="studio-panel p-6">
           <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-950">最近项目</h3>
-            <Link href="/studio/projects" className="text-sm font-semibold text-primary">查看全部</Link>
+            <div>
+              <div className="studio-eyebrow">Recent Projects</div>
+              <h3 className="mt-2 text-xl font-semibold studio-strong">最近项目</h3>
+            </div>
+            <Link href="/studio/projects" className="studio-button studio-button-ghost">查看全部</Link>
           </div>
           <div className="space-y-3">
             {!hasWarmData && recentProjects.length === 0 ? (
               [1, 2, 3].map((item) => (
-                <div key={item} className="h-[74px] rounded-[1.5rem] border border-slate-200 bg-slate-50 animate-pulse" />
+                <div key={item} className="h-[74px] rounded-[1.5rem] animate-pulse" style={{ border: "1px solid var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }} />
               ))
             ) : recentProjects.length === 0 ? (
-              <div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center text-sm text-slate-500">
+              <div className="rounded-[1.5rem] border border-dashed px-5 py-10 text-center text-sm studio-muted" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>
                 暂无项目，先从创建系列或导入剧本开始。
               </div>
             ) : (
               recentProjects.map((project) => (
-                <Link key={project.id} href={`/studio/projects/${project.id}`} className="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 transition-colors hover:border-primary/40 hover:bg-white">
+                <Link
+                  key={project.id}
+                  href={`/studio/projects/${project.id}`}
+                  className="flex items-center justify-between rounded-[1.5rem] px-5 py-4 transition-colors"
+                  style={{ border: "1px solid var(--studio-shell-border)", background: "color-mix(in srgb, var(--studio-shell-panel-strong) 94%, transparent)" }}
+                >
                   <div>
-                    <p className="text-sm font-semibold text-slate-950">{project.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">更新于 {formatDate(project.updated_at)} · 分镜 {project.frame_count || 0}</p>
+                    <p className="text-sm font-semibold studio-strong">{project.title}</p>
+                    <p className="mt-1 text-xs studio-muted">更新于 {formatDate(project.updated_at)} · 分镜 {project.frame_count || 0}</p>
                   </div>
-                  <ArrowRight size={16} className="text-slate-400" />
+                  <ArrowRight size={16} className="studio-faint" />
                 </Link>
               ))
             )}
@@ -229,21 +237,29 @@ export default function StudioDashboardPage() {
 
         <div className="studio-panel p-6">
           <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-950">最近系列</h3>
-            <Link href="/studio/projects" className="text-sm font-semibold text-primary">进入系列管理</Link>
+            <div>
+              <div className="studio-eyebrow">Story Worlds</div>
+              <h3 className="mt-2 text-xl font-semibold studio-strong">最近系列</h3>
+            </div>
+            <Link href="/studio/projects" className="studio-button studio-button-ghost">进入系列管理</Link>
           </div>
           <div className="space-y-3">
             {!hasWarmData && recentSeries.length === 0 ? (
               [1, 2].map((item) => (
-                <div key={item} className="h-[74px] rounded-[1.5rem] border border-slate-200 bg-slate-50 animate-pulse" />
+                <div key={item} className="h-[74px] rounded-[1.5rem] animate-pulse" style={{ border: "1px solid var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }} />
               ))
             ) : recentSeries.length === 0 ? (
-              <p className="rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-sm text-slate-500">暂无系列，适合多集内容的项目会显示在这里。</p>
+              <p className="rounded-[1.5rem] border border-dashed px-5 py-8 text-sm studio-muted" style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}>暂无系列，适合多集内容的项目会显示在这里。</p>
             ) : (
               recentSeries.map((series) => (
-                <Link key={series.id} href={`/studio/series/${series.id}`} className="block rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 transition-colors hover:border-primary/40 hover:bg-white">
-                  <p className="text-sm font-semibold text-slate-950">{series.title}</p>
-                  <p className="mt-1 text-xs text-slate-500">集数 {series.episode_count || 0} · 更新于 {formatDate(series.updated_at)}</p>
+                <Link
+                  key={series.id}
+                  href={`/studio/series/${series.id}`}
+                  className="block rounded-[1.5rem] px-5 py-4 transition-colors"
+                  style={{ border: "1px solid var(--studio-shell-border)", background: "color-mix(in srgb, var(--studio-shell-panel-strong) 94%, transparent)" }}
+                >
+                  <p className="text-sm font-semibold studio-strong">{series.title}</p>
+                  <p className="mt-1 text-xs studio-muted">集数 {series.episode_count || 0} · 更新于 {formatDate(series.updated_at)}</p>
                 </Link>
               ))
             )}

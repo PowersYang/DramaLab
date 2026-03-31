@@ -87,7 +87,7 @@ class TTSProcessor:
         """
         初始化 TTS 处理器。
 
-        未显式传 `api_key` 时，会自动从 `.env` 读取 `DASHSCOPE_API_KEY`。
+        未显式传 `api_key` 时，会自动从平台模型供应商配置读取 DashScope 凭证。
         """
         if dashscope is None:
             raise RuntimeError("dashscope package not installed. Run: pip install dashscope")

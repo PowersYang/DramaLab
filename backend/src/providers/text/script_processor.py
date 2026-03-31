@@ -308,7 +308,7 @@ class ScriptProcessor:
         """为剧本推荐可选视觉风格。"""
         logger.info("Analyzing script for visual style recommendations...")
         if not self.is_configured:
-            logger.warning("DASHSCOPE_API_KEY not set. Returning default recommendations.")
+            logger.warning("Text model provider is not configured in platform settings. Returning default recommendations.")
             return self._mock_style_recommendations()
 
         system_prompt = """你是一个专业的电影美术指导和视觉风格顾问。
@@ -497,7 +497,7 @@ CRITICAL STYLE GUIDELINES:
         """把剧本文本和实体上下文转换成分镜帧规划。"""
         logger.info("Analyzing text to storyboard: %s...", text[:100])
         if not self.is_configured:
-            logger.warning("DASHSCOPE_API_KEY not set. Returning mock frames.")
+            logger.warning("Text model provider is not configured in platform settings. Returning mock frames.")
             return self._mock_storyboard_frames(text)
 
         characters_list = entities_json.get("characters", [])

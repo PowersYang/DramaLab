@@ -375,6 +375,7 @@ class AssetWorkflow:
         asset_type: str,
         prompt: str | None = None,
         audio_url: str | None = None,
+        negative_prompt: str | None = None,
         duration: int = 5,
         batch_size: int = 1,
     ):
@@ -387,6 +388,7 @@ class AssetWorkflow:
             asset_type=asset_type,
             prompt=prompt,
             audio_url=audio_url,
+            negative_prompt=negative_prompt,
             duration=duration,
             batch_size=batch_size,
         )
@@ -537,6 +539,7 @@ class AssetWorkflow:
         asset_type: str,
         prompt: str | None = None,
         audio_url: str | None = None,
+        negative_prompt: str | None = None,
         duration: int = 5,
         batch_size: int = 1,
     ):
@@ -568,6 +571,7 @@ class AssetWorkflow:
                 prompt=prompt,
                 duration=duration,
                 audio_url=audio_url,
+                negative_prompt=negative_prompt,
             )
             if not result or not result.get("video_url"):
                 continue

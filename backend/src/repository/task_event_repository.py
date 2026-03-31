@@ -7,7 +7,8 @@ from ..schemas.task_models import TaskEvent
 class TaskEventRepository(BaseRepository[TaskEvent]):
     def create(self, event: TaskEvent, session=None) -> TaskEvent:
         with self._with_session(session) as session:
-            session.merge(_task_event_record(event))
+            # 中文注释：事件记录依赖 task_jobs 外键，创建时直接 add，配合上游 flush 保证父记录先落库。
+            session.add(_task_event_record(event))
         return event
 
     def list_by_job(self, job_id: str) -> list[TaskEvent]:

@@ -67,20 +67,20 @@ function SeriesResourceCard({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold tracking-[0.18em] text-primary">系列</span>
-            <h3 className="text-xl font-bold text-slate-950">{series.title}</h3>
+            <span className="studio-badge studio-badge-soft">系列</span>
+            <h3 className="text-xl font-semibold studio-strong">{series.title}</h3>
           </div>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">{series.description || "适合多集项目的共享资产与创作容器。"}</p>
-          <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
-            <span>集数 <strong className="text-slate-900">{series.episode_count || 0}</strong></span>
-            <span>角色 <strong className="text-slate-900">{series.character_count || 0}</strong></span>
-            <span>场景 <strong className="text-slate-900">{series.scene_count || 0}</strong></span>
-            <span>更新于 <strong className="text-slate-900">{new Date(parseTime(series.updated_at)).toLocaleDateString("zh-CN")}</strong></span>
+          <p className="mt-3 max-w-2xl text-sm leading-6 studio-muted">{series.description || "适合多集项目的共享资产与创作容器。"}</p>
+          <div className="mt-4 flex flex-wrap gap-4 text-xs studio-muted">
+            <span>集数 <strong className="studio-strong">{series.episode_count || 0}</strong></span>
+            <span>角色 <strong className="studio-strong">{series.character_count || 0}</strong></span>
+            <span>场景 <strong className="studio-strong">{series.scene_count || 0}</strong></span>
+            <span>更新于 <strong className="studio-strong">{new Date(parseTime(series.updated_at)).toLocaleDateString("zh-CN")}</strong></span>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href={`/studio/series/${series.id}`} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-primary/40 hover:text-slate-950">
+          <Link href={`/studio/series/${series.id}`} className="studio-button studio-button-secondary">
             查看系列
           </Link>
           <button
@@ -89,7 +89,7 @@ function SeriesResourceCard({
                 onDelete(series.id);
               }
             }}
-            className="rounded-full border border-rose-200 bg-rose-50 p-2.5 text-rose-600 transition-colors hover:bg-rose-100"
+            className="studio-button studio-button-danger !min-h-[2.5rem] !px-3"
           >
             <Trash2 size={16} />
           </button>
@@ -105,15 +105,16 @@ function SeriesResourceCard({
               <Link
                 key={episode.id}
                 href={`/studio/projects/${episode.id}?seriesId=${series.id}`}
-                className="block min-h-[96px] w-52 flex-shrink-0 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-primary/40 hover:bg-white"
+                className="block min-h-[96px] w-52 flex-shrink-0 rounded-[1.5rem] p-4 transition-colors"
+                style={{ border: "1px solid var(--studio-shell-border)", background: "color-mix(in srgb, var(--studio-shell-panel-strong) 94%, transparent)" }}
               >
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">EP {episode.episode_number || "?"}</p>
-                <p className="mt-2 text-sm font-semibold text-slate-950">{episode.title}</p>
-                <p className="mt-1 text-xs text-slate-500">{episode.frame_count || 0} 分镜 · 进入集数编辑</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--studio-shell-accent)" }}>EP {episode.episode_number || "?"}</p>
+                <p className="mt-2 text-sm font-semibold studio-strong">{episode.title}</p>
+                <p className="mt-1 text-xs studio-muted">{episode.frame_count || 0} 分镜 · 进入集数编辑</p>
               </Link>
             ))}
             {showInlineInput ? (
-              <div className="w-56 flex-shrink-0 rounded-[1.5rem] border border-primary/30 bg-primary/5 p-4">
+              <div className="w-56 flex-shrink-0 rounded-[1.5rem] p-4" style={{ border: "1px solid color-mix(in srgb, var(--studio-shell-accent) 36%, transparent)", background: "var(--studio-shell-accent-soft)" }}>
                 <input
                   value={inlineTitle}
                   onChange={(event) => setInlineTitle(event.target.value)}
@@ -125,19 +126,13 @@ function SeriesResourceCard({
                     }
                   }}
                   placeholder="输入集数标题"
-                  className="w-full border-none bg-transparent text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
+                  className="w-full border-none bg-transparent text-sm font-medium studio-strong outline-none placeholder:text-slate-400"
                 />
                 <div className="mt-3 flex gap-3 text-xs">
-                  <button onClick={handleInlineAddEpisode} disabled={!inlineTitle.trim() || isAdding} className="font-semibold text-primary disabled:opacity-50">
+                  <button onClick={handleInlineAddEpisode} disabled={!inlineTitle.trim() || isAdding} className="font-semibold disabled:opacity-50" style={{ color: "var(--studio-shell-accent-strong)" }}>
                     {isAdding ? "创建中..." : "确认创建"}
                   </button>
-                  <button
-                    onClick={() => {
-                      setShowInlineInput(false);
-                      setInlineTitle("");
-                    }}
-                    className="text-slate-500"
-                  >
+                  <button onClick={() => { setShowInlineInput(false); setInlineTitle(""); }} className="studio-muted">
                     取消
                   </button>
                 </div>
@@ -145,7 +140,8 @@ function SeriesResourceCard({
             ) : (
               <button
                 onClick={() => setShowInlineInput(true)}
-                className="flex min-h-[96px] w-48 flex-shrink-0 items-center justify-center rounded-[1.5rem] border border-dashed border-slate-300 bg-white text-sm font-semibold text-slate-500 transition-colors hover:border-primary/40 hover:text-slate-900"
+                className="flex min-h-[96px] w-48 flex-shrink-0 items-center justify-center rounded-[1.5rem] border border-dashed text-sm font-semibold transition-colors studio-muted"
+                style={{ borderColor: "var(--studio-shell-border)", background: "var(--studio-shell-panel-soft)" }}
               >
                 + 添加集数
               </button>
@@ -165,10 +161,10 @@ function ProjectResourceCard({ project, onDelete }: { project: ProjectSummary; o
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-slate-950/5 px-2.5 py-1 text-xs font-semibold tracking-[0.18em] text-slate-600">项目</span>
-            <h3 className="text-xl font-bold text-slate-950">{project.title}</h3>
+            <span className="studio-badge studio-badge-soft">项目</span>
+            <h3 className="text-xl font-semibold studio-strong">{project.title}</h3>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs studio-muted">
             <span className="inline-flex items-center gap-1"><Calendar size={12} /> {Number.isNaN(createdDate.getTime()) ? "-" : createdDate.toLocaleDateString("zh-CN")}</span>
             <span>角色 {project.character_count || 0}</span>
             <span>场景 {project.scene_count || 0}</span>
@@ -177,7 +173,7 @@ function ProjectResourceCard({ project, onDelete }: { project: ProjectSummary; o
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href={`/studio/projects/${project.id}`} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+          <Link href={`/studio/projects/${project.id}`} className="studio-button studio-button-primary">
             <Play size={14} />
             打开项目
           </Link>
@@ -187,7 +183,7 @@ function ProjectResourceCard({ project, onDelete }: { project: ProjectSummary; o
                 onDelete(project.id);
               }
             }}
-            className="rounded-full border border-rose-200 bg-rose-50 p-2.5 text-rose-600 transition-colors hover:bg-rose-100"
+            className="studio-button studio-button-danger !min-h-[2.5rem] !px-3"
           >
             <Trash2 size={16} />
           </button>
@@ -333,14 +329,14 @@ export default function StudioProjectsPage() {
   return (
     <div className="space-y-6">
       {loadError && (
-        <section className="studio-panel rounded-[1.5rem] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+        <section className="studio-panel rounded-[1.5rem] px-5 py-4 text-sm text-rose-300" style={{ borderColor: "rgba(244,63,94,0.22)", background: "rgba(127, 29, 29, 0.24)" }}>
           项目中心加载失败：{loadError}
         </section>
       )}
 
       <section className="studio-panel px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="studio-tab-strip flex flex-wrap items-center gap-1">
             {[
               { id: "all", label: "全部资源" },
               { id: "series", label: "系列" },
@@ -349,8 +345,8 @@ export default function StudioProjectsPage() {
               <button
                 key={item.id}
                 onClick={() => setFilter(item.id as FilterMode)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  filter === item.id ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                className={`studio-tab ${
+                  filter === item.id ? "studio-tab-active" : ""
                 }`}
               >
                 {item.label}
@@ -359,22 +355,22 @@ export default function StudioProjectsPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <button onClick={() => setIsImportOpen(true)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
+            <button onClick={() => setIsImportOpen(true)} className="studio-button studio-button-secondary">
               <span className="inline-flex items-center gap-2"><FileUp size={16} /> 导入剧本</span>
             </button>
 
             <div className="relative">
-              <button onClick={() => setShowCreateDropdown((value) => !value)} className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
+              <button onClick={() => setShowCreateDropdown((value) => !value)} className="studio-button studio-button-primary">
                 <span className="inline-flex items-center gap-2"><Plus size={16} /> 新建 <ChevronDown size={16} /></span>
               </button>
               {showCreateDropdown && (
-                <div className="absolute right-0 top-full z-20 mt-2 w-52 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-xl">
-                  <button onClick={() => { setIsCreateSeriesOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                    <FolderKanban size={16} className="text-primary" />
+                <div className="absolute right-0 top-full z-20 mt-2 w-52 rounded-[1.5rem] p-2 shadow-xl" style={{ border: "1px solid var(--studio-shell-border)", background: "var(--studio-shell-panel-strong)" }}>
+                  <button onClick={() => { setIsCreateSeriesOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold studio-muted" style={{ background: "transparent" }}>
+                    <FolderKanban size={16} style={{ color: "var(--studio-shell-accent)" }} />
                     新建系列
                   </button>
-                  <button onClick={() => { setIsCreateProjectOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                    <FileText size={16} className="text-primary" />
+                  <button onClick={() => { setIsCreateProjectOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold studio-muted" style={{ background: "transparent" }}>
+                    <FileText size={16} style={{ color: "var(--studio-shell-accent)" }} />
                     新建项目
                   </button>
                 </div>
@@ -402,7 +398,7 @@ export default function StudioProjectsPage() {
 
         {visibleSeries.length === 0 && visibleProjects.length === 0 && (
           <div className="studio-panel p-10 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "var(--studio-shell-accent-soft)", color: "var(--studio-shell-accent-strong)" }}>
               <Sparkles size={24} />
             </div>
           </div>

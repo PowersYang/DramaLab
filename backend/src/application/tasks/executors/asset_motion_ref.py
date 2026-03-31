@@ -18,6 +18,7 @@ class AssetMotionRefExecutor:
             asset_type=payload["asset_type"],
             prompt=payload.get("prompt"),
             audio_url=payload.get("audio_url"),
+            negative_prompt=payload.get("negative_prompt"),
             duration=payload.get("duration", 5),
             batch_size=payload.get("batch_size", 1),
         )
@@ -26,4 +27,3 @@ class AssetMotionRefExecutor:
             "asset_id": payload["asset_id"],
             "asset_type": payload["asset_type"],
         }
-

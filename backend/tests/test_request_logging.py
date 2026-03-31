@@ -27,7 +27,7 @@ class RequestLoggingTest(unittest.TestCase):
         scope = {
             "type": "http",
             "method": "POST",
-            "path": "/config/env",
+            "path": "/model-providers/OPENAI",
             "headers": [(b"content-type", b"application/json")],
             "query_string": b"",
         }

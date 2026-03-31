@@ -169,7 +169,7 @@ export default function ConsistencyVault() {
     };
 
     // Video Handlers
-    const handleGenerateVideo = async (assetId: string, type: string, prompt: string, duration: number, assetSubType?: string) => {
+    const handleGenerateVideo = async (assetId: string, type: string, prompt: string, negativePrompt: string, duration: number, assetSubType?: string) => {
         if (!currentProject) return;
         const resolvedAssetSubType = assetSubType || "full_body";
 
@@ -205,6 +205,7 @@ export default function ConsistencyVault() {
                 finalAssetType,
                 prompt,
                 undefined, // audioUrl
+                negativePrompt,
                 duration
             );
             enqueueReceipts(currentProject.id, [response]);
@@ -320,7 +321,7 @@ export default function ConsistencyVault() {
     return (
         <div className="flex flex-col h-full text-white">
             {/* Header */}
-            <div className="border-b border-white/10 bg-black/20">
+            <div>
                 <div className={PANEL_HEADER_CLASS}>
                     <h2 className={PANEL_TITLE_CLASS}>
                         <Box size={16} className="text-primary" />
@@ -338,8 +339,8 @@ export default function ConsistencyVault() {
                     </div>
                 </div>
 
-                <div className="p-4 pt-3">
-                    <div className="flex shrink-0 gap-2 bg-black/40 p-1 rounded-xl border border-white/5 w-fit">
+                <div className="studio-panel-subheader p-4 pt-3">
+                    <div className="studio-panel-chip-rail flex shrink-0 gap-2 rounded-xl p-1 w-fit">
                         <TabButton
                             active={activeTab === "character"}
                             onClick={() => setActiveTab("character")}
@@ -429,7 +430,7 @@ export default function ConsistencyVault() {
                             generatingTypes={getAssetGeneratingTypes(selectedAssetId)}
                             stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
                             styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
-                            onGenerateVideo={(prompt: string, duration: number, subType?: string) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, duration, subType)}
+                            onGenerateVideo={(prompt: string, negativePrompt: string, duration: number, subType?: string) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, negativePrompt, duration, subType)}
                             onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
                         />
                     ) : (
@@ -806,24 +807,25 @@ function AssetCard({ asset, type, isGenerating, isLockToggling, onGenerate, onTo
 
     const resolveAssetPreview = () => {
         if (type === "character") {
-            const selectedHeadshot = getSelectedVariant(asset.headshot_asset);
             const selectedFullBody = getSelectedVariant(asset.full_body_asset);
+            const selectedHeadshot = getSelectedVariant(asset.headshot_asset);
             const selectedThreeView = getSelectedVariant(asset.three_view_asset);
             const previewPath =
-                selectedHeadshot?.url
-                || asset.avatar_url
-                || selectedFullBody?.url
+                selectedFullBody?.url
                 || asset.full_body_image_url
+                || selectedHeadshot?.url
+                || asset.headshot_image_url
+                || asset.avatar_url
                 || selectedThreeView?.url
                 || asset.image_url
                 || asset.three_view_image_url
-                || asset.headshot_image_url;
+                || asset.avatar_url;
             const previewTimestamp =
-                selectedHeadshot?.created_at
-                || selectedFullBody?.created_at
-                || selectedThreeView?.created_at
-                || asset.headshot_updated_at
+                selectedFullBody?.created_at
                 || asset.full_body_updated_at
+                || selectedHeadshot?.created_at
+                || asset.headshot_updated_at
+                || selectedThreeView?.created_at
                 || asset.three_view_updated_at;
             return { previewPath, previewTimestamp };
         }

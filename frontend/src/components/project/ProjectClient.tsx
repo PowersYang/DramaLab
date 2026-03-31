@@ -15,16 +15,11 @@ import StoryboardComposer from "@/components/modules/StoryboardComposer";
 import VoiceActingStudio from "@/components/modules/VoiceActingStudio";
 import FinalMixStudio from "@/components/modules/FinalMixStudio";
 import ExportStudio from "@/components/modules/ExportStudio";
-import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { PROJECT_REFRESH_PATH_STORAGE_KEY, isPageReloadNavigation } from "@/components/project/projectNavigation";
+import { persistStudioTheme, readStoredStudioTheme, type StudioTheme } from "@/components/studio/studioTheme";
 
 import CreativeCanvas from "@/components/canvas/CreativeCanvas";
-
-type StudioTheme = "light" | "dark";
-
-const STUDIO_THEME_STORAGE_KEY = "dramalab-studio-theme";
-const LEGACY_STUDIO_THEME_STORAGE_KEY = "lumenx-studio-theme";
 const PROJECT_STEP_STORAGE_KEY_PREFIX = "dramalab-project-active-step";
 const LEGACY_PROJECT_STEP_STORAGE_KEY_PREFIX = "lumenx-project-active-step";
 const PROJECT_STEP_IDS = [
@@ -81,10 +76,7 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
 
     useEffect(() => {
         // 读取本地主题偏好，让项目制作页和工作台的视觉习惯保持连续。
-        const savedTheme = window.localStorage.getItem(STUDIO_THEME_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STUDIO_THEME_STORAGE_KEY);
-        if (savedTheme === "light" || savedTheme === "dark") {
-            setTheme(savedTheme);
-        }
+        setTheme(readStoredStudioTheme());
     }, []);
 
     useEffect(() => {
@@ -120,8 +112,7 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
 
     useEffect(() => {
         // 持久化主题偏好，避免每次重新打开项目都回到默认状态。
-        window.localStorage.setItem(STUDIO_THEME_STORAGE_KEY, theme);
-        window.localStorage.removeItem(LEGACY_STUDIO_THEME_STORAGE_KEY);
+        persistStudioTheme(theme);
     }, [theme]);
 
     useEffect(() => {

@@ -24,7 +24,9 @@ class TaskJobRepository(BaseRepository[TaskJob]):
 
     def create(self, job: TaskJob, session=None) -> TaskJob:
         with self._with_session(session) as session:
-            session.merge(_task_job_record(job))
+            # 中文注释：任务主记录是“先有父表，再有 attempt/event”的外键锚点，创建时显式 add 更稳，
+            # 避免 merge 在同一事务里把插入顺序交给 flush 推断后触发外键竞态。
+            session.add(_task_job_record(job))
         return job
 
     def save(self, job: TaskJob, session=None) -> TaskJob:
