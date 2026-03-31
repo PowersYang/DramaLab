@@ -305,6 +305,9 @@ class BillingService:
         pricing_rule = self.pricing_repository.get_active_rule(job.task_type, organization_id=job.organization_id)
         if pricing_rule is None:
             raise BillingPricingNotConfiguredError(f"Billing pricing is not configured for task_type={job.task_type}")
+        charge_amount = pricing_rule.price_credits
+        if charge_amount < 0:
+            raise ValueError(f"Billing pricing must be non-negative for task_type={job.task_type}")
         account_record = self._lock_account(
             organization_id=job.organization_id,
             workspace_id=job.workspace_id,
@@ -314,7 +317,8 @@ class BillingService:
         )
         if account_record.status != "active":
             raise BillingAccountUnavailableError("Billing account is not active")
-        if account_record.balance_credits < pricing_rule.price_credits:
+        # 中文注释：0 豆也是合法计费配置，只要价格不是负数，就应该允许 0 余额账户正常入队并写流水。
+        if account_record.balance_credits < charge_amount:
             raise BillingInsufficientBalanceError("Current organization has insufficient credits for this task")
         if idempotency_key:
             existing = self.transaction_repository.get_by_idempotency_key(idempotency_key)
@@ -322,9 +326,9 @@ class BillingService:
                 return existing
         now = utc_now()
         balance_before = account_record.balance_credits
-        balance_after = balance_before - pricing_rule.price_credits
+        balance_after = balance_before - charge_amount
         account_record.balance_credits = balance_after
-        account_record.total_consumed_credits += pricing_rule.price_credits
+        account_record.total_consumed_credits += charge_amount
         account_record.updated_by = actor_id
         account_record.updated_at = now
         transaction = BillingTransaction(
@@ -334,7 +338,7 @@ class BillingService:
             workspace_id=job.workspace_id,
             transaction_type="task_debit",
             direction="debit",
-            amount_credits=pricing_rule.price_credits,
+            amount_credits=charge_amount,
             balance_before=balance_before,
             balance_after=balance_after,
             related_type="task_job",
@@ -356,7 +360,7 @@ class BillingService:
             job.organization_id,
             job.id,
             job.task_type,
-            pricing_rule.price_credits,
+            charge_amount,
             balance_after,
         )
         return transaction

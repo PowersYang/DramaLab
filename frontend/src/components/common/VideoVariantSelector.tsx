@@ -1,29 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VideoTask } from '@/store/projectStore';
-import { Trash2, Check, Layers, X, Maximize2, Play, Pause, RefreshCw } from 'lucide-react';
+import { Trash2, Check, Layers, X, Play, RefreshCw } from 'lucide-react';
+import BillingActionButton from '@/components/billing/BillingActionButton';
 import { API_URL } from '@/lib/api';
 import { getAssetUrl } from '@/lib/utils';
 
 interface VideoVariantSelectorProps {
     videos: VideoTask[];
-    onSelect?: (videoId: string) => void;
     onDelete: (videoId: string) => void;
     onGenerate: (duration: number) => void;
     isGenerating: boolean;
     className?: string;
     aspectRatio?: string;
+    generatePriceCredits?: number | null;
+    generateBalanceCredits?: number;
+    disableGenerate?: boolean;
 }
 
 const getApiBaseUrl = () => API_URL;
 
 export const VideoVariantSelector: React.FC<VideoVariantSelectorProps> = ({
     videos = [],
-    onSelect,
     onDelete,
     onGenerate,
     isGenerating,
     className = "",
-    aspectRatio = "16:9"
+    aspectRatio = "16:9",
+    generatePriceCredits = null,
+    generateBalanceCredits = 0,
+    disableGenerate = false,
 }) => {
     const [duration, setDuration] = useState(5);
     const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
@@ -47,8 +52,6 @@ export const VideoVariantSelector: React.FC<VideoVariantSelectorProps> = ({
     }, [videos, selectedVideoId]);
 
     const selectedVideo = videos.find(v => v.id === selectedVideoId);
-    const apiBase = getApiBaseUrl();
-
     const getFullUrl = (url: string) => {
         return getAssetUrl(url);
     };
@@ -126,17 +129,21 @@ export const VideoVariantSelector: React.FC<VideoVariantSelectorProps> = ({
                         ))}
                     </div>
 
-                    <button
+                    <BillingActionButton
                         onClick={() => onGenerate(duration)}
-                        disabled={isGenerating}
+                        disabled={isGenerating || disableGenerate}
+                        priceCredits={generatePriceCredits}
+                        balanceCredits={generateBalanceCredits}
                         className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${isGenerating
+                            || disableGenerate
                             ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
                             : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20'
                             }`}
+                        tooltipText={generatePriceCredits == null ? undefined : `预计消耗${generatePriceCredits}算力豆${disableGenerate ? "，当前余额不足" : ""}`}
                     >
                         <Layers size={16} />
                         {isGenerating ? "Generating..." : "Generate Video"}
-                    </button>
+                    </BillingActionButton>
                 </div>
 
                 {/* Variants Filmstrip */}

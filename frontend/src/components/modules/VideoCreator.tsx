@@ -11,7 +11,7 @@ import {
     Users,
     Film
 } from "lucide-react";
-import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 
 
@@ -1117,14 +1117,17 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             {/* 4. Fixed Action Bar */}
             <div className="z-10 border-t border-slate-200/80 bg-white/80 p-6 backdrop-blur-md dark:border-white/10 dark:bg-black/40">
                 <div className="max-w-4xl mx-auto w-full">
-                    <button
+                    <BillingActionButton
                         onClick={handleSubmit}
                         disabled={(!prompt || isSubmitting || !videoAffordable) || (generationMode === 'i2v' && selectedImages.length === 0)}
+                        priceCredits={estimatedVideoCost}
+                        balanceCredits={account?.balance_credits}
+                        wrapperClassName="w-full"
                         className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all transform active:scale-[0.99] ${submitSuccess
                             ? "bg-green-500 text-white"
                             : "bg-primary hover:bg-primary/90 text-white"
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
-                        title={!videoAffordable ? `当前组织算力豆余额不足，预计消耗 ${estimatedVideoCost ?? videoPrice ?? 0} 个算力豆` : undefined}
+                        tooltipText={estimatedVideoCost == null ? undefined : `预计消耗${estimatedVideoCost}算力豆${!videoAffordable ? "，当前余额不足" : ""}`}
                     >
                         {isSubmitting ? (
                             <>
@@ -1139,8 +1142,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                                 <Plus /> 加入生成队列 (Ctrl+Enter)
                             </>
                         )}
-                    </button>
-                    <BillingTaskHint priceCredits={estimatedVideoCost} balanceCredits={account?.balance_credits} className="mt-3 mx-auto" />
+                    </BillingActionButton>
                     <div className="flex justify-center mt-3">
                         <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
                             <input type="checkbox" className="rounded border-slate-300 bg-white dark:border-white/20 dark:bg-white/10" />

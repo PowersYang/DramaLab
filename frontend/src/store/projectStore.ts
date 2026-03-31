@@ -551,6 +551,7 @@ interface ProjectStore {
     generatingTasks: { assetId: string; generationType: string; batchSize: number }[];
     addGeneratingTask: (assetId: string, generationType: string, batchSize: number) => void;
     removeGeneratingTask: (assetId: string, generationType: string) => void;
+    reconcileGeneratingTasks: (assetIds: string[], tasks: { assetId: string; generationType: string; batchSize: number }[]) => void;
 
     // Storyboard Frame Rendering State
     renderingFrames: Set<string>;  // Set of frame IDs currently being rendered
@@ -754,12 +755,28 @@ export const useProjectStore = create<ProjectStore>()(
 
             // Asset Generation State
             generatingTasks: [],
-            addGeneratingTask: (assetId: string, generationType: string, batchSize: number) => set((state) => ({
-                generatingTasks: [...state.generatingTasks, { assetId, generationType, batchSize }]
-            })),
+            addGeneratingTask: (assetId: string, generationType: string, batchSize: number) => set((state) => {
+                // 同一素材+生成类型只保留一条本地执行态，避免刷新对账后出现重复 badge。
+                const dedupedTasks = state.generatingTasks.filter(
+                    (task) => !(task.assetId === assetId && task.generationType === generationType)
+                );
+                return {
+                    generatingTasks: [...dedupedTasks, { assetId, generationType, batchSize }]
+                };
+            }),
             removeGeneratingTask: (assetId: string, generationType: string) => set((state) => ({
                 generatingTasks: state.generatingTasks.filter((t) => !(t.assetId === assetId && t.generationType === generationType))
             })),
+            reconcileGeneratingTasks: (assetIds: string[], tasks: { assetId: string; generationType: string; batchSize: number }[]) => set((state) => {
+                const targetAssetIds = new Set(assetIds);
+                const preservedTasks = state.generatingTasks.filter((task) => !targetAssetIds.has(task.assetId));
+                const dedupedIncomingTasks = Array.from(
+                    new Map(tasks.map((task) => [`${task.assetId}:${task.generationType}`, task])).values()
+                );
+                return {
+                    generatingTasks: [...preservedTasks, ...dedupedIncomingTasks]
+                };
+            }),
 
             // Storyboard Frame Rendering State
             renderingFrames: new Set<string>(),

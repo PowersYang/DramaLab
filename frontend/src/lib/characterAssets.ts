@@ -87,7 +87,7 @@ export const getCharacterPanelVariants = (character: Character, panelKey: Charac
     );
 };
 
-// 弹窗默认优先落到“最近一次真正有多张候选图的分面”，避免用户明明刚生成了 4 张却总被带回只有 1 张主图的面板。
+// 角色工作台始终优先从主素材进入，只有主素材完全缺失时才回退到其它分面。
 export const getPreferredCharacterPanel = (character: Character): CharacterPanelKey => {
     const rankedPanels = PANEL_ORDER.map((panelKey, index) => {
         const config = PANEL_CONFIG[panelKey];
@@ -108,13 +108,15 @@ export const getPreferredCharacterPanel = (character: Character): CharacterPanel
             panelKey,
             index,
             variantCount,
-            hasMultipleCandidates: variantCount > 1 ? 1 : 0,
             freshestTime: Math.max(latestVariantTime, updatedAtTime, selectedTime),
             hasPreview: previewUrl || selectedVariant?.url ? 1 : 0,
         };
     }).sort((left, right) => {
-        if (left.hasMultipleCandidates !== right.hasMultipleCandidates) {
-            return right.hasMultipleCandidates - left.hasMultipleCandidates;
+        if (left.panelKey === "full_body" && right.panelKey !== "full_body" && left.hasPreview) {
+            return -1;
+        }
+        if (right.panelKey === "full_body" && left.panelKey !== "full_body" && right.hasPreview) {
+            return 1;
         }
         if (left.freshestTime !== right.freshestTime) {
             return right.freshestTime - left.freshestTime;

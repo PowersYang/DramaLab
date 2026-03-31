@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, RefreshCw, Check, AlertTriangle, Image as ImageIcon, Lock, Unlock, ChevronRight, Maximize2 } from "lucide-react";
 import { api, API_URL } from "@/lib/api";
-import BillingTaskHint from "@/components/billing/BillingTaskHint";
 import { VariantSelector } from "../common/VariantSelector";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
@@ -134,13 +133,8 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                             isGenerating={isGenerating}
                             disableGenerate={!storyboardRenderAffordable}
                             generateDisabledReason="当前组织算力豆余额不足，无法提交分镜渲染任务"
-                            generateHint={
-                                <BillingTaskHint
-                                    priceCredits={storyboardRenderPrice}
-                                    balanceCredits={account?.balance_credits}
-                                    compact
-                                />
-                            }
+                            generatePriceCredits={storyboardRenderPrice}
+                            generateBalanceCredits={account?.balance_credits ?? 0}
                             aspectRatio="16:9"
                             className="h-full"
                         />

@@ -1,22 +1,4 @@
-from .asset_service import AssetService
-from .auth_service import AuthRateLimitError, AuthService
-from .billing_service import (
-    BillingAccountUnavailableError,
-    BillingError,
-    BillingInsufficientBalanceError,
-    BillingPricingNotConfiguredError,
-    BillingService,
-)
-from .character_service import CharacterService
-from .model_provider_service import ModelProviderService
-from .project_service import ProjectService
-from .prop_service import PropService
-from .scene_service import SceneService
-from .series_service import SeriesService
-from .storyboard_frame_service import StoryboardFrameService
-from .system_service import SystemService
-from .tenant_admin_service import TenantAdminService
-from .video_task_service import VideoTaskService
+from importlib import import_module
 
 __all__ = [
     "CharacterService",
@@ -30,14 +12,58 @@ __all__ = [
     "BillingService",
     "ModelProviderService",
     "ProjectService",
+    "ProjectCommandService",
+    "ProjectMutationService",
     "PropService",
     "SceneService",
+    "SeriesMutationService",
     "SeriesService",
+    "SeriesCommandService",
     "StoryboardFrameService",
     "SystemService",
     "TenantAdminService",
     "VideoTaskService",
 ]
+
+_EXPORT_MAP = {
+    "AssetService": (".asset_service", "AssetService"),
+    "AuthRateLimitError": (".auth_service", "AuthRateLimitError"),
+    "AuthService": (".auth_service", "AuthService"),
+    "BillingAccountUnavailableError": (".billing_service", "BillingAccountUnavailableError"),
+    "BillingError": (".billing_service", "BillingError"),
+    "BillingInsufficientBalanceError": (".billing_service", "BillingInsufficientBalanceError"),
+    "BillingPricingNotConfiguredError": (".billing_service", "BillingPricingNotConfiguredError"),
+    "BillingService": (".billing_service", "BillingService"),
+    "CharacterService": (".character_service", "CharacterService"),
+    "ModelProviderService": (".model_provider_service", "ModelProviderService"),
+    "ProjectService": (".project_service", "ProjectService"),
+    "ProjectCommandService": (".project_command_service", "ProjectCommandService"),
+    "ProjectMutationService": (".project_mutation_service", "ProjectMutationService"),
+    "PropService": (".prop_service", "PropService"),
+    "SceneService": (".scene_service", "SceneService"),
+    "SeriesMutationService": (".series_mutation_service", "SeriesMutationService"),
+    "SeriesService": (".series_service", "SeriesService"),
+    "SeriesCommandService": (".series_command_service", "SeriesCommandService"),
+    "StoryboardFrameService": (".storyboard_frame_service", "StoryboardFrameService"),
+    "SystemService": (".system_service", "SystemService"),
+    "TenantAdminService": (".tenant_admin_service", "TenantAdminService"),
+    "VideoTaskService": (".video_task_service", "VideoTaskService"),
+}
+
+
+def __getattr__(name):
+    if name not in _EXPORT_MAP:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute_name = _EXPORT_MAP[name]
+    module = import_module(module_name, __name__)
+    value = getattr(module, attribute_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
+
 """
 应用服务层导出入口。
 

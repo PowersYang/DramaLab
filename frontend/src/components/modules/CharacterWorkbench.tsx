@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, ChevronRight } from "lucide-react";
-import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { api } from "@/lib/api";
 import { applyCharacterVariantSelection, getPreferredCharacterPanel } from "@/lib/characterAssets";
@@ -741,7 +741,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                                 );
                                             })}
                                         </div>
-                                        <button
+                                        <BillingActionButton
                                             type="button"
                                             onClick={handleToolbarGenerate}
                                             disabled={(activePanel === "full_body"
@@ -757,12 +757,13 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                                 ? "bg-white/5 text-gray-400 cursor-not-allowed"
                                                 : "variant-selector-generate-active"
                                                 }`}
-                                            title={!assetGenerateAffordable ? "当前组织算力豆余额不足，无法提交资产生成任务" : undefined}
+                                            priceCredits={assetGeneratePrice}
+                                            balanceCredits={account?.balance_credits}
+                                            tooltipText={assetGeneratePrice == null ? undefined : `预计消耗${assetGeneratePrice}算力豆${!assetGenerateAffordable ? "，当前余额不足" : ""}`}
                                         >
                                             <PhotoIcon size={11} />
                                             生成图片
-                                        </button>
-                                        <BillingTaskHint priceCredits={assetGeneratePrice} balanceCredits={account?.balance_credits} compact />
+                                        </BillingActionButton>
                                     </div>
                                 )}
                             </div>
@@ -1007,19 +1008,20 @@ function WorkbenchPanel({
                                     <div className="mt-2 text-sm font-semibold text-white">动态视频预览</div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <button
+                                    <BillingActionButton
                                         onClick={() => onGenerateMotionRef?.(motionPrompt, motionNegativePrompt)}
                                         disabled={isGeneratingMotion || !motionRefAffordable}
+                                        priceCredits={motionRefPrice ?? null}
+                                        balanceCredits={balanceCredits}
                                         className={`variant-selector-generate flex items-center gap-1.5 rounded-[14px] px-4 py-2 text-[11px] font-semibold transition-all ${isGeneratingMotion || !motionRefAffordable
                                             ? 'bg-white/5 text-gray-500 cursor-not-allowed'
                                             : 'variant-selector-generate-active'
                                             }`}
-                                        title={!motionRefAffordable ? "当前组织算力豆余额不足，无法提交动态参考视频任务" : undefined}
+                                        tooltipText={motionRefPrice == null ? undefined : `预计消耗${motionRefPrice}算力豆${!motionRefAffordable ? "，当前余额不足" : ""}`}
                                     >
                                         <Video size={14} />
                                         生成视频
-                                    </button>
-                                    <BillingTaskHint priceCredits={motionRefPrice ?? null} balanceCredits={balanceCredits} compact />
+                                    </BillingActionButton>
                                 </div>
                             </div>
 

@@ -12,7 +12,7 @@ from typing import Any
 from ...common.log import get_logger
 from ...providers import AssetGenerator, VideoModelProvider
 from ...providers.image.asset_image_provider import ASPECT_RATIO_TO_SIZE
-from ...repository import ProjectRepository, SeriesRepository
+from ...repository import CharacterRepository, ProjectRepository, PropRepository, SceneRepository, SeriesRepository, VideoTaskRepository
 from ...schemas.models import AssetUnit, GenerationStatus, VideoTask, VideoVariant
 from ...utils.datetime import utc_now
 
@@ -30,6 +30,10 @@ class AssetWorkflow:
     def __init__(self):
         self.project_repository = ProjectRepository()
         self.series_repository = SeriesRepository()
+        self.character_repository = CharacterRepository()
+        self.scene_repository = SceneRepository()
+        self.prop_repository = PropRepository()
+        self.video_task_repository = VideoTaskRepository()
         self.image_provider = AssetGenerator()
         self.video_provider = VideoModelProvider()
 
@@ -69,8 +73,7 @@ class AssetWorkflow:
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        self._save_project_asset(script_id, asset_type, asset)
         return self._get_project(script_id)
 
     def execute_project_asset_generation(
@@ -125,8 +128,7 @@ class AssetWorkflow:
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        self._save_project_asset(script_id, asset_type, asset)
 
         task_id = str(uuid.uuid4())
         _ASSET_TASKS[task_id] = {
@@ -174,8 +176,7 @@ class AssetWorkflow:
         series = self._get_series(series_id)
         asset = self._find_asset(series, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
-        series.updated_at = utc_now()
-        self.series_repository.save(series)
+        self._save_series_asset(series_id, asset_type, asset)
 
         task_id = str(uuid.uuid4())
         _ASSET_TASKS[task_id] = {
@@ -212,8 +213,7 @@ class AssetWorkflow:
         series = self._get_series(series_id)
         asset = self._find_asset(series, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
-        series.updated_at = utc_now()
-        self.series_repository.save(series)
+        self._save_series_asset(series_id, asset_type, asset)
         return self._get_series(series_id)
 
     def execute_series_asset_generation(
@@ -441,10 +441,7 @@ class AssetWorkflow:
             created_at=utc_now(),
         )
 
-        project.video_tasks.append(task)
-        target_asset.video_assets.append(task)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        self.video_task_repository.save(task)
         logger.info("ASSET_WORKFLOW: create_asset_video_task completed script_id=%s task_id=%s", script_id, task_id)
         return self._get_project(script_id), task
 
@@ -452,17 +449,17 @@ class AssetWorkflow:
         """生成单个项目资产并持久化更新后的聚合。"""
         logger.info("ASSET_WORKFLOW: _generate_project_asset project_id=%s asset_id=%s asset_type=%s", project.id, asset_id, asset_type)
         self._generate_asset_common(project, asset_id, asset_type, **params)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
-        return project
+        asset = self._find_asset(project, asset_id, asset_type)
+        self._save_project_asset(project.id, asset_type, asset)
+        return self._get_project(project.id)
 
     def _generate_series_asset(self, series, asset_id: str, asset_type: str, **params):
         """生成单个系列资产并持久化更新后的聚合。"""
         logger.info("ASSET_WORKFLOW: _generate_series_asset series_id=%s asset_id=%s asset_type=%s", series.id, asset_id, asset_type)
         self._generate_asset_common(series, asset_id, asset_type, **params)
-        series.updated_at = utc_now()
-        self.series_repository.save(series)
-        return series
+        asset = self._find_asset(series, asset_id, asset_type)
+        self._save_series_asset(series.id, asset_type, asset)
+        return self._get_series(series.id)
 
     def _generate_asset_common(
         self,
@@ -670,8 +667,31 @@ class AssetWorkflow:
                     fresh_project.video_tasks.append(task_copy.model_copy(deep=True))
                     existing_project_video_ids.add(task_copy.id)
 
-        fresh_project.updated_at = utc_now()
-        self.project_repository.save(fresh_project)
+        if asset_type in ["full_body", "head_shot"]:
+            self._save_project_asset(project_id, "character", fresh_asset)
+            return
+
+        for task in generated_videos:
+            if not isinstance(task, VideoTask):
+                continue
+            self.video_task_repository.save(task)
+
+    def _save_project_asset(self, project_id: str, asset_type: str, asset) -> None:
+        repository = self._asset_repository(asset_type)
+        repository.save("project", project_id, asset)
+
+    def _save_series_asset(self, series_id: str, asset_type: str, asset) -> None:
+        repository = self._asset_repository(asset_type)
+        repository.save("series", series_id, asset)
+
+    def _asset_repository(self, asset_type: str):
+        if asset_type in ("character", "full_body", "head_shot"):
+            return self.character_repository
+        if asset_type == "scene":
+            return self.scene_repository
+        if asset_type == "prop":
+            return self.prop_repository
+        raise ValueError(f"Unsupported asset_type: {asset_type}")
 
     def _resolve_character_motion_source_image(self, asset, asset_type: str) -> str | None:
         """为角色动作参考解析最稳妥的源图地址。"""

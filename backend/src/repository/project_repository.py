@@ -6,6 +6,7 @@ from .base import BaseRepository
 from .mappers import _audit_time_kwargs, _soft_delete_project_graph, _insert_project_children, _tenant_kwargs, hydrate_project_map, replace_project_graph
 from ..db.models import CharacterRecord, ProjectRecord, SceneRecord, StoryboardFrameRecord
 from ..schemas.models import Script
+from ..utils.datetime import utc_now
 
 
 class ProjectRepository(BaseRepository[Script]):
@@ -165,6 +166,7 @@ class ProjectRepository(BaseRepository[Script]):
         return project
 
     def replace_graph(self, project: Script) -> Script:
+        """仅供离线导入/测试使用；运行时业务写路径禁止再调用整图替换。"""
         with self._with_session() as session:
             _soft_delete_project_graph(session, {project.id}, getattr(project, "updated_by", None))
             session.merge(
@@ -198,8 +200,31 @@ class ProjectRepository(BaseRepository[Script]):
                 raise ValueError(f"Project {project_id} not found")
             if expected_version is not None and record.version != expected_version:
                 raise ValueError(f"Project {project_id} version conflict")
+            patch = dict(patch)
+            patch.setdefault("updated_at", utc_now())
             self._patch_record(record, patch)
             return hydrate_project_map(session, {project_id})[project_id]
+
+    def touch(self, project_id: str, expected_version: int, session=None) -> int:
+        """推进项目根对象版本与更新时间，作为最小更新事务的乐观锁门闩。"""
+        with self._with_session(session) as active_session:
+            rows = active_session.query(ProjectRecord).filter(
+                ProjectRecord.id == project_id,
+                ProjectRecord.is_deleted.is_(False),
+                ProjectRecord.version == expected_version,
+            ).update(
+                {
+                    "version": ProjectRecord.version + 1,
+                    "updated_at": func.now(),
+                },
+                synchronize_session=False,
+            )
+            if rows != 1:
+                raise ValueError(f"Project {project_id} version conflict")
+            next_version = active_session.query(ProjectRecord.version).filter(ProjectRecord.id == project_id).scalar()
+            if next_version is None:
+                raise ValueError(f"Project {project_id} not found")
+            return int(next_version)
 
     def soft_delete(self, project_id: str, deleted_by: str | None = None) -> None:
         with self._with_session() as session:
@@ -221,10 +246,12 @@ class ProjectRepository(BaseRepository[Script]):
             return {project_id: project for project_id, project in hydrated.items() if project.workspace_id == workspace_id}
 
     def sync(self, items: Iterable[Script]) -> None:
+        """仅供离线初始化/测试使用；运行时业务写路径禁止再调用整图替换。"""
         with self._with_session() as session:
             replace_project_graph(session, list(items))
 
     def save(self, project: Script) -> Script:
+        """仅供离线初始化/测试使用；运行时业务写路径禁止再调用整图替换。"""
         return self.replace_graph(project)
 
     def delete(self, project_id: str) -> None:

@@ -85,10 +85,9 @@ class SystemService:
                 }
             )
 
-        series.updated_at = utc_now()
-        self.series_repository.replace_graph(series)
+        self.series_repository.patch_metadata(series.id, {"updated_at": utc_now()}, expected_version=series.version)
         return {
-            "series": series.model_dump(),
+            "series": self.series_repository.get(series.id).model_dump(),
             "episodes": created_episodes,
         }
 

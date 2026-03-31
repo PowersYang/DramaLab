@@ -10,56 +10,183 @@ interface BillingGuardState {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  getTaskPrice: (taskType: string) => number | null;
+  getTaskPrice: (taskType: string) => number;
   canAffordTask: (taskType: string) => boolean;
 }
 
+const BILLING_CACHE_STORAGE_KEY = "dramalab-billing-cache-v1";
+const BILLING_CACHE_REFRESH_WINDOW_MS = 30 * 1000;
+
+interface BillingCacheSnapshot {
+  account: BillingAccountSummary | null;
+  pricingRules: BillingPricingRuleSummary[];
+  loading: boolean;
+  error: string | null;
+  hydratedAt: number;
+}
+
+const EMPTY_CACHE_SNAPSHOT: BillingCacheSnapshot = {
+  account: null,
+  pricingRules: [],
+  loading: true,
+  error: null,
+  hydratedAt: 0,
+};
+
+let billingCacheSnapshot: BillingCacheSnapshot = EMPTY_CACHE_SNAPSHOT;
+let billingRefreshPromise: Promise<void> | null = null;
+const billingCacheListeners = new Set<(snapshot: BillingCacheSnapshot) => void>();
+
+function emitBillingCacheSnapshot() {
+  billingCacheListeners.forEach((listener) => listener(billingCacheSnapshot));
+}
+
+function readBillingCacheFromStorage(): BillingCacheSnapshot | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(BILLING_CACHE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as BillingCacheSnapshot;
+    if (!parsed || typeof parsed.hydratedAt !== "number") {
+      return null;
+    }
+    return {
+      account: parsed.account ?? null,
+      pricingRules: Array.isArray(parsed.pricingRules) ? parsed.pricingRules : [],
+      loading: false,
+      error: null,
+      hydratedAt: parsed.hydratedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeBillingCacheToStorage(snapshot: BillingCacheSnapshot) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      BILLING_CACHE_STORAGE_KEY,
+      JSON.stringify({
+        account: snapshot.account,
+        pricingRules: snapshot.pricingRules,
+        hydratedAt: snapshot.hydratedAt,
+      }),
+    );
+  } catch {
+    // 忽略缓存写入失败，避免影响主流程。
+  }
+}
+
+function getInitialBillingCacheSnapshot(): BillingCacheSnapshot {
+  if (billingCacheSnapshot.hydratedAt > 0) {
+    return billingCacheSnapshot;
+  }
+
+  const storageSnapshot = readBillingCacheFromStorage();
+  if (storageSnapshot) {
+    billingCacheSnapshot = storageSnapshot;
+    return storageSnapshot;
+  }
+
+  return billingCacheSnapshot;
+}
+
+function shouldRefreshBillingCache(snapshot: BillingCacheSnapshot) {
+  if (snapshot.hydratedAt <= 0) {
+    return true;
+  }
+  return Date.now() - snapshot.hydratedAt > BILLING_CACHE_REFRESH_WINDOW_MS;
+}
+
 export function useBillingGuard(): BillingGuardState {
-  const [account, setAccount] = useState<BillingAccountSummary | null>(null);
-  const [pricingRules, setPricingRules] = useState<BillingPricingRuleSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<BillingCacheSnapshot>(() => getInitialBillingCacheSnapshot());
 
   const refresh = async () => {
-    setError(null);
-    try {
-      const [accountData, pricingData] = await Promise.all([
-        api.getBillingAccount(),
-        api.listCurrentBillingPricingRules(),
-      ]);
-      setAccount(accountData);
-      setPricingRules(pricingData);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载算力豆信息失败");
-    } finally {
-      setLoading(false);
+    if (billingRefreshPromise) {
+      await billingRefreshPromise;
+      return;
     }
+
+    billingCacheSnapshot = {
+      ...billingCacheSnapshot,
+      loading: true,
+      error: null,
+    };
+    emitBillingCacheSnapshot();
+
+    billingRefreshPromise = (async () => {
+      try {
+        const [accountData, pricingData] = await Promise.all([
+          api.getBillingAccount(),
+          api.listCurrentBillingPricingRules(),
+        ]);
+
+        billingCacheSnapshot = {
+          account: accountData,
+          pricingRules: pricingData,
+          loading: false,
+          error: null,
+          hydratedAt: Date.now(),
+        };
+        writeBillingCacheToStorage(billingCacheSnapshot);
+      } catch (loadError) {
+        billingCacheSnapshot = {
+          ...billingCacheSnapshot,
+          loading: false,
+          error: loadError instanceof Error ? loadError.message : "加载算力豆信息失败",
+        };
+      } finally {
+        emitBillingCacheSnapshot();
+        billingRefreshPromise = null;
+      }
+    })();
+
+    await billingRefreshPromise;
   };
 
   useEffect(() => {
-    void refresh();
+    const handleSnapshotChange = (nextSnapshot: BillingCacheSnapshot) => {
+      setSnapshot(nextSnapshot);
+    };
+
+    billingCacheListeners.add(handleSnapshotChange);
+    setSnapshot(getInitialBillingCacheSnapshot());
+
+    if (shouldRefreshBillingCache(billingCacheSnapshot)) {
+      void refresh();
+    }
+
+    return () => {
+      billingCacheListeners.delete(handleSnapshotChange);
+    };
   }, []);
 
   const pricingMap = useMemo(
-    () => new Map(pricingRules.map((item) => [item.task_type, item.price_credits])),
-    [pricingRules],
+    () => new Map(snapshot.pricingRules.map((item) => [item.task_type, item.price_credits])),
+    [snapshot.pricingRules],
   );
 
-  const getTaskPrice = (taskType: string) => pricingMap.get(taskType) ?? null;
+  const getTaskPrice = (taskType: string) => pricingMap.get(taskType) ?? 0;
 
   const canAffordTask = (taskType: string) => {
     const price = getTaskPrice(taskType);
-    if (price == null) {
-      return true;
-    }
-    return (account?.balance_credits ?? 0) >= price;
+    return (snapshot.account?.balance_credits ?? 0) >= price;
   };
 
   return {
-    account,
-    pricingRules,
-    loading,
-    error,
+    account: snapshot.account,
+    pricingRules: snapshot.pricingRules,
+    loading: snapshot.loading,
+    error: snapshot.error,
     refresh,
     getTaskPrice,
     canAffordTask,

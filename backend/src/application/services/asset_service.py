@@ -9,7 +9,7 @@ import uuid
 from typing import Any
 
 from ...common.log import get_logger
-from ...repository import ProjectRepository, StoryboardFrameRepository
+from ...repository import CharacterRepository, ProjectRepository, PropRepository, SceneRepository, StoryboardFrameRepository, VideoTaskRepository
 from ...schemas.models import AssetUnit, ImageAsset, ImageVariant
 from ...utils.datetime import utc_now
 
@@ -22,7 +22,11 @@ class AssetService:
 
     def __init__(self):
         self.project_repository = ProjectRepository()
+        self.character_repository = CharacterRepository()
+        self.scene_repository = SceneRepository()
+        self.prop_repository = PropRepository()
         self.storyboard_frame_repository = StoryboardFrameRepository()
+        self.video_task_repository = VideoTaskRepository()
 
     def toggle_lock(self, script_id: str, asset_id: str, asset_type: str):
         """切换项目资产的锁定状态。"""
@@ -30,7 +34,7 @@ class AssetService:
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.locked = not asset.locked
-        return self._save_project(project)
+        return self._persist_asset_scope(project, asset_type, asset)
 
     def update_image(self, script_id: str, asset_id: str, asset_type: str, image_url: str):
         """更新资产当前选中的图片地址。"""
@@ -40,7 +44,7 @@ class AssetService:
         asset.image_url = image_url
         if asset_type == "character":
             asset.avatar_url = image_url
-        return self._save_project(project)
+        return self._persist_asset_scope(project, asset_type, asset, preserve_missing_media=False)
 
     def update_description(self, script_id: str, asset_id: str, asset_type: str, description: str):
         """仅更新资产的描述字段。"""
@@ -55,7 +59,7 @@ class AssetService:
         for key, value in attributes.items():
             if hasattr(asset, key):
                 setattr(asset, key, value)
-        return self._save_project(project)
+        return self._persist_asset_scope(project, asset_type, asset)
 
     def select_variant(self, script_id: str, asset_id: str, asset_type: str, variant_id: str, generation_type: str | None = None):
         """选中一个图片候选，并同步顶层冗余图片地址。"""
@@ -110,7 +114,7 @@ class AssetService:
         else:
             raise ValueError(f"Unsupported asset_type: {asset_type}")
 
-        return self._save_project(project)
+        return self._persist_asset_scope(project, asset_type, asset)
 
     def delete_variant(self, script_id: str, asset_id: str, asset_type: str, variant_id: str):
         """删除候选图，并在必要时刷新当前选中地址。"""
@@ -137,7 +141,7 @@ class AssetService:
             if self._delete_in_image_asset(asset.rendered_image_asset, variant_id):
                 self._sync_selected_url(asset.rendered_image_asset, "rendered_image_url", asset)
                 asset.image_url = asset.rendered_image_url
-        return self._save_project(project)
+        return self._persist_asset_scope(project, asset_type, asset)
 
     def toggle_variant_favorite(self, script_id: str, asset_id: str, asset_type: str, variant_id: str, is_favorited: bool, generation_type: str | None = None):
         """设置或取消候选图收藏状态。"""
@@ -173,7 +177,7 @@ class AssetService:
 
         if not found:
             raise ValueError(f"Variant {variant_id} not found")
-        return self._save_project(project)
+        return self._persist_asset_scope(project, asset_type, asset)
 
     def upload_variant(self, script_id: str, asset_type: str, asset_id: str, upload_type: str, image_url: str, description: str | None = None):
         """把用户上传图片作为资产的新候选图挂载进去。"""
@@ -226,17 +230,15 @@ class AssetService:
         else:
             raise ValueError(f"Invalid asset_type: {asset_type}")
 
-        return self._save_project(project)
+        return self._persist_asset_scope(project, asset_type, asset)
 
     def delete_asset_video(self, script_id: str, asset_id: str, asset_type: str, video_id: str):
         """同时从资产范围和项目范围移除一个生成视频。"""
         logger.info("ASSET_SERVICE: delete_asset_video script_id=%s asset_id=%s asset_type=%s video_id=%s", script_id, asset_id, asset_type, video_id)
         project = self._get_project(script_id)
-        asset = self._find_asset(project, asset_id, asset_type)
-        if hasattr(asset, "video_assets") and asset.video_assets is not None:
-            asset.video_assets = [video for video in asset.video_assets if video.id != video_id]
-        project.video_tasks = [task for task in project.video_tasks if task.id != video_id]
-        return self._save_project(project)
+        self._find_asset(project, asset_id, asset_type)
+        self.video_task_repository.delete(script_id, video_id)
+        return self._get_project(script_id)
 
     def select_video_for_frame(self, script_id: str, frame_id: str, video_id: str):
         """把生成视频任务绑定为分镜帧当前选中结果。"""
@@ -249,16 +251,11 @@ class AssetService:
         if not video:
             raise ValueError("Video task not found")
         # 这里只更新分镜帧与已存在视频任务之间的绑定关系，避免为了一个选中态重写整项目图。
-        self.storyboard_frame_repository.patch(
-            script_id,
-            frame_id,
-            {
-                "selected_video_id": video_id,
-                "video_url": video.video_url,
-                "updated_at": utc_now(),
-            },
-        )
-        return self.project_repository.get(script_id)
+        frame.selected_video_id = video_id
+        frame.video_url = video.video_url
+        frame.updated_at = utc_now()
+        self.storyboard_frame_repository.save(script_id, frame)
+        return self._get_project(script_id)
 
     def upload_frame_image(self, script_id: str, frame_id: str, image_url: str):
         """登记手工上传的分镜图对象键，并把它作为候选图保存。"""
@@ -279,7 +276,8 @@ class AssetService:
         frame.rendered_image_asset.selected_id = variant.id
         frame.rendered_image_url = image_url
         frame.updated_at = utc_now()
-        return self._save_project(project)
+        self.storyboard_frame_repository.save(script_id, frame)
+        return self._get_project(script_id)
 
     def _get_project(self, script_id: str):
         """加载项目聚合，缺失时抛出统一错误。"""
@@ -306,15 +304,30 @@ class AssetService:
             raise ValueError(f"Asset {asset_id} of type {asset_type} not found")
         return target
 
-    def _save_project(self, project):
-        """持久化项目聚合变更，并返回最新读取结果。"""
-        # 保存前先把角色的 legacy/unit 素材容器补齐，避免某一侧图集丢失时被整图 replace_graph 放大成数据清空。
+    def _persist_asset_scope(self, project, asset_type: str, asset, preserve_missing_media: bool = True):
+        """按最小作用域持久化单个素材或分镜帧。"""
+        # 保存前先把角色的 legacy/unit 素材容器补齐，避免某一侧图集丢失时被局部 upsert 放大成选中态错乱。
         self._normalize_character_assets(project)
-        # 聚合更新统一走这里落库，便于后续把保存耗时或版本冲突监控集中到同一出口。
-        logger.info("ASSET_SERVICE: _save_project project_id=%s", project.id)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
-        return self.project_repository.get(project.id)
+        logger.info("ASSET_SERVICE: _persist_asset_scope project_id=%s asset_type=%s asset_id=%s", project.id, asset_type, asset.id)
+        if asset_type == "storyboard_frame":
+            asset.updated_at = utc_now()
+            self.storyboard_frame_repository.save(project.id, asset)
+            return self._get_project(project.id)
+        repository = self._asset_repository(asset_type)
+        if asset_type == "character":
+            repository.save("project", project.id, asset, preserve_missing_media=preserve_missing_media)
+        else:
+            repository.save("project", project.id, asset)
+        return self._get_project(project.id)
+
+    def _asset_repository(self, asset_type: str):
+        if asset_type == "character":
+            return self.character_repository
+        if asset_type == "scene":
+            return self.scene_repository
+        if asset_type == "prop":
+            return self.prop_repository
+        raise ValueError(f"Unsupported asset_type: {asset_type}")
 
     def _normalize_character_assets(self, project) -> None:
         """在落库前对角色图片容器做双向补齐，减少 legacy/unit 图集分叉。"""

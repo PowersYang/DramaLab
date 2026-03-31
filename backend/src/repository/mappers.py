@@ -95,6 +95,10 @@ def _active(query):
     return query
 
 
+def _scoped(query, include_deleted: bool = False):
+    return query if include_deleted else _active(query)
+
+
 def _image_variant_record(owner_type: str, owner_id: str, variant_group: str, variant: ImageVariant, tenant: dict) -> ImageVariantRecord:
     return ImageVariantRecord(
         id=variant.id,
@@ -108,6 +112,12 @@ def _image_variant_record(owner_type: str, owner_id: str, variant_group: str, va
         upload_type=variant.upload_type,
         created_at=variant.created_at,
         updated_at=variant.created_at,
+        # replace_graph 会先软删除旧图谱；这里如果不显式清空删除标记，
+        # session.merge 命中同主键时会把旧的 is_deleted/deleted_at 原样保留下来，
+        # 于是图片其实还在库里，但 hydrate 查询永远读不到。
+        is_deleted=False,
+        deleted_at=None,
+        deleted_by=None,
         **tenant,
     )
 
@@ -125,6 +135,11 @@ def _video_variant_record(owner_type: str, owner_id: str, variant_group: str, va
         is_favorited=variant.is_favorited,
         created_at=variant.created_at,
         updated_at=variant.created_at,
+        # 视频变体和图片变体共享同一套 replace_graph 软删路径；
+        # 不在这里复位删除态，就会出现“视频生成成功过，但前端始终查不到”的假消失。
+        is_deleted=False,
+        deleted_at=None,
+        deleted_by=None,
         **tenant,
     )
 
@@ -176,6 +191,26 @@ def _group_video_variants(records: Iterable[VideoVariantRecord]):
             )
         )
     return grouped
+
+
+def _recover_soft_deleted_variant_groups(active_records, deleted_records):
+    active_groups = {
+        (record.owner_type, record.owner_id, record.variant_group)
+        for record in active_records
+    }
+    recovered_records = list(active_records)
+    grouped_deleted_records = defaultdict(list)
+    for record in deleted_records:
+        grouped_deleted_records[(record.owner_type, record.owner_id, record.variant_group)].append(record)
+
+    for group_key, records in grouped_deleted_records.items():
+        if group_key in active_groups:
+            continue
+        # 历史 bug 会把整组候选图/视频在 replace_graph 时误标成 deleted；
+        # 当某个仍然存活的素材组已经没有任何 active 变体时，优先回退这组软删快照，
+        # 避免“库里有记录、前端完全消失”的数据假丢失。
+        recovered_records.extend(sorted(records, key=lambda item: (item.created_at, item.id)))
+    return recovered_records
 
 
 def _video_task_from_record(record: VideoTaskRecord) -> VideoTask:
@@ -428,20 +463,20 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     project_ids = [record.id for record in project_records]
     child_query_started_at = time.perf_counter()
     # 子资源默认全部走活跃态过滤，这样项目聚合读出来就是“当前视图”，不是历史快照全集。
-    characters = _active(session.query(CharacterRecord)).filter(
+    characters = _scoped(session.query(CharacterRecord), include_deleted).filter(
         CharacterRecord.owner_type == "project",
         CharacterRecord.owner_id.in_(project_ids),
     ).order_by(CharacterRecord.owner_id.asc(), CharacterRecord.created_at.asc(), CharacterRecord.id.asc()).all()
-    scenes = _active(session.query(SceneRecord)).filter(
+    scenes = _scoped(session.query(SceneRecord), include_deleted).filter(
         SceneRecord.owner_type == "project",
         SceneRecord.owner_id.in_(project_ids),
     ).order_by(SceneRecord.owner_id.asc(), SceneRecord.created_at.asc(), SceneRecord.id.asc()).all()
-    props = _active(session.query(PropRecord)).filter(
+    props = _scoped(session.query(PropRecord), include_deleted).filter(
         PropRecord.owner_type == "project",
         PropRecord.owner_id.in_(project_ids),
     ).order_by(PropRecord.owner_id.asc(), PropRecord.created_at.asc(), PropRecord.id.asc()).all()
-    frames = _active(session.query(StoryboardFrameRecord)).filter(StoryboardFrameRecord.project_id.in_(project_ids)).order_by(StoryboardFrameRecord.project_id, StoryboardFrameRecord.frame_order).all()
-    tasks = _active(session.query(VideoTaskRecord)).filter(
+    frames = _scoped(session.query(StoryboardFrameRecord), include_deleted).filter(StoryboardFrameRecord.project_id.in_(project_ids)).order_by(StoryboardFrameRecord.project_id, StoryboardFrameRecord.frame_order).all()
+    tasks = _scoped(session.query(VideoTaskRecord), include_deleted).filter(
         VideoTaskRecord.project_id.in_(project_ids)
     ).order_by(VideoTaskRecord.project_id.asc(), VideoTaskRecord.created_at.asc(), VideoTaskRecord.id.asc()).all()
 
@@ -449,7 +484,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     scene_ids = [record.id for record in scenes]
     prop_ids = [record.id for record in props]
     frame_ids = [record.id for record in frames]
-    unit_records = _active(session.query(CharacterAssetUnitRecord)).filter(
+    unit_records = _scoped(session.query(CharacterAssetUnitRecord), include_deleted).filter(
         CharacterAssetUnitRecord.character_id.in_(character_ids)
     ).order_by(
         CharacterAssetUnitRecord.character_id.asc(),
@@ -458,17 +493,32 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     ).all() if character_ids else []
     unit_ids = [record.id for record in unit_records]
 
-    image_variant_records = _active(session.query(ImageVariantRecord)).filter(
+    image_variant_filter = (
         ((ImageVariantRecord.owner_type == "character") & (ImageVariantRecord.owner_id.in_(character_ids))) |
         ((ImageVariantRecord.owner_type == "character_asset_unit") & (ImageVariantRecord.owner_id.in_(unit_ids))) |
         ((ImageVariantRecord.owner_type == "scene") & (ImageVariantRecord.owner_id.in_(scene_ids))) |
         ((ImageVariantRecord.owner_type == "prop") & (ImageVariantRecord.owner_id.in_(prop_ids))) |
         ((ImageVariantRecord.owner_type == "storyboard_frame") & (ImageVariantRecord.owner_id.in_(frame_ids)))
-    ).all() if (character_ids or unit_ids or scene_ids or prop_ids or frame_ids) else []
+    )
+    image_variant_records = _scoped(session.query(ImageVariantRecord), include_deleted).filter(
+        image_variant_filter
+    ).order_by(ImageVariantRecord.created_at.asc(), ImageVariantRecord.id.asc()).all() if (character_ids or unit_ids or scene_ids or prop_ids or frame_ids) else []
+    if not include_deleted and (character_ids or unit_ids or scene_ids or prop_ids or frame_ids):
+        deleted_image_variant_records = session.query(ImageVariantRecord).filter(
+            image_variant_filter,
+            ImageVariantRecord.is_deleted.is_(True),
+        ).order_by(ImageVariantRecord.created_at.asc(), ImageVariantRecord.id.asc()).all()
+        image_variant_records = _recover_soft_deleted_variant_groups(image_variant_records, deleted_image_variant_records)
 
-    video_variant_records = _active(session.query(VideoVariantRecord)).filter(
+    video_variant_records = _scoped(session.query(VideoVariantRecord), include_deleted).filter(
         (VideoVariantRecord.owner_type == "character_asset_unit") & (VideoVariantRecord.owner_id.in_(unit_ids))
-    ).all() if unit_ids else []
+    ).order_by(VideoVariantRecord.created_at.asc(), VideoVariantRecord.id.asc()).all() if unit_ids else []
+    if not include_deleted and unit_ids:
+        deleted_video_variant_records = session.query(VideoVariantRecord).filter(
+            (VideoVariantRecord.owner_type == "character_asset_unit") & (VideoVariantRecord.owner_id.in_(unit_ids)),
+            VideoVariantRecord.is_deleted.is_(True),
+        ).order_by(VideoVariantRecord.created_at.asc(), VideoVariantRecord.id.asc()).all()
+        video_variant_records = _recover_soft_deleted_variant_groups(video_variant_records, deleted_video_variant_records)
 
     image_groups = _group_image_variants(image_variant_records)
     video_groups = _group_video_variants(video_variant_records)
@@ -502,10 +552,22 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
 
     chars_by_project = defaultdict(list)
     for record in characters:
-        full_body_asset = _build_image_asset(
-            record.full_body_asset.selected_id if hasattr(record, "full_body_asset") else None,
-            [],
-        )
+        full_body_unit = units_by_character.get(record.id, {}).get("full_body", AssetUnit())
+        three_views_unit = units_by_character.get(record.id, {}).get("three_views", AssetUnit())
+        head_shot_unit = units_by_character.get(record.id, {}).get("head_shot", AssetUnit())
+
+        full_body_variants = image_groups.get(("character", record.id, "full_body_asset"), [])
+        if not full_body_variants and full_body_unit.image_variants:
+            full_body_variants = [variant.model_copy(deep=True) for variant in full_body_unit.image_variants]
+
+        three_view_variants = image_groups.get(("character", record.id, "three_view_asset"), [])
+        if not three_view_variants and three_views_unit.image_variants:
+            three_view_variants = [variant.model_copy(deep=True) for variant in three_views_unit.image_variants]
+
+        headshot_variants = image_groups.get(("character", record.id, "headshot_asset"), [])
+        if not headshot_variants and head_shot_unit.image_variants:
+            headshot_variants = [variant.model_copy(deep=True) for variant in head_shot_unit.image_variants]
+
         character = Character(
             id=record.id,
             created_at=record.created_at,
@@ -515,18 +577,18 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
             gender=record.gender,
             clothing=record.clothing,
             visual_weight=record.visual_weight,
-            full_body=units_by_character.get(record.id, {}).get("full_body", AssetUnit()),
-            three_views=units_by_character.get(record.id, {}).get("three_views", AssetUnit()),
-            head_shot=units_by_character.get(record.id, {}).get("head_shot", AssetUnit()),
+            full_body=full_body_unit,
+            three_views=three_views_unit,
+            head_shot=head_shot_unit,
             full_body_image_url=record.full_body_image_url,
             full_body_prompt=record.full_body_prompt,
-            full_body_asset=_build_image_asset(record.full_body_asset_selected_id, image_groups.get(("character", record.id, "full_body_asset"), [])),
+            full_body_asset=_build_image_asset(record.full_body_asset_selected_id or full_body_unit.selected_image_id, full_body_variants),
             three_view_image_url=record.three_view_image_url,
             three_view_prompt=record.three_view_prompt,
-            three_view_asset=_build_image_asset(record.three_view_asset_selected_id, image_groups.get(("character", record.id, "three_view_asset"), [])),
+            three_view_asset=_build_image_asset(record.three_view_asset_selected_id or three_views_unit.selected_image_id, three_view_variants),
             headshot_image_url=record.headshot_image_url,
             headshot_prompt=record.headshot_prompt,
-            headshot_asset=_build_image_asset(record.headshot_asset_selected_id, image_groups.get(("character", record.id, "headshot_asset"), [])),
+            headshot_asset=_build_image_asset(record.headshot_asset_selected_id or head_shot_unit.selected_image_id, headshot_variants),
             video_assets=tasks_by_asset.get((record.owner_id, record.id), []),
             video_prompt=record.video_prompt,
             image_url=record.image_url,
@@ -693,20 +755,35 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
 
     series_ids = [record.id for record in series_records]
     child_query_started_at = time.perf_counter()
-    characters = _active(session.query(CharacterRecord)).filter(CharacterRecord.owner_type == "series", CharacterRecord.owner_id.in_(series_ids)).all()
-    scenes = _active(session.query(SceneRecord)).filter(SceneRecord.owner_type == "series", SceneRecord.owner_id.in_(series_ids)).all()
-    props = _active(session.query(PropRecord)).filter(PropRecord.owner_type == "series", PropRecord.owner_id.in_(series_ids)).all()
-    unit_records = _active(session.query(CharacterAssetUnitRecord)).filter(CharacterAssetUnitRecord.character_id.in_([record.id for record in characters])).all() if characters else []
+    characters = _scoped(session.query(CharacterRecord), include_deleted).filter(CharacterRecord.owner_type == "series", CharacterRecord.owner_id.in_(series_ids)).all()
+    scenes = _scoped(session.query(SceneRecord), include_deleted).filter(SceneRecord.owner_type == "series", SceneRecord.owner_id.in_(series_ids)).all()
+    props = _scoped(session.query(PropRecord), include_deleted).filter(PropRecord.owner_type == "series", PropRecord.owner_id.in_(series_ids)).all()
+    unit_records = _scoped(session.query(CharacterAssetUnitRecord), include_deleted).filter(CharacterAssetUnitRecord.character_id.in_([record.id for record in characters])).all() if characters else []
     unit_ids = [record.id for record in unit_records]
-    image_variant_records = _active(session.query(ImageVariantRecord)).filter(
+    image_variant_filter = (
         ((ImageVariantRecord.owner_type == "character") & (ImageVariantRecord.owner_id.in_([record.id for record in characters]))) |
         ((ImageVariantRecord.owner_type == "character_asset_unit") & (ImageVariantRecord.owner_id.in_(unit_ids))) |
         ((ImageVariantRecord.owner_type == "scene") & (ImageVariantRecord.owner_id.in_([record.id for record in scenes]))) |
         ((ImageVariantRecord.owner_type == "prop") & (ImageVariantRecord.owner_id.in_([record.id for record in props])))
-    ).all() if (characters or scenes or props or unit_ids) else []
-    video_variant_records = _active(session.query(VideoVariantRecord)).filter(
+    )
+    image_variant_records = _scoped(session.query(ImageVariantRecord), include_deleted).filter(
+        image_variant_filter
+    ).order_by(ImageVariantRecord.created_at.asc(), ImageVariantRecord.id.asc()).all() if (characters or scenes or props or unit_ids) else []
+    if not include_deleted and (characters or scenes or props or unit_ids):
+        deleted_image_variant_records = session.query(ImageVariantRecord).filter(
+            image_variant_filter,
+            ImageVariantRecord.is_deleted.is_(True),
+        ).order_by(ImageVariantRecord.created_at.asc(), ImageVariantRecord.id.asc()).all()
+        image_variant_records = _recover_soft_deleted_variant_groups(image_variant_records, deleted_image_variant_records)
+    video_variant_records = _scoped(session.query(VideoVariantRecord), include_deleted).filter(
         (VideoVariantRecord.owner_type == "character_asset_unit") & (VideoVariantRecord.owner_id.in_(unit_ids))
-    ).all() if unit_ids else []
+    ).order_by(VideoVariantRecord.created_at.asc(), VideoVariantRecord.id.asc()).all() if unit_ids else []
+    if not include_deleted and unit_ids:
+        deleted_video_variant_records = session.query(VideoVariantRecord).filter(
+            (VideoVariantRecord.owner_type == "character_asset_unit") & (VideoVariantRecord.owner_id.in_(unit_ids)),
+            VideoVariantRecord.is_deleted.is_(True),
+        ).order_by(VideoVariantRecord.created_at.asc(), VideoVariantRecord.id.asc()).all()
+        video_variant_records = _recover_soft_deleted_variant_groups(video_variant_records, deleted_video_variant_records)
 
     image_groups = _group_image_variants(image_variant_records)
     video_groups = _group_video_variants(video_variant_records)
@@ -728,6 +805,22 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
 
     chars_by_series = defaultdict(list)
     for record in characters:
+        full_body_unit = units_by_character.get(record.id, {}).get("full_body", AssetUnit())
+        three_views_unit = units_by_character.get(record.id, {}).get("three_views", AssetUnit())
+        head_shot_unit = units_by_character.get(record.id, {}).get("head_shot", AssetUnit())
+
+        full_body_variants = image_groups.get(("character", record.id, "full_body_asset"), [])
+        if not full_body_variants and full_body_unit.image_variants:
+            full_body_variants = [variant.model_copy(deep=True) for variant in full_body_unit.image_variants]
+
+        three_view_variants = image_groups.get(("character", record.id, "three_view_asset"), [])
+        if not three_view_variants and three_views_unit.image_variants:
+            three_view_variants = [variant.model_copy(deep=True) for variant in three_views_unit.image_variants]
+
+        headshot_variants = image_groups.get(("character", record.id, "headshot_asset"), [])
+        if not headshot_variants and head_shot_unit.image_variants:
+            headshot_variants = [variant.model_copy(deep=True) for variant in head_shot_unit.image_variants]
+
         chars_by_series[record.owner_id].append(
             Character(
                 id=record.id,
@@ -737,18 +830,18 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
                 gender=record.gender,
                 clothing=record.clothing,
                 visual_weight=record.visual_weight,
-                full_body=units_by_character.get(record.id, {}).get("full_body", AssetUnit()),
-                three_views=units_by_character.get(record.id, {}).get("three_views", AssetUnit()),
-                head_shot=units_by_character.get(record.id, {}).get("head_shot", AssetUnit()),
+                full_body=full_body_unit,
+                three_views=three_views_unit,
+                head_shot=head_shot_unit,
                 full_body_image_url=record.full_body_image_url,
                 full_body_prompt=record.full_body_prompt,
-                full_body_asset=_build_image_asset(record.full_body_asset_selected_id, image_groups.get(("character", record.id, "full_body_asset"), [])),
+                full_body_asset=_build_image_asset(record.full_body_asset_selected_id or full_body_unit.selected_image_id, full_body_variants),
                 three_view_image_url=record.three_view_image_url,
                 three_view_prompt=record.three_view_prompt,
-                three_view_asset=_build_image_asset(record.three_view_asset_selected_id, image_groups.get(("character", record.id, "three_view_asset"), [])),
+                three_view_asset=_build_image_asset(record.three_view_asset_selected_id or three_views_unit.selected_image_id, three_view_variants),
                 headshot_image_url=record.headshot_image_url,
                 headshot_prompt=record.headshot_prompt,
-                headshot_asset=_build_image_asset(record.headshot_asset_selected_id, image_groups.get(("character", record.id, "headshot_asset"), [])),
+                headshot_asset=_build_image_asset(record.headshot_asset_selected_id or head_shot_unit.selected_image_id, headshot_variants),
                 video_assets=[],
                 video_prompt=record.video_prompt,
                 image_url=record.image_url,

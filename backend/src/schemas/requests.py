@@ -480,6 +480,17 @@ class RenderFrameRequest(BaseModel):
     batch_size: int = 1
 
 
+class BatchRenderFrameItemRequest(BaseModel):
+    frame_id: str
+    composition_data: Optional[Dict[str, Any]] = None
+    prompt: str
+    batch_size: int = 1
+
+
+class BatchRenderFrameRequest(BaseModel):
+    items: List[BatchRenderFrameItemRequest] = Field(default_factory=list)
+
+
 class SelectVideoRequest(BaseModel):
     video_id: str
 

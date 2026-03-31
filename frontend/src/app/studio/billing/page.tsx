@@ -15,6 +15,13 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   reversal: "冲正",
 };
 
+function formatTransactionAmount(item: BillingTransactionSummary): string {
+  if (item.amount_credits === 0) {
+    return "0 豆";
+  }
+  return `${item.direction === "credit" ? "+" : "-"}${item.amount_credits} 豆`;
+}
+
 export default function StudioBillingRoutePage() {
   const hasCapability = useAuthStore((state) => state.hasCapability);
   const me = useAuthStore((state) => state.me);
@@ -137,7 +144,7 @@ export default function StudioBillingRoutePage() {
                     <div className="mt-1 text-slate-500">{new Date(item.created_at).toLocaleString("zh-CN")}</div>
                   </div>
                   <div className="text-right">
-                    <div className="font-semibold text-emerald-700">+{item.amount_credits} 豆</div>
+                    <div className="font-semibold text-emerald-700">{formatTransactionAmount(item)}</div>
                     <div className="mt-1 text-slate-500">{item.cash_amount_cents ? `¥${(item.cash_amount_cents / 100).toFixed(2)}` : "系统入账"}</div>
                   </div>
                 </div>
@@ -154,13 +161,13 @@ export default function StudioBillingRoutePage() {
           </div>
           <div className="divide-y divide-slate-100">
             {grouped.debits.length ? grouped.debits.map((item) => (
-              <div key={item.id} className="flex items-center justify-between px-6 py-4 text-sm">
-                <div>
-                  <div className="font-semibold text-slate-900">{item.task_type || TRANSACTION_TYPE_LABELS[item.transaction_type] || item.transaction_type}</div>
-                  <div className="mt-1 text-slate-500">{new Date(item.created_at).toLocaleString("zh-CN")}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-semibold text-rose-700">-{item.amount_credits} 豆</div>
+                <div key={item.id} className="flex items-center justify-between px-6 py-4 text-sm">
+                  <div>
+                    <div className="font-semibold text-slate-900">{item.task_type || TRANSACTION_TYPE_LABELS[item.transaction_type] || item.transaction_type}</div>
+                    <div className="mt-1 text-slate-500">{new Date(item.created_at).toLocaleString("zh-CN")}</div>
+                  </div>
+                  <div className="text-right">
+                  <div className={`font-semibold ${item.amount_credits === 0 ? "text-slate-700" : "text-rose-700"}`}>{formatTransactionAmount(item)}</div>
                   <div className="mt-1 text-slate-500">余额 {item.balance_after}</div>
                 </div>
               </div>

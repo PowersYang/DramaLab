@@ -1,7 +1,8 @@
 from typing import List
 
 from .base import BaseRepository
-from .mappers import _insert_scene, _video_task_record, hydrate_project_map, hydrate_series_map
+from .image_variant_repository import ImageVariantRepository
+from .mappers import _audit_time_kwargs, hydrate_project_map, hydrate_series_map
 from .owner_context import load_owner_context, owner_tenant_kwargs
 from ..db.models import ImageVariantRecord, SceneRecord, VideoTaskRecord
 from ..schemas.models import Scene
@@ -9,6 +10,9 @@ from ..utils.datetime import utc_now
 
 
 class SceneRepository(BaseRepository[Scene]):
+    def __init__(self):
+        self.image_variant_repository = ImageVariantRepository()
+
     def list_by_owner(self, owner_type: str, owner_id: str, include_deleted: bool = False) -> List[Scene]:
         with self._with_session() as session:
             if owner_type == "project":
@@ -25,18 +29,45 @@ class SceneRepository(BaseRepository[Scene]):
                 return scene
         return None
 
-    def create(self, owner_type: str, owner_id: str, scene: Scene) -> Scene:
-        with self._with_session() as session:
-            ctx = load_owner_context(session, owner_type, owner_id)
-            _insert_scene(session, scene, owner_type, owner_id, owner_tenant_kwargs(ctx))
-            if owner_type == "project":
-                for task in scene.video_assets:
-                    session.merge(_video_task_record(task, owner_tenant_kwargs(ctx)))
+    def create(self, owner_type: str, owner_id: str, scene: Scene, session=None) -> Scene:
+        with self._with_session(session) as active_session:
+            ctx = load_owner_context(active_session, owner_type, owner_id)
+            tenant = owner_tenant_kwargs(ctx)
+            active_session.merge(
+                SceneRecord(
+                    id=scene.id,
+                    owner_type=owner_type,
+                    owner_id=owner_id,
+                    name=scene.name,
+                    description=scene.description,
+                    visual_weight=scene.visual_weight,
+                    time_of_day=scene.time_of_day,
+                    lighting_mood=scene.lighting_mood,
+                    image_url=scene.image_url,
+                    image_selected_id=(scene.image_asset.selected_id if scene.image_asset else None),
+                    video_prompt=scene.video_prompt,
+                    locked=scene.locked,
+                    status=scene.status,
+                    is_deleted=False,
+                    deleted_at=None,
+                    deleted_by=None,
+                    **tenant,
+                    **_audit_time_kwargs(scene),
+                )
+            )
+            self.image_variant_repository.sync_exact(
+                "scene",
+                scene.id,
+                "image_asset",
+                list(scene.image_asset.variants if scene.image_asset else []),
+                tenant,
+                session=active_session,
+            )
         return scene
 
-    def patch(self, owner_type: str, owner_id: str, scene_id: str, patch: dict) -> Scene:
-        with self._with_session() as session:
-            record = self._get_active(session, SceneRecord, scene_id)
+    def patch(self, owner_type: str, owner_id: str, scene_id: str, patch: dict, session=None) -> Scene:
+        with self._with_session(session) as active_session:
+            record = self._get_active(active_session, SceneRecord, scene_id)
             if record is None or record.owner_type != owner_type or record.owner_id != owner_id:
                 raise ValueError(f"Scene {scene_id} not found")
             self._patch_record(record, patch)
@@ -50,9 +81,8 @@ class SceneRepository(BaseRepository[Scene]):
             if owner_type == "project":
                 active_session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id == owner_id, VideoTaskRecord.asset_id == scene_id, VideoTaskRecord.is_deleted.is_(False)).update({"is_deleted": True, "deleted_at": now, "updated_at": now, "deleted_by": deleted_by}, synchronize_session=False)
 
-    def save(self, owner_type: str, owner_id: str, scene: Scene) -> Scene:
-        self.soft_delete(owner_type, owner_id, scene.id)
-        return self.create(owner_type, owner_id, scene)
+    def save(self, owner_type: str, owner_id: str, scene: Scene, session=None) -> Scene:
+        return self.create(owner_type, owner_id, scene, session=session)
 
     def delete(self, owner_type: str, owner_id: str, scene_id: str, session=None) -> None:
         self.soft_delete(owner_type, owner_id, scene_id, session=session)

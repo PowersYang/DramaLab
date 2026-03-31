@@ -7,7 +7,7 @@
 import uuid
 
 from ...common.log import get_logger
-from ...repository import ProjectRepository, SeriesRepository
+from ...repository import CharacterRepository, ProjectRepository, PropRepository, SceneRepository, SeriesRepository
 from ...schemas.models import PromptConfig, Series
 from ...utils.datetime import utc_now
 from .model_provider_service import ModelProviderService
@@ -22,6 +22,9 @@ class SeriesService:
     def __init__(self):
         self.series_repository = SeriesRepository()
         self.project_repository = ProjectRepository()
+        self.character_repository = CharacterRepository()
+        self.scene_repository = SceneRepository()
+        self.prop_repository = PropRepository()
         self.model_provider_service = ModelProviderService()
 
     def create_series(
@@ -84,9 +87,15 @@ class SeriesService:
         for key, value in updates.items():
             if hasattr(series, key) and key not in ("id", "created_at", "episode_ids"):
                 setattr(series, key, value)
-        series.updated_at = utc_now()
         logger.info("SERIES_SERVICE: update_series completed series_id=%s", series_id)
-        return self.series_repository.replace_graph(series)
+        patch = {
+            "updated_at": utc_now(),
+        }
+        for field in ("title", "description", "art_direction", "model_settings", "prompt_config"):
+            if hasattr(series, field):
+                value = getattr(series, field)
+                patch[field] = value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+        return self.series_repository.patch_metadata(series_id, patch, expected_version=series.version)
 
     def delete_series(self, series_id: str):
         """删除系列，并解除所有已关联分集。"""
@@ -118,20 +127,15 @@ class SeriesService:
             raise ValueError("Script not found")
         if project.series_id and project.series_id != series_id:
             old_series = self.series_repository.get(project.series_id)
-            if old_series and script_id in old_series.episode_ids:
-                old_series.episode_ids.remove(script_id)
-                old_series.updated_at = utc_now()
-                self.series_repository.replace_graph(old_series)
-        if script_id not in series.episode_ids:
-            series.episode_ids.append(script_id)
+            if old_series:
+                self.series_repository.patch_metadata(old_series.id, {"updated_at": utc_now()}, expected_version=old_series.version)
         project.series_id = series_id
-        project.episode_number = episode_number or len(series.episode_ids)
+        project.episode_number = episode_number or len(series.episode_ids or []) or 1
         project.updated_at = utc_now()
-        series.updated_at = utc_now()
         self.project_repository.patch_metadata(script_id, {"series_id": series_id, "episode_number": project.episode_number, "updated_at": utc_now()}, expected_version=project.version)
-        self.series_repository.replace_graph(series)
+        self.series_repository.patch_metadata(series.id, {"updated_at": utc_now()}, expected_version=series.version)
         logger.info("SERIES_SERVICE: add_episode completed series_id=%s script_id=%s assigned_episode_number=%s", series_id, script_id, project.episode_number)
-        return series
+        return self.series_repository.get(series_id)
 
     def remove_episode(self, series_id: str, script_id: str):
         """把一个分集从系列中移除。"""
@@ -140,17 +144,15 @@ class SeriesService:
         if not series:
             logger.warning("SERIES_SERVICE: remove_episode series_missing series_id=%s", series_id)
             raise ValueError("Series not found")
-        if script_id in series.episode_ids:
-            series.episode_ids.remove(script_id)
         project = self.project_repository.get(script_id)
         if project:
             project.series_id = None
             project.episode_number = None
             project.updated_at = utc_now()
             self.project_repository.patch_metadata(script_id, {"series_id": None, "episode_number": None, "updated_at": utc_now()}, expected_version=project.version)
-        series.updated_at = utc_now()
         logger.info("SERIES_SERVICE: remove_episode completed series_id=%s remaining_episodes=%s", series_id, len(series.episode_ids))
-        return self.series_repository.replace_graph(series)
+        self.series_repository.patch_metadata(series.id, {"updated_at": utc_now()}, expected_version=series.version)
+        return self.series_repository.get(series_id)
 
     def get_episodes(self, series_id: str):
         """列出当前挂在该系列下的项目。"""
@@ -187,8 +189,8 @@ class SeriesService:
             raise ValueError("Series not found")
         asset = self._find_series_asset(series, asset_id, asset_type)
         asset.locked = not asset.locked
-        series.updated_at = utc_now()
-        return self.series_repository.replace_graph(series)
+        self._asset_repository(asset_type).save("series", series_id, asset)
+        return self.series_repository.get(series_id)
 
     def update_asset_image(self, series_id: str, asset_id: str, asset_type: str, image_url: str):
         """更新系列共享资产当前选中的图片地址。"""
@@ -200,8 +202,8 @@ class SeriesService:
         asset.image_url = image_url
         if asset_type == "character":
             asset.avatar_url = image_url
-        series.updated_at = utc_now()
-        return self.series_repository.replace_graph(series)
+        self._asset_repository(asset_type).save("series", series_id, asset)
+        return self.series_repository.get(series_id)
 
     def update_asset_attributes(self, series_id: str, asset_id: str, asset_type: str, attributes: dict):
         """增量更新系列共享资产的可变属性。"""
@@ -213,8 +215,17 @@ class SeriesService:
         for key, value in attributes.items():
             if hasattr(asset, key):
                 setattr(asset, key, value)
-        series.updated_at = utc_now()
-        return self.series_repository.replace_graph(series)
+        self._asset_repository(asset_type).save("series", series_id, asset)
+        return self.series_repository.get(series_id)
+
+    def _asset_repository(self, asset_type: str):
+        if asset_type == "character":
+            return self.character_repository
+        if asset_type == "scene":
+            return self.scene_repository
+        if asset_type == "prop":
+            return self.prop_repository
+        raise ValueError(f"Unsupported asset_type: {asset_type}")
 
     def _find_series_asset(self, series, asset_id: str, asset_type: str):
         """按逻辑类型和 id 解析系列中的共享资产对象。"""

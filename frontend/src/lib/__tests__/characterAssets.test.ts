@@ -58,7 +58,7 @@ describe("characterAssets", () => {
         expect(updated.image_url).toBe("oss://hero-b");
     });
 
-    it("prefers the panel that actually has the recent multi-candidate batch", () => {
+    it("opens the workbench on full body first when the master asset already exists", () => {
         const character: Character = {
             id: "char_3",
             name: "Hero",
@@ -81,6 +81,6 @@ describe("characterAssets", () => {
             },
         };
 
-        expect(getPreferredCharacterPanel(character)).toBe("three_view");
+        expect(getPreferredCharacterPanel(character)).toBe("full_body");
     });
 });

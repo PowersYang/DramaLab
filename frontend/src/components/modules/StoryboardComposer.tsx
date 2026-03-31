@@ -1,30 +1,161 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { Fragment, useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-    Layout, Image as ImageIcon, Box, Type, Move,
-    ZoomIn, ZoomOut, Layers, Settings, Play,
-    ChevronRight, ChevronLeft, Trash2, Copy, Wand2, Users, FileText, RefreshCw, Loader2, X, Lock, Unlock,
+    Layout, Image as ImageIcon, Trash2, Copy, Wand2, RefreshCw, Loader2, X, Lock, Unlock,
     Plus, ArrowUp, ArrowDown, Zap, Upload, Film
 } from "lucide-react";
-import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
-import { useProjectStore } from "@/store/projectStore";
-import { api, API_URL, crudApi } from "@/lib/api";
+import {
+    useProjectStore,
+    type Character,
+    type ImageAsset,
+    type Project as StoreProject,
+    type Prop,
+    type Scene,
+    type StoryboardFrame as StoreStoryboardFrame,
+    type VideoTask as StoreVideoTask,
+} from "@/store/projectStore";
+import { api, crudApi, type StoryboardRenderPayload, type TaskJob } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
-import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
+import { getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
 
+const ACTIVE_STORYBOARD_JOB_STATUSES = ["queued", "claimed", "running", "retry_waiting", "cancel_requested"] as const;
+
+interface StoryboardFrameModel extends StoreStoryboardFrame {
+    action_description: string;
+    dialogue?: string;
+    image_prompt?: string;
+    camera_angle?: string;
+    camera_movement?: string;
+    character_ids?: string[];
+    prop_ids?: string[];
+    selected_video_id?: string | null;
+    updated_at?: string | number;
+}
+
+type StoryboardProject = Omit<StoreProject, "frames" | "video_tasks" | "characters" | "scenes" | "props"> & {
+    frames: StoryboardFrameModel[];
+    video_tasks?: StoreVideoTask[];
+    characters: Character[];
+    scenes: Scene[];
+    props: Prop[];
+};
+
+interface RenderCompositionData {
+    character_ids?: string[];
+    prop_ids?: string[];
+    scene_id?: string;
+    reference_image_urls: string[];
+}
+
+interface CreateFramePayload {
+    action_description: string;
+    dialogue: string;
+    scene_id: string;
+    camera_angle: string;
+    insert_at?: number;
+}
+
+function getFrameDisplayNumber(frame: StoryboardFrameModel, fallbackIndex: number): number {
+    return typeof frame.frame_order === "number" ? frame.frame_order + 1 : fallbackIndex + 1;
+}
+
+// 中文注释：分镜渲染需要尽量复用素材选中规则，避免单张生成和批量生成拼出来的引用图不一致。
+function getSelectedVariantUrl(asset?: ImageAsset | null): string | null {
+    if (!asset || !asset.variants || asset.variants.length === 0) return null;
+
+    if (asset.selected_id) {
+        const selectedVariant = asset.variants.find((variant) => variant.id === asset.selected_id);
+        if (selectedVariant?.url) {
+            return selectedVariant.url;
+        }
+    }
+
+    return asset.variants[0]?.url || null;
+}
+
+// 中文注释：把分镜渲染请求的 prompt 和参考图拼装抽成统一方法，保证顶部批量入口和单帧入口行为一致。
+function buildStoryboardRenderPayload(project: StoryboardProject, frame: StoryboardFrameModel) {
+    const compositionData: RenderCompositionData = {
+        character_ids: frame.character_ids,
+        prop_ids: frame.prop_ids,
+        scene_id: frame.scene_id,
+        reference_image_urls: []
+    };
+
+    if (frame.scene_id) {
+        const scene = project.scenes?.find((item) => item.id === frame.scene_id);
+        if (scene) {
+            const sceneUrl = getSelectedVariantUrl(scene.image_asset) || scene.image_url;
+            if (sceneUrl) {
+                compositionData.reference_image_urls.push(sceneUrl);
+            }
+        }
+    }
+
+    if (frame.character_ids && frame.character_ids.length > 0) {
+        frame.character_ids.forEach((characterId: string) => {
+            const character = project.characters?.find((item) => item.id === characterId);
+            if (!character) return;
+
+            const characterUrl = getSelectedVariantUrl(character.three_view_asset)
+                || getSelectedVariantUrl(character.full_body_asset)
+                || getSelectedVariantUrl(character.headshot_asset)
+                || character.three_view_image_url
+                || character.full_body_image_url
+                || character.headshot_image_url
+                || character.avatar_url
+                || character.image_url;
+
+            if (characterUrl) {
+                compositionData.reference_image_urls.push(characterUrl);
+            }
+        });
+    }
+
+    if (frame.prop_ids && frame.prop_ids.length > 0) {
+        frame.prop_ids.forEach((propId: string) => {
+            const prop = project.props?.find((item) => item.id === propId);
+            if (!prop) return;
+
+            const propUrl = getSelectedVariantUrl(prop.image_asset) || prop.image_url;
+            if (propUrl) {
+                compositionData.reference_image_urls.push(propUrl);
+            }
+        });
+    }
+
+    const artDirection = project?.art_direction;
+    const globalStylePrompt = artDirection?.style_config?.positive_prompt || "";
+
+    let finalPrompt = "";
+    if (frame.image_prompt && frame.image_prompt.trim()) {
+        finalPrompt = globalStylePrompt
+            ? `${globalStylePrompt} . ${frame.image_prompt}`
+            : frame.image_prompt;
+    } else {
+        finalPrompt = [globalStylePrompt, frame.action_description].filter(Boolean).join(" . ");
+    }
+
+    return { compositionData, finalPrompt };
+}
+
 export default function StoryboardComposer() {
-    const currentProject = useProjectStore((state) => state.currentProject);
+    const currentProject = useProjectStore((state) => state.currentProject) as StoryboardProject | null;
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
     const setSelectedFrameId = useProjectStore((state) => state.setSelectedFrameId);
     const updateProject = useProjectStore((state) => state.updateProject);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
+    const fetchProjectJobs = useTaskStore((state) => state.fetchProjectJobs);
+    const jobsById = useTaskStore((state) => state.jobsById);
+    const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
 
     // Use global rendering state (persists across module switches)
     const renderingFrames = useProjectStore((state) => state.renderingFrames);
@@ -39,9 +170,11 @@ export default function StoryboardComposer() {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [insertIndex, setInsertIndex] = useState<number | null>(null);
     const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
-    const [showScriptOverlay, setShowScriptOverlay] = useState(false);
+    const [renderAllBatchSize, setRenderAllBatchSize] = useState<1 | 2 | 3 | 4>(1);
+    const [isSubmittingAllFrames, setIsSubmittingAllFrames] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const previousActiveStoryboardJobIdsRef = useRef<string[]>([]);
     const [uploadTargetFrameId, setUploadTargetFrameId] = useState<string | null>(null);
     const { account, getTaskPrice, canAffordTask } = useBillingGuard();
     const storyboardAnalyzePrice = getTaskPrice("storyboard.analyze");
@@ -55,7 +188,7 @@ export default function StoryboardComposer() {
         }
 
         // 分镜展示始终以数据库中的 frame_order 为准，避免局部更新后出现视觉乱序。
-        return [...currentProject.frames].sort((a: any, b: any) => {
+        return [...currentProject.frames].sort((a, b) => {
             const orderA = typeof a?.frame_order === "number" ? a.frame_order : Number.MAX_SAFE_INTEGER;
             const orderB = typeof b?.frame_order === "number" ? b.frame_order : Number.MAX_SAFE_INTEGER;
             if (orderA !== orderB) {
@@ -65,6 +198,134 @@ export default function StoryboardComposer() {
         });
     }, [currentProject?.frames]);
 
+    const editableFrame = useMemo(
+        () => (editingFrameId ? sortedFrames.find((frame) => frame.id === editingFrameId) ?? null : null),
+        [editingFrameId, sortedFrames]
+    );
+
+    const activeStoryboardRenderJobs = useMemo(() => {
+        if (!currentProject) {
+            return [];
+        }
+
+        return (jobIdsByProject[currentProject.id] || [])
+            .map((jobId) => jobsById[jobId])
+            .filter((job): job is TaskJob => {
+                return Boolean(
+                    job
+                    && job.task_type === "storyboard.render"
+                    && ACTIVE_STORYBOARD_JOB_STATUSES.includes(job.status as typeof ACTIVE_STORYBOARD_JOB_STATUSES[number])
+                );
+            });
+    }, [currentProject, jobIdsByProject, jobsById]);
+
+    const activeStoryboardRenderJobIds = useMemo(
+        () => activeStoryboardRenderJobs.map((job) => job.id),
+        [activeStoryboardRenderJobs]
+    );
+
+    const activeStoryboardRenderFrameIds = useMemo(() => {
+        return new Set(
+            activeStoryboardRenderJobs
+                .map((job) => job.resource_id)
+                .filter((resourceId): resourceId is string => Boolean(resourceId))
+        );
+    }, [activeStoryboardRenderJobs]);
+
+    const batchRenderableFrames = useMemo(
+        () => sortedFrames.filter((frame) => !frame.locked && !activeStoryboardRenderFrameIds.has(frame.id)),
+        [activeStoryboardRenderFrameIds, sortedFrames]
+    );
+
+    useEffect(() => {
+        if (!currentProject || activeStoryboardRenderJobIds.length === 0) {
+            return;
+        }
+
+        let cancelled = false;
+        let timeoutId: number | null = null;
+
+        // 中文注释：分镜批量入队后依赖 taskStore 轮询活跃 job，让页面在后台生成期间也能持续更新状态。
+        const pollActiveStoryboardJobs = async () => {
+            try {
+                await fetchProjectJobs(currentProject.id, [...ACTIVE_STORYBOARD_JOB_STATUSES]);
+            } catch (error) {
+                console.error("Failed to poll active storyboard jobs:", error);
+            } finally {
+                if (!cancelled) {
+                    timeoutId = window.setTimeout(pollActiveStoryboardJobs, 3000);
+                }
+            }
+        };
+
+        timeoutId = window.setTimeout(pollActiveStoryboardJobs, 3000);
+        return () => {
+            cancelled = true;
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        };
+    }, [activeStoryboardRenderJobIds, currentProject, fetchProjectJobs]);
+
+    useEffect(() => {
+        if (!currentProject) {
+            previousActiveStoryboardJobIdsRef.current = [];
+            return;
+        }
+
+        const previousIds = previousActiveStoryboardJobIdsRef.current;
+        const activeIdSet = new Set(activeStoryboardRenderJobIds);
+        const finishedJobIds = previousIds.filter((jobId) => !activeIdSet.has(jobId));
+        previousActiveStoryboardJobIdsRef.current = activeStoryboardRenderJobIds;
+
+        if (finishedJobIds.length === 0) {
+            return;
+        }
+
+        let cancelled = false;
+
+        // 中文注释：仅在分镜渲染任务刚结束时补拉项目详情，避免历史完成任务导致页面重复刷新。
+        void (async () => {
+            try {
+                const refreshedProject = await api.getProject(currentProject.id);
+                if (!cancelled) {
+                    updateProject(currentProject.id, refreshedProject);
+                }
+            } catch (error) {
+                console.error("Failed to refresh project after storyboard render:", error);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeStoryboardRenderJobIds, currentProject, updateProject]);
+
+    // 中文注释：单帧和批量都走同一份 payload 构建逻辑，减少后续改 prompt/引用图规则时的遗漏。
+    const submitStoryboardRender = async (frame: StoryboardFrameModel, batchSize: number) => {
+        if (!currentProject) {
+            throw new Error("当前项目不存在");
+        }
+
+        const { compositionData, finalPrompt } = buildStoryboardRenderPayload(currentProject, frame);
+        return api.renderFrame(currentProject.id, frame.id, compositionData, finalPrompt, batchSize);
+    };
+
+    const buildStoryboardRenderBatchPayload = (frames: StoryboardFrameModel[], batchSize: number): StoryboardRenderPayload[] => {
+        if (!currentProject) {
+            return [];
+        }
+
+        return frames.map((frame) => {
+            const { compositionData, finalPrompt } = buildStoryboardRenderPayload(currentProject, frame);
+            return {
+                frame_id: frame.id,
+                composition_data: compositionData,
+                prompt: finalPrompt,
+                batch_size: batchSize,
+            };
+        });
+    };
 
 
     // NEW: Analyze script text to generate storyboard frames
@@ -102,7 +363,7 @@ export default function StoryboardComposer() {
             } else {
                 alert(`分镜生成失败：${job.error_message || "请查看控制台了解详情。"}`);
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Analyze to storyboard failed:", error);
             const detail = extractErrorDetail(error, "");
             if (detail.includes("JSON") || detail.includes("格式")) {
@@ -112,6 +373,51 @@ export default function StoryboardComposer() {
             }
         } finally {
             setIsAnalyzing(false);
+        }
+    };
+
+    const handleRenderAllFrames = async () => {
+        if (!currentProject) return;
+        if (!storyboardRenderAffordable) {
+            alert("当前组织算力豆余额不足，无法提交分镜渲染任务。");
+            return;
+        }
+
+        const lockedCount = sortedFrames.filter((frame) => frame.locked).length;
+        const activeCount = sortedFrames.filter((frame) => activeStoryboardRenderFrameIds.has(frame.id)).length;
+        const framesToSubmit = batchRenderableFrames;
+
+        if (framesToSubmit.length === 0) {
+            alert("没有可提交的分镜。锁定中的分镜和已在生成中的分镜会被自动跳过。");
+            return;
+        }
+
+        setIsSubmittingAllFrames(true);
+
+        try {
+            const payloadItems = buildStoryboardRenderBatchPayload(framesToSubmit, renderAllBatchSize);
+            const receipts = await api.renderFramesBatch(currentProject.id, payloadItems);
+            enqueueReceipts(currentProject.id, receipts);
+
+            void fetchProjectJobs(currentProject.id).catch((error) => {
+                console.error("Failed to refresh storyboard jobs after batch submit:", error);
+            });
+
+            const summary: string[] = [
+                `已批量提交 ${receipts.length} 个分镜任务，每个分镜生成 ${renderAllBatchSize} 张图片。`
+            ];
+            if (lockedCount > 0) {
+                summary.push(`跳过 ${lockedCount} 个已锁定分镜。`);
+            }
+            if (activeCount > 0) {
+                summary.push(`跳过 ${activeCount} 个生成中的分镜。`);
+            }
+            alert(summary.join("\n"));
+        } catch (error: unknown) {
+            console.error("Failed to submit storyboard render batch:", error);
+            alert(extractErrorDetail(error, "批量提交分镜渲染任务失败"));
+        } finally {
+            setIsSubmittingAllFrames(false);
         }
     };
 
@@ -149,7 +455,7 @@ export default function StoryboardComposer() {
         }
     };
 
-    const handleCreateFrame = async (data: any) => {
+    const handleCreateFrame = async (data: CreateFramePayload) => {
         if (!currentProject) return;
 
         try {
@@ -179,7 +485,7 @@ export default function StoryboardComposer() {
         const [movedFrame] = newFrames.splice(index, 1);
         newFrames.splice(newIndex, 0, movedFrame);
 
-        const newOrderIds = newFrames.map((f: any) => f.id);
+        const newOrderIds = newFrames.map((frame) => frame.id);
 
         try {
             // Optimistic update
@@ -198,9 +504,9 @@ export default function StoryboardComposer() {
 
     const handleExtractLastFrame = async (frameId: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (sortedFrames.length === 0) return;
+        if (!currentProject || sortedFrames.length === 0) return;
 
-        const frameIndex = sortedFrames.findIndex((f: any) => f.id === frameId);
+        const frameIndex = sortedFrames.findIndex((frame) => frame.id === frameId);
         if (frameIndex <= 0) return;
 
         // Find the previous frame's selected video
@@ -211,7 +517,7 @@ export default function StoryboardComposer() {
         }
 
         const prevVideo = currentProject?.video_tasks?.find(
-            (t: any) => t.id === prevFrame.selected_video_id && t.status === "completed"
+            (task) => task.id === prevFrame.selected_video_id && task.status === "completed"
         );
         if (!prevVideo) {
             alert("上一帧的视频尚未生成完成。");
@@ -220,11 +526,11 @@ export default function StoryboardComposer() {
 
         setExtractingFrameId(frameId);
         try {
-            const updatedProject = await api.extractLastFrame(currentProject!.id, frameId, prevVideo.id);
-            updateProject(currentProject!.id, updatedProject);
-        } catch (error: any) {
+            const updatedProject = await api.extractLastFrame(currentProject.id, frameId, prevVideo.id);
+            updateProject(currentProject.id, updatedProject);
+        } catch (error: unknown) {
             console.error("Failed to extract last frame:", error);
-            alert(error?.response?.data?.detail || "提取上一帧结尾画面失败");
+            alert(extractErrorDetail(error, "提取上一帧结尾画面失败"));
         } finally {
             setExtractingFrameId(null);
         }
@@ -243,120 +549,30 @@ export default function StoryboardComposer() {
         try {
             const updatedProject = await api.uploadFrameImage(currentProject.id, uploadTargetFrameId, file);
             updateProject(currentProject.id, updatedProject);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Failed to upload frame image:", error);
-            alert(error?.message || "上传分镜图片失败");
+            alert(extractErrorDetail(error, "上传分镜图片失败"));
         } finally {
             setUploadTargetFrameId(null);
             if (fileInputRef.current) fileInputRef.current.value = "";
         }
     };
 
-    const handleRenderFrame = async (frame: any, batchSize: number = 1, e?: React.MouseEvent) => {
+    const handleRenderFrame = async (frame: StoryboardFrameModel, batchSize: number = 1, e?: React.MouseEvent) => {
         e?.stopPropagation();
         if (!currentProject) return;
         if (!storyboardRenderAffordable) {
             alert("当前组织算力豆余额不足，无法提交分镜渲染任务。");
             return;
         }
+        if (activeStoryboardRenderFrameIds.has(frame.id)) {
+            alert("这个分镜已经有一个生成任务正在处理中。");
+            return;
+        }
 
         addRenderingFrame(frame.id);
         try {
-            // Construct composition data with references
-            const compositionData: any = {
-                character_ids: frame.character_ids,
-                prop_ids: frame.prop_ids,
-                scene_id: frame.scene_id,
-                reference_image_urls: []
-            };
-
-            // Helper to get selected variant URL from an asset
-            const getSelectedVariantUrl = (asset: any): string | null => {
-                if (!asset || !asset.variants || asset.variants.length === 0) return null;
-
-                // Try to get selected variant first
-                if (asset.selected_id) {
-                    const selectedVariant = asset.variants.find((v: any) => v.id === asset.selected_id);
-                    if (selectedVariant?.url) return selectedVariant.url;
-                }
-
-                // Fallback: auto-select first variant if no selection exists
-                // This handles the case where selected_id is null/undefined
-                return asset.variants[0]?.url || null;
-            };
-
-            // 1. Add Scene Image - prioritize selected variant
-            if (frame.scene_id) {
-                const scene = currentProject.scenes?.find((s: any) => s.id === frame.scene_id);
-                if (scene) {
-                    const sceneUrl = getSelectedVariantUrl(scene.image_asset) || scene.image_url;
-                    if (sceneUrl) compositionData.reference_image_urls.push(sceneUrl);
-                }
-            }
-
-            // 2. Add Character Images - use selected variant from three_view > full_body > headshot
-            if (frame.character_ids && frame.character_ids.length > 0) {
-                frame.character_ids.forEach((charId: string) => {
-                    const char = currentProject.characters?.find((c: any) => c.id === charId);
-                    if (char) {
-                        // Priority: three_view_asset > full_body_asset > headshot_asset > legacy fields
-                        const charUrl = getSelectedVariantUrl(char.three_view_asset)
-                            || getSelectedVariantUrl(char.full_body_asset)
-                            || getSelectedVariantUrl(char.headshot_asset)
-                            || char.three_view_image_url
-                            || char.full_body_image_url
-                            || char.headshot_image_url
-                            || char.avatar_url
-                            || char.image_url;
-                        if (charUrl) compositionData.reference_image_urls.push(charUrl);
-                    }
-                });
-            }
-
-            // 3. Add Prop Images - prioritize selected variant
-            if (frame.prop_ids && frame.prop_ids.length > 0) {
-                frame.prop_ids.forEach((propId: string) => {
-                    const prop = currentProject.props?.find((p: any) => p.id === propId);
-                    if (prop) {
-                        const propUrl = getSelectedVariantUrl(prop.image_asset) || prop.image_url;
-                        if (propUrl) compositionData.reference_image_urls.push(propUrl);
-                    }
-                });
-            }
-
-            // Construct Enhanced Prompt using Art Direction (or fallback to legacy)
-            const artDirection = currentProject?.art_direction;
-            let globalStylePrompt = "";
-
-            if (artDirection?.style_config) {
-                // Use Art Direction style
-                globalStylePrompt = artDirection.style_config.positive_prompt;
-            } else {
-                // 旧版 store 上的 styles/selectedStyleId 已经移除，这里退回为空即可，
-                // 避免分镜渲染继续依赖已废弃的全局风格状态。
-                globalStylePrompt = "";
-            }
-
-            // Construct final prompt:
-            // If image_prompt exists (polished or manually edited), only prepend the style.
-            // Otherwise, build from visual action only and keep dialogue out of the image prompt.
-            let finalPrompt = "";
-
-            if (frame.image_prompt && frame.image_prompt.trim()) {
-                // User has a custom/polished prompt - only add style prefix
-                finalPrompt = globalStylePrompt
-                    ? `${globalStylePrompt} . ${frame.image_prompt}`
-                    : frame.image_prompt;
-            } else {
-                // No custom prompt - build from style and action description only.
-                const parts = [
-                    globalStylePrompt,
-                    frame.action_description,
-                ].filter(Boolean);
-                finalPrompt = parts.join(" . ");
-            }
-
-            const receipt = await api.renderFrame(currentProject.id, frame.id, compositionData, finalPrompt, batchSize);
+            const receipt = await submitStoryboardRender(frame, batchSize);
             enqueueReceipts(currentProject.id, [receipt]);
             const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             const updatedProject = await api.getProject(currentProject.id);
@@ -375,35 +591,74 @@ export default function StoryboardComposer() {
 
     return (
         <div className="flex flex-col h-full text-white overflow-hidden">
-            {/* Top Toolbar */}
-            <div className={`flex-shrink-0 ${PANEL_HEADER_CLASS}`}>
-                <h3 className={PANEL_TITLE_CLASS}>
-                    <Layout size={16} className="text-primary" /> 分镜列表
-                </h3>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setShowScriptOverlay(true)}
-                        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white px-2.5 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
-                        title="查看原始脚本"
+            <div className="flex-shrink-0 border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,250,252,0.96))] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(2,6,23,0.96))]">
+                <div className={PANEL_HEADER_CLASS}>
+                    <h3 className={PANEL_TITLE_CLASS}>
+                        <Layout size={16} className="text-primary" /> 分镜设计
+                    </h3>
+                </div>
+                <div className="px-4 pb-4">
+                    <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                        className="relative overflow-hidden rounded-[28px] border border-slate-200/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,248,251,0.95))] shadow-[0_28px_60px_-44px_rgba(15,23,42,0.46)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,14,24,0.9),rgba(3,7,18,0.94))]"
                     >
-                        <FileText size={14} />
-                        查看脚本
-                    </button>
-                    <div className="w-px h-4 bg-white/10" />
-                    <button
-                        onClick={handleAnalyzeToStoryboard}
-                        disabled={isAnalyzing || !storyboardAnalyzeAffordable}
-                        className="flex items-center gap-1.5 text-xs bg-primary/80 hover:bg-primary px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-50"
-                        title={!storyboardAnalyzeAffordable ? "当前组织算力豆余额不足，无法提交分镜分析任务" : "从剧本生成分镜帧"}
-                    >
-                        {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                        {isAnalyzing ? "生成中..." : "生成分镜"}
-                    </button>
-                    <BillingTaskHint priceCredits={storyboardAnalyzePrice} balanceCredits={account?.balance_credits} compact />
-                    <div className="w-px h-4 bg-white/10" />
-                    <span className="text-xs text-gray-500 font-mono">
-                        {currentProject?.frames?.length || 0} 个分镜
-                    </span>
+                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_left_top,rgba(251,191,36,0.12),transparent_28%),radial-gradient(circle_at_88%_28%,rgba(13,148,136,0.14),transparent_30%)] dark:bg-[radial-gradient(circle_at_left_top,rgba(251,191,36,0.08),transparent_24%),radial-gradient(circle_at_88%_28%,rgba(45,212,191,0.1),transparent_28%)]" />
+                        <div className="relative flex flex-col items-stretch gap-3 px-4 py-4 xl:flex-row xl:items-center xl:justify-center">
+                            <div className="flex min-h-[84px] flex-1 flex-wrap items-center justify-between gap-3 rounded-[24px] border border-amber-100/80 bg-[linear-gradient(135deg,rgba(255,248,235,0.92),rgba(255,255,255,0.96))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_18px_32px_-28px_rgba(180,83,9,0.3)] dark:border-amber-400/10 dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))]">
+                                <BillingActionButton
+                                    onClick={handleAnalyzeToStoryboard}
+                                    disabled={isAnalyzing || !storyboardAnalyzeAffordable}
+                                    priceCredits={storyboardAnalyzePrice}
+                                    balanceCredits={account?.balance_credits}
+                                    className="group inline-flex min-w-[176px] items-center justify-center gap-3 rounded-full border border-slate-950/95 bg-slate-950 px-5 py-3.5 text-[15px] font-semibold tracking-[-0.02em] text-white shadow-[0_20px_38px_-24px_rgba(15,23,42,0.92)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-900 hover:shadow-[0_24px_42px_-24px_rgba(15,23,42,0.98)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none dark:border-white/10 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                                    tooltipText={storyboardAnalyzePrice == null ? undefined : `预计消耗${storyboardAnalyzePrice}算力豆${!storyboardAnalyzeAffordable ? "，当前余额不足" : ""}`}
+                                >
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(251,191,36,0.28),rgba(249,115,22,0.18))] text-amber-200 transition-transform duration-200 group-hover:scale-105 dark:bg-amber-500/16 dark:text-amber-600">
+                                        {isAnalyzing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
+                                    </span>
+                                    {isAnalyzing ? "分析中..." : "生成分镜"}
+                                </BillingActionButton>
+                            </div>
+
+                            <div className="hidden h-10 w-px shrink-0 bg-[linear-gradient(180deg,transparent,rgba(148,163,184,0.35),transparent)] xl:block dark:bg-[linear-gradient(180deg,transparent,rgba(255,255,255,0.16),transparent)]" />
+
+                            <div className="flex min-h-[84px] flex-1 flex-wrap items-center justify-between gap-3 rounded-[24px] border border-emerald-100/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.9),rgba(255,255,255,0.96))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_18px_32px_-28px_rgba(13,148,136,0.28)] dark:border-emerald-400/10 dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))]">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <div className="flex items-center gap-1 rounded-full border border-emerald-100/90 bg-white/92 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] dark:border-white/10 dark:bg-white/[0.04]">
+                                        {[1, 2, 3, 4].map((size) => (
+                                            <button
+                                                key={size}
+                                                type="button"
+                                                onClick={() => setRenderAllBatchSize(size as 1 | 2 | 3 | 4)}
+                                                className={`rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.02em] transition-all ${
+                                                    renderAllBatchSize === size
+                                                        ? "bg-slate-950 text-white shadow-[0_16px_28px_-20px_rgba(15,23,42,0.82)] dark:bg-white dark:text-slate-950"
+                                                        : "text-slate-500 hover:bg-emerald-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                                                }`}
+                                            >
+                                                x{size}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <BillingActionButton
+                                    onClick={handleRenderAllFrames}
+                                    disabled={isSubmittingAllFrames || sortedFrames.length === 0 || !storyboardRenderAffordable}
+                                    priceCredits={storyboardRenderPrice}
+                                    balanceCredits={account?.balance_credits}
+                                    className="group inline-flex min-w-[196px] items-center justify-center gap-3 rounded-full border border-[#0f766e] bg-[linear-gradient(135deg,#0f766e,#0891b2)] px-5 py-3.5 text-[15px] font-semibold tracking-[-0.02em] text-white shadow-[0_20px_40px_-24px_rgba(15,118,110,0.86)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-24px_rgba(8,145,178,0.92)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none dark:border-emerald-300/20 dark:bg-[linear-gradient(135deg,#14b8a6,#06b6d4)] dark:text-slate-950"
+                                    tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
+                                >
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/12 transition-transform duration-200 group-hover:scale-105 dark:bg-slate-950/12">
+                                        {isSubmittingAllFrames ? <Loader2 size={15} className="animate-spin" /> : <ImageIcon size={15} />}
+                                    </span>
+                                    {isSubmittingAllFrames ? "批量提交中..." : "一键生成图片"}
+                                </BillingActionButton>
+                            </div>
+                        </div>
+                    </motion.div>
                 </div>
             </div>
 
@@ -421,10 +676,18 @@ export default function StoryboardComposer() {
                             </button>
                         </div>
 
-                        {sortedFrames.map((frame: any, index: number) => (
-                            <>
+                        {sortedFrames.map((frame, index) => {
+                            const isFrameRendering = renderingFrames.has(frame.id) || activeStoryboardRenderFrameIds.has(frame.id);
+                            const prevFrame = index > 0 ? sortedFrames[index - 1] : null;
+                            const prevVideoCompleted = prevFrame?.selected_video_id
+                                ? currentProject?.video_tasks?.find(
+                                    (task) => task.id === prevFrame.selected_video_id && task.status === "completed"
+                                )
+                                : null;
+
+                            return (
+                            <Fragment key={frame.id}>
                                 <motion.div
-                                    key={frame.id}
                                     layoutId={frame.id}
                                     onClick={() => setSelectedFrameId(frame.id)}
                                     className={`storyboard-frame-card group relative flex gap-6 p-4 rounded-xl border transition-all cursor-pointer ${selectedFrameId === frame.id
@@ -434,7 +697,7 @@ export default function StoryboardComposer() {
                                 >
                                     {/* Frame Number */}
                                     <div className="storyboard-frame-index absolute -left-3 -top-3 w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-xs font-bold text-gray-400 shadow-lg z-10">
-                                        {typeof frame.frame_order === "number" ? frame.frame_order + 1 : index + 1}
+                                        {getFrameDisplayNumber(frame, index)}
                                     </div>
 
                                     {/* Image Preview */}
@@ -480,7 +743,7 @@ export default function StoryboardComposer() {
                                             {/* Render Buttons with Batch Size - only show if not locked */}
                                             {!frame.locked && (
                                                 <div className="flex items-center gap-1 pointer-events-auto">
-                                                    {renderingFrames.has(frame.id) ? (
+                                                    {isFrameRendering ? (
                                                         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 rounded-lg">
                                                             <Loader2 size={14} className="animate-spin text-white" />
                                                             <span className="text-xs text-white">生成中...</span>
@@ -488,34 +751,28 @@ export default function StoryboardComposer() {
                                                     ) : (
                                                         <>
                                                             {[1, 2, 3, 4].map(size => (
-                                                                <button
+                                                                <BillingActionButton
                                                                     key={size}
                                                                     onClick={(e) => { e.stopPropagation(); handleRenderFrame(frame, size); }}
                                                                     disabled={!storyboardRenderAffordable}
+                                                                    priceCredits={storyboardRenderPrice}
+                                                                    balanceCredits={account?.balance_credits}
                                                                     className="px-2 py-1.5 bg-primary/80 hover:bg-primary text-white rounded text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                                                    title={!storyboardRenderAffordable ? "当前组织算力豆余额不足，无法提交分镜渲染任务" : `生成 ${size} 个变体`}
+                                                                    tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
+                                                                    tooltipClassName="bottom-full top-auto mb-2 mt-0"
+                                                                    costClassName="px-1.5 py-0.5 text-[10px]"
                                                                 >
                                                                     <div className="flex items-center gap-1">
                                                                         <Wand2 size={12} />
-                                                                        <span>×{size}</span>
+                                                                        <span>x{size}</span>
                                                                     </div>
-                                                                </button>
+                                                                </BillingActionButton>
                                                             ))}
                                                         </>
                                                     )}
                                                 </div>
                                             )}
                                         </div>
-                                        {!frame.locked ? (
-                                            <div className="absolute bottom-2 left-2 pointer-events-none">
-                                                <BillingTaskHint
-                                                    priceCredits={storyboardRenderPrice}
-                                                    balanceCredits={account?.balance_credits}
-                                                    compact
-                                                    className="rounded-full bg-black/55 px-2 py-1"
-                                                />
-                                            </div>
-                                        ) : null}
                                     </div>
 
                                     {/* Content */}
@@ -539,7 +796,7 @@ export default function StoryboardComposer() {
                                         {frame.dialogue && (
                                             <div className="mt-auto pt-3 border-t border-white/5">
                                                 <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">对白</span>
-                                                <p className="text-sm text-gray-400 italic">"{frame.dialogue}"</p>
+                                                <p className="text-sm text-gray-400 italic">&quot;{frame.dialogue}&quot;</p>
                                             </div>
                                         )}
 
@@ -578,22 +835,16 @@ export default function StoryboardComposer() {
                                             >
                                                 <Upload size={14} />
                                             </button>
-                                            {index > 0 && (() => {
-                                                const prevFrame = sortedFrames[index - 1];
-                                                const prevVideoCompleted = prevFrame?.selected_video_id && currentProject?.video_tasks?.find(
-                                                    (t: any) => t.id === prevFrame.selected_video_id && t.status === "completed"
-                                                );
-                                                return prevVideoCompleted ? (
-                                                    <button
-                                                        onClick={(e) => handleExtractLastFrame(frame.id, e)}
-                                                        disabled={extractingFrameId === frame.id}
-                                                        className="btn-tip p-2 hover:bg-purple-500/20 text-gray-400 hover:text-purple-400 rounded-lg transition-colors disabled:opacity-50"
-                                                        data-tip="使用上一帧结尾画面"
-                                                    >
-                                                        {extractingFrameId === frame.id ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
-                                                    </button>
-                                                ) : null;
-                                            })()}
+                                            {index > 0 && prevVideoCompleted ? (
+                                                <button
+                                                    onClick={(e) => handleExtractLastFrame(frame.id, e)}
+                                                    disabled={extractingFrameId === frame.id}
+                                                    className="btn-tip p-2 hover:bg-purple-500/20 text-gray-400 hover:text-purple-400 rounded-lg transition-colors disabled:opacity-50"
+                                                    data-tip="使用上一帧结尾画面"
+                                                >
+                                                    {extractingFrameId === frame.id ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
+                                                </button>
+                                            ) : null}
                                             <button
                                                 onClick={(e) => handleDeleteFrame(frame.id, e)}
                                                 className="btn-tip p-2 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded-lg transition-colors"
@@ -615,57 +866,16 @@ export default function StoryboardComposer() {
                                         <Plus size={16} />
                                     </button>
                                 </div>
-                            </>
-                        ))}
+                            </Fragment>
+                        )})}
                 </div>
             </div>
 
-            {/* Script Overlay */}
-            <AnimatePresence>
-                {showScriptOverlay && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-                        onClick={() => setShowScriptOverlay(false)}
-                    >
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: 16 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 16 }}
-                            transition={{ duration: 0.25, ease: [0.25, 1, 0.5, 1] }}
-                            className="storyboard-modal w-full max-w-2xl max-h-[80vh] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20">
-                                <div className="flex items-center gap-3">
-                                    <FileText size={18} className="text-primary" />
-                                    <h3 className="text-sm font-bold text-white">原始脚本</h3>
-                                </div>
-                                <button
-                                    onClick={() => setShowScriptOverlay(false)}
-                                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-                                >
-                                    <X size={16} className="text-gray-400" />
-                                </button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-6">
-                                <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">
-                                    {currentProject?.originalText || "暂无脚本内容"}
-                                </pre>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
             {/* Storyboard Frame Editor Modal */}
             <AnimatePresence>
-                {editingFrameId && sortedFrames.find((f: any) => f.id === editingFrameId) && (
+                {editableFrame && (
                     <StoryboardFrameEditor
-                        frame={sortedFrames.find((f: any) => f.id === editingFrameId)}
+                        frame={editableFrame}
                         onClose={() => setEditingFrameId(null)}
                     />
                 )}
@@ -694,7 +904,7 @@ export default function StoryboardComposer() {
     );
 }
 
-function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void; onCreate: (data: any) => void; scenes: any[] }) {
+function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void; onCreate: (data: CreateFramePayload) => void; scenes: Scene[] }) {
     const [action, setAction] = useState("");
     const [dialogue, setDialogue] = useState("");
     const [sceneId, setSceneId] = useState(scenes[0]?.id || "");
@@ -750,8 +960,8 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                             className="storyboard-field w-full px-4 py-3 border border-white/10 rounded-lg text-white focus:border-primary/50 focus:outline-none appearance-none"
                         >
                             <option value="" disabled>请选择场景</option>
-                            {scenes.map((s: any) => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
+                            {scenes.map((scene) => (
+                                <option key={scene.id} value={scene.id}>{scene.name}</option>
                             ))}
                         </select>
                     </div>
@@ -839,6 +1049,8 @@ function ImageWithRetry({ src, alt, className, onClick }: { src: string, alt: st
                     <RefreshCw className="animate-spin text-gray-400" size={24} />
                 </div>
             )}
+            {/* 中文注释：这里保留原生 img 是为了配合手动重试和缓存击穿参数，避免 next/image 接管后干扰失败重载时序。 */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
                 ref={imgRef}
                 src={displaySrc}

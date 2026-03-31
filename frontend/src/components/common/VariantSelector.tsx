@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ImageAsset } from '@/store/projectStore';
 import { Trash2, Check, Layers, X, Maximize2, Star, Sparkles, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
+import BillingActionButton from '@/components/billing/BillingActionButton';
 import { getAssetUrl } from '@/lib/utils';
 
 interface VariantSelectorProps {
@@ -19,7 +20,8 @@ interface VariantSelectorProps {
     showFilmstripArrows?: boolean;
     disableGenerate?: boolean;
     generateDisabledReason?: string;
-    generateHint?: React.ReactNode;
+    generatePriceCredits?: number | null;
+    generateBalanceCredits?: number;
 }
 
 export const VariantSelector: React.FC<VariantSelectorProps> = ({
@@ -38,7 +40,8 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
     showFilmstripArrows = true,
     disableGenerate = false,
     generateDisabledReason,
-    generateHint
+    generatePriceCredits = null,
+    generateBalanceCredits = 0,
 }) => {
     const [batchSize, setBatchSize] = useState(1);
     const [localGeneratingBatchSize, setLocalGeneratingBatchSize] = useState(1); // Track the batch size when generation started locally
@@ -174,20 +177,21 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                             ))}
                             </div>
 
-                            <button
+                            <BillingActionButton
                                 onClick={() => onGenerate(batchSize)}
                                 disabled={isGenerating || disableGenerate}
+                                priceCredits={generatePriceCredits}
+                                balanceCredits={generateBalanceCredits}
                                 className={`variant-selector-generate flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isGenerating || disableGenerate
                                     ? 'bg-white/5 text-gray-400 cursor-not-allowed'
                                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20'
                                     }`}
-                                title={disableGenerate ? generateDisabledReason : undefined}
+                                tooltipText={generatePriceCredits == null ? undefined : `预计消耗${generatePriceCredits}算力豆${disableGenerate && generateDisabledReason ? "，当前余额不足" : ""}`}
                             >
                                 <Layers size={16} />
                                 生成候选
-                            </button>
+                            </BillingActionButton>
                         </div>
-                        {generateHint ? <div className="mt-3">{generateHint}</div> : null}
                     </div>
                 )}
 

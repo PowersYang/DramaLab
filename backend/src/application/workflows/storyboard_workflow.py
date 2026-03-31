@@ -11,9 +11,10 @@ import uuid
 
 from ...providers import ScriptProcessor, StorageProvider, StoryboardGenerator
 from ...providers.image.asset_image_provider import ASPECT_RATIO_TO_SIZE
-from ...repository import ProjectRepository, SeriesRepository, VideoTaskRepository
+from ...repository import ProjectRepository, SeriesRepository, StoryboardFrameRepository, VideoTaskRepository
 from ...schemas.models import GenerationStatus, ImageAsset, ImageVariant, StoryboardFrame
 from ...providers.text.default_prompts import DEFAULT_STORYBOARD_POLISH_PROMPT
+from ..services.project_command_service import ProjectCommandService
 from ...utils.path_safety import validate_safe_id
 from ...utils import get_logger
 from ...utils.datetime import utc_now
@@ -30,7 +31,9 @@ class StoryboardWorkflow:
     def __init__(self):
         self.project_repository = ProjectRepository()
         self.series_repository = SeriesRepository()
+        self.frame_repository = StoryboardFrameRepository()
         self.video_task_repository = VideoTaskRepository()
+        self.project_command_service = ProjectCommandService()
         self.text_provider = ScriptProcessor()
         self.image_provider = StoryboardGenerator()
         self.storage_provider = StorageProvider()
@@ -72,11 +75,9 @@ class StoryboardWorkflow:
                 )
             )
 
-        project.frames = new_frames
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        updated_project = self.project_command_service.sync_frames(script_id, project.version, new_frames)
         logger.info("STORYBOARD_WORKFLOW: analyze_to_storyboard completed script_id=%s frame_count=%s", script_id, len(new_frames))
-        return self._get_project(script_id)
+        return updated_project
 
     def refine_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: list, feedback: str = ""):
         """结合可选系列级覆写，对分镜帧图片提示词进行润色。"""
@@ -105,8 +106,7 @@ class StoryboardWorkflow:
                 break
 
         if frame_found:
-            project.updated_at = utc_now()
-            self.project_repository.save(project)
+            self.frame_repository.save(script_id, frame)
         logger.info("STORYBOARD_WORKFLOW: refine_prompt completed script_id=%s frame_id=%s frame_updated=%s", script_id, frame_id, frame_found)
 
         return {
@@ -120,10 +120,11 @@ class StoryboardWorkflow:
         logger.info("STORYBOARD_WORKFLOW: generate_storyboard script_id=%s", script_id)
         project = self._get_project(script_id)
         self.image_provider.generate_storyboard(project)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        for frame in project.frames:
+            self.frame_repository.save(script_id, frame)
+        updated_project = self._get_project(script_id)
         logger.info("STORYBOARD_WORKFLOW: generate_storyboard completed script_id=%s", script_id)
-        return self._get_project(script_id)
+        return updated_project
 
     def prepare_generate_storyboard(self, script_id: str):
         """批量分镜渲染入队前校验项目存在。"""
@@ -141,8 +142,8 @@ class StoryboardWorkflow:
         if composition_data:
             frame.composition_data = composition_data
         frame.image_prompt = prompt
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        self.frame_repository.save(script_id, frame)
+        updated_project = self._get_project(script_id)
 
         try:
             # 前端可能传来 OSS 对象键、外部 URL 或运行时临时文件路径，调用模型前先统一归一化。
@@ -182,14 +183,13 @@ class StoryboardWorkflow:
                 size=effective_size,
                 model_name=project.model_settings.i2i_model,
             )
-            project.updated_at = utc_now()
-            self.project_repository.save(project)
+            self.frame_repository.save(script_id, frame)
+            updated_project = self._get_project(script_id)
             logger.info("STORYBOARD_WORKFLOW: render_frame completed script_id=%s frame_id=%s", script_id, frame_id)
-            return self._get_project(script_id)
+            return updated_project
         except Exception:
             frame.status = GenerationStatus.FAILED
-            project.updated_at = utc_now()
-            self.project_repository.save(project)
+            self.frame_repository.save(script_id, frame)
             logger.exception("STORYBOARD_WORKFLOW: render_frame failed script_id=%s frame_id=%s", script_id, frame_id)
             raise
 
@@ -266,8 +266,7 @@ class StoryboardWorkflow:
         frame.rendered_image_url = image_url
         frame.image_url = image_url
         frame.updated_at = utc_now()
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        self.frame_repository.save(script_id, frame)
         logger.info("STORYBOARD_WORKFLOW: extract_last_frame completed script_id=%s frame_id=%s image_url=%s", script_id, frame_id, image_url)
         return self._get_project(script_id)
 

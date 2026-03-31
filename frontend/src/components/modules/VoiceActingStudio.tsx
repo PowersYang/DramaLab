@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Mic, Play, Pause, Wand2, Headphones, Volume2, Check, Settings2, AlertCircle } from "lucide-react";
 import clsx from "clsx";
-import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
@@ -214,17 +214,18 @@ export default function VoiceActingStudio() {
                 {/* Toolbar */}
                 <div className="h-14 border-b border-white/10 bg-black/20 flex items-center px-6 justify-between">
                     <h2 className="font-display font-bold text-lg">对白脚本</h2>
-                    <button
+                    <BillingActionButton
                         onClick={handleGenerateAll}
                         disabled={isGenerating || !projectAudioAffordable}
+                        priceCredits={projectAudioPrice}
+                        balanceCredits={account?.balance_credits}
                         className="bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap flex-shrink-0 transition-all disabled:opacity-50"
-                        title={!projectAudioAffordable ? "当前组织算力豆余额不足，无法提交整片音频生成任务" : undefined}
+                        tooltipText={projectAudioPrice == null ? undefined : `预计消耗${projectAudioPrice}算力豆${!projectAudioAffordable ? "，当前余额不足" : ""}`}
                     >
                         {isGenerating ? <Wand2 className="animate-spin" size={16} /> : <Mic size={16} />}
                         {isGenerating ? "生成中..." : "生成全部音频"}
-                    </button>
+                    </BillingActionButton>
                 </div>
-                <BillingTaskHint priceCredits={projectAudioPrice} balanceCredits={account?.balance_credits} compact className="px-6 pb-3" />
 
                 {/* Dialogue List */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-6">
@@ -308,17 +309,20 @@ export default function VoiceActingStudio() {
                                                             className={AUDIO_SLIDER_CLASS}
                                                         />
                                                     </div>
-                                                    <button
+                                                    <BillingActionButton
                                                         onClick={() => {
                                                             handleGenerateLine(frame.id, speakerId);
                                                             setActiveSettingsId(null);
                                                         }}
                                                         disabled={!lineAudioAffordable}
-                                                        className="w-full bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white text-xs py-2 rounded-lg font-bold transition-all disabled:opacity-50"
+                                                        priceCredits={lineAudioPrice}
+                                                        balanceCredits={account?.balance_credits}
+                                                        wrapperClassName="w-full"
+                                                        className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/50 bg-white/5 py-2 text-xs font-bold text-primary transition-all hover:border-primary hover:bg-white/10 hover:text-white disabled:opacity-50"
+                                                        tooltipText={lineAudioPrice == null ? undefined : `预计消耗${lineAudioPrice}算力豆${!lineAudioAffordable ? "，当前余额不足" : ""}`}
                                                     >
                                                         按当前设置重新生成
-                                                    </button>
-                                                    <BillingTaskHint priceCredits={lineAudioPrice} balanceCredits={account?.balance_credits} compact />
+                                                    </BillingActionButton>
                                                 </div>
                                             </div>
                                         )}
@@ -355,14 +359,18 @@ export default function VoiceActingStudio() {
                                                         {playingAudio === frame.audio_url ? <Pause size={14} /> : <Play size={14} />}
                                                     </button>
                                                 ) : (
-                                                    <button
+                                                    <BillingActionButton
                                                         onClick={() => handleGenerateLine(frame.id, speakerId)}
                                                         disabled={!lineAudioAffordable}
-                                                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 disabled:opacity-40"
-                                                        title={!lineAudioAffordable ? "当前组织算力豆余额不足，无法提交单句配音任务" : undefined}
+                                                        priceCredits={lineAudioPrice}
+                                                        balanceCredits={account?.balance_credits}
+                                                        className="h-8 rounded-full bg-white/5 hover:bg-white/10 px-3 flex items-center justify-center gap-1.5 text-gray-300 disabled:opacity-40"
+                                                        tooltipText={lineAudioPrice == null ? undefined : `预计消耗${lineAudioPrice}算力豆${!lineAudioAffordable ? "，当前余额不足" : ""}`}
+                                                        costClassName="px-1.5 py-0.5 text-[10px]"
                                                     >
                                                         <Mic size={14} />
-                                                    </button>
+                                                        <span className="text-[11px] font-semibold">生成</span>
+                                                    </BillingActionButton>
                                                 )}
                                             </div>
                                         </div>
@@ -371,7 +379,6 @@ export default function VoiceActingStudio() {
                                         <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between gap-2 text-xs text-gray-500">
                                             <div className="flex items-center gap-3">
                                                 <span className="font-mono">镜头 {index + 1}</span>
-                                                <BillingTaskHint priceCredits={lineAudioPrice} balanceCredits={account?.balance_credits} compact />
                                             </div>
                                             {frame.status === "failed" ? (
                                                 <span className="flex items-center gap-1 text-red-400" title={frame.audio_error || "生成失败"}>

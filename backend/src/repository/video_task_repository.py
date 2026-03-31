@@ -31,18 +31,18 @@ class VideoTaskRepository(BaseRepository[VideoTask]):
             session.merge(_video_task_record(task, owner_tenant_kwargs(ctx)))
         return task
 
-    def patch(self, project_id: str, task_id: str, patch: dict) -> VideoTask:
-        with self._with_session() as session:
-            record = self._get_active(session, VideoTaskRecord, task_id)
+    def patch(self, project_id: str, task_id: str, patch: dict, session=None) -> VideoTask:
+        with self._with_session(session) as active_session:
+            record = self._get_active(active_session, VideoTaskRecord, task_id)
             if record is None or record.project_id != project_id:
                 raise ValueError(f"Video task {task_id} not found")
             self._patch_record(record, patch)
             return self.get(project_id, task_id)
 
-    def soft_delete(self, project_id: str, task_id: str, deleted_by: str | None = None) -> None:
-        with self._with_session() as session:
+    def soft_delete(self, project_id: str, task_id: str, deleted_by: str | None = None, session=None) -> None:
+        with self._with_session(session) as active_session:
             now = utc_now()
-            session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id == project_id, VideoTaskRecord.id == task_id, VideoTaskRecord.is_deleted.is_(False)).update({"is_deleted": True, "deleted_at": now, "updated_at": now, "deleted_by": deleted_by}, synchronize_session=False)
+            active_session.query(VideoTaskRecord).filter(VideoTaskRecord.project_id == project_id, VideoTaskRecord.id == task_id, VideoTaskRecord.is_deleted.is_(False)).update({"is_deleted": True, "deleted_at": now, "updated_at": now, "deleted_by": deleted_by}, synchronize_session=False)
 
     def restore(self, project_id: str, task_id: str) -> VideoTask:
         with self._with_session() as session:

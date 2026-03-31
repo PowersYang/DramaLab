@@ -13,7 +13,7 @@ import time
 
 from ...providers import AudioGenerator, VideoModelProvider
 from ...providers.export.export_provider import ExportManager
-from ...repository import ProjectRepository, VideoTaskRepository
+from ...repository import ProjectRepository, StoryboardFrameRepository, VideoTaskRepository
 from ...utils.path_safety import validate_safe_id
 from ...utils import get_logger
 from ...utils.datetime import utc_now
@@ -29,6 +29,7 @@ class MediaWorkflow:
 
     def __init__(self):
         self.project_repository = ProjectRepository()
+        self.frame_repository = StoryboardFrameRepository()
         self.video_task_repository = VideoTaskRepository()
         self.video_provider = VideoModelProvider()
         self.audio_provider = AudioGenerator()
@@ -47,10 +48,11 @@ class MediaWorkflow:
             if frame.status == "completed" and frame.video_url:
                 continue
             self.video_provider.generate_clip(frame)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        for frame in project.frames:
+            self.frame_repository.save(script_id, frame)
+        updated_project = self._get_project(script_id)
         logger.info("MEDIA_WORKFLOW: generate_video completed script_id=%s", script_id)
-        return self._get_project(script_id)
+        return updated_project
 
     def generate_audio(self, script_id: str):
         """为项目中每一帧生成对白、音效和背景音乐。"""
@@ -72,10 +74,11 @@ class MediaWorkflow:
             if frame.video_url:
                 self.audio_provider.generate_sfx_from_video(frame)
             self.audio_provider.generate_bgm(frame)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        for frame in project.frames:
+            self.frame_repository.save(script_id, frame)
+        updated_project = self._get_project(script_id)
         logger.info("MEDIA_WORKFLOW: generate_audio completed script_id=%s", script_id)
-        return self._get_project(script_id)
+        return updated_project
 
     def process_video_task(self, script_id: str, task_id: str):
         """执行持久化视频任务，并把结果同步回项目聚合。"""
@@ -117,11 +120,6 @@ class MediaWorkflow:
             remove_temp_file(output_path)
             self.video_task_repository.save(task)
 
-        project = self._get_project(script_id)
-        self._sync_asset_video_task(project, task)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
-
     def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float, pitch: float, volume: int):
         """按需为单个分镜帧生成对白音频。"""
         logger.info("MEDIA_WORKFLOW: generate_dialogue_line script_id=%s frame_id=%s", script_id, frame_id)
@@ -133,10 +131,10 @@ class MediaWorkflow:
             speaker = next((item for item in project.characters if item.id == frame.character_ids[0]), None)
             if speaker:
                 self.audio_provider.generate_dialogue(frame, speaker, speed, pitch, volume)
-        project.updated_at = utc_now()
-        self.project_repository.save(project)
+        self.frame_repository.save(script_id, frame)
+        updated_project = self._get_project(script_id)
         logger.info("MEDIA_WORKFLOW: generate_dialogue_line completed script_id=%s frame_id=%s", script_id, frame_id)
-        return self._get_project(script_id)
+        return updated_project
 
     def merge_videos(self, script_id: str, final_mix_timeline: dict | None = None):
         """使用 FFmpeg 把已选中的分镜视频合并成单个输出。"""
@@ -217,11 +215,14 @@ class MediaWorkflow:
 
             try:
                 subprocess.run(cmd, check=True, capture_output=True, timeout=600)
-                project.merged_video_url = self._persist_output(output_path, "video/merged")
-                project.updated_at = utc_now()
-                self.project_repository.save(project)
-                logger.info("MEDIA_WORKFLOW: merge_videos completed script_id=%s output=%s", script_id, project.merged_video_url)
-                return self._get_project(script_id)
+                merged_video_url = self._persist_output(output_path, "video/merged")
+                updated_project = self.project_repository.patch_metadata(
+                    script_id,
+                    {"merged_video_url": merged_video_url, "updated_at": utc_now()},
+                    expected_version=project.version,
+                )
+                logger.info("MEDIA_WORKFLOW: merge_videos completed script_id=%s output=%s", script_id, merged_video_url)
+                return updated_project
             except subprocess.TimeoutExpired:
                 raise RuntimeError("FFmpeg timed out. The videos may be too large.")
             except subprocess.CalledProcessError as exc:
@@ -337,32 +338,6 @@ class MediaWorkflow:
         except subprocess.CalledProcessError as exc:
             stderr_msg = exc.stderr.decode() if exc.stderr else "No error output"
             raise RuntimeError(self._extract_ffmpeg_error_message(stderr_msg))
-
-    def _sync_asset_video_task(self, project, task):
-        """把任务更新镜像回仍被 UI 使用的聚合字段。"""
-        if not task.asset_id:
-            return
-        target_asset = next((item for item in project.characters if item.id == task.asset_id), None)
-        if not target_asset:
-            target_asset = next((item for item in project.scenes if item.id == task.asset_id), None)
-        if not target_asset:
-            target_asset = next((item for item in project.props if item.id == task.asset_id), None)
-        if not target_asset:
-            return
-
-        for index, existing_task in enumerate(target_asset.video_assets):
-            if existing_task.id == task.id:
-                target_asset.video_assets[index] = task
-                break
-        else:
-            target_asset.video_assets.append(task)
-
-        for index, existing_task in enumerate(project.video_tasks):
-            if existing_task.id == task.id:
-                project.video_tasks[index] = task
-                break
-        else:
-            project.video_tasks.append(task)
 
     def _download_temp_image(self, url: str) -> tuple[str | None, bool]:
         """尽可能把本地图片地址解析成磁盘文件路径。"""

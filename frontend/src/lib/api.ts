@@ -311,6 +311,13 @@ export interface TaskJob {
     created_at: string | number;
 }
 
+export interface StoryboardRenderPayload {
+    frame_id: string;
+    composition_data: Record<string, unknown> | null;
+    prompt: string;
+    batch_size: number;
+}
+
 export interface CurrentUser {
     id: string;
     email?: string | null;
@@ -1309,13 +1316,25 @@ export const api = {
         return res.data;
     },
 
-    renderFrame: async (scriptId: string, frameId: string, compositionData: any, prompt: string, batchSize: number = 1): Promise<TaskReceipt> => {
+    renderFrame: async (scriptId: string, frameId: string, compositionData: Record<string, unknown> | null, prompt: string, batchSize: number = 1): Promise<TaskReceipt> => {
         const dedupeKey = `storyboard-render:${scriptId}:${frameId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/render`, {
             frame_id: frameId,
             composition_data: compositionData,
             prompt: prompt,
             batch_size: batchSize
+        }, {
+            headers: {
+                "Idempotency-Key": dedupeKey,
+            },
+        });
+        return res.data;
+    },
+
+    renderFramesBatch: async (scriptId: string, items: StoryboardRenderPayload[]): Promise<TaskReceipt[]> => {
+        const dedupeKey = `storyboard-render-batch:${scriptId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/render_batch`, {
+            items,
         }, {
             headers: {
                 "Idempotency-Key": dedupeKey,

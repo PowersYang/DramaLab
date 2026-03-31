@@ -59,8 +59,8 @@ export default function HomePage() {
       <MarketingVideoStage clips={videoClips} />
 
       <div className="relative z-10 overflow-x-clip">
-        <section className="min-h-[100svh] px-6 pb-18 pt-16 lg:px-10 lg:pb-20 lg:pt-24">
-          <div className="mx-auto flex min-h-[calc(100svh-132px)] max-w-7xl items-center">
+        <section className="px-6 pb-8 pt-16 lg:px-10 lg:pb-10 lg:pt-24">
+          <div className="mx-auto flex min-h-[min(84svh,820px)] max-w-7xl items-start pt-[calc(clamp(2.5rem,9vh,7rem)+100px)]">
             <div className="max-w-[66rem]">
               <h1 className="marketing-editorial-title max-w-6xl text-balance text-[3.6rem] leading-[0.86] text-white md:text-[5.9rem]">
                 为 AI 短剧生产打造的
@@ -82,7 +82,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="px-6 pb-24 lg:px-10 lg:pb-28">
+        <section className="-mt-14 px-6 pb-24 lg:-mt-[4.5rem] lg:px-10 lg:pb-28">
           <div className="mx-auto max-w-7xl">
             <div className="grid gap-4 md:grid-cols-3">
               {featureCards.map((item) => {

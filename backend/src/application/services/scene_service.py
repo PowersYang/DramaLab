@@ -7,6 +7,7 @@
 import uuid
 
 from ...repository import ProjectRepository, SceneRepository
+from .project_command_service import ProjectCommandService
 from ...schemas.models import GenerationStatus, Scene
 from ...utils.datetime import utc_now
 
@@ -17,6 +18,7 @@ class SceneService:
     def __init__(self):
         self.scene_repository = SceneRepository()
         self.project_repository = ProjectRepository()
+        self.project_command_service = ProjectCommandService()
 
     def create_scene(self, project_id: str, name: str, description: str):
         """在目标项目中创建一个新场景。"""
@@ -37,10 +39,10 @@ class SceneService:
         project = self.project_repository.get(project_id)
         if not project:
             raise ValueError("Script not found")
-        self.scene_repository.delete("project", project_id, scene_id)
+        cleaned_frames = []
         for frame in project.frames:
             if frame.scene_id == scene_id:
                 frame.scene_id = ""
-        project.scenes = [s for s in project.scenes if s.id != scene_id]
-        project.updated_at = utc_now()
-        return self.project_repository.replace_graph(project)
+                frame.updated_at = utc_now()
+                cleaned_frames.append(frame)
+        return self.project_command_service.delete_asset_and_cleanup_frames(project_id, project.version, "scene", scene_id, cleaned_frames=cleaned_frames)

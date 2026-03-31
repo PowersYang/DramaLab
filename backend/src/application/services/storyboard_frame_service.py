@@ -9,6 +9,7 @@ import uuid
 
 from ...common.log import get_logger
 from ...repository import ProjectRepository, StoryboardFrameRepository
+from .project_command_service import ProjectCommandService
 from ...schemas.models import StoryboardFrame
 from ...utils.datetime import utc_now
 
@@ -22,6 +23,7 @@ class StoryboardFrameService:
     def __init__(self):
         self.frame_repository = StoryboardFrameRepository()
         self.project_repository = ProjectRepository()
+        self.project_command_service = ProjectCommandService()
 
     def toggle_lock(self, project_id: str, frame_id: str):
         """切换分镜帧的人工编辑锁定状态。"""
@@ -70,6 +72,7 @@ class StoryboardFrameService:
         )
         if insert_at is None:
             self.frame_repository.save(project_id, frame)
+            return self.project_repository.get(project_id)
         else:
             project.frames.insert(insert_at, frame)
             self._save_full_order(project)
@@ -126,8 +129,4 @@ class StoryboardFrameService:
         """按顺序重写分镜帧记录，因为顺序信息是单独存储的。"""
         # 分镜顺序会影响前端播放和后续视频合成，因此这里单独记录一次重排落库。
         logger.info("STORYBOARD_FRAME_SERVICE: _save_full_order project_id=%s frame_count=%s", project.id, len(project.frames))
-        for index, frame in enumerate(project.frames):
-            self.frame_repository.save(project.id, frame, frame_order=index)
-        self.frame_repository.reorder(project.id, [frame.id for frame in project.frames])
-        project = self.project_repository.get(project.id)
-        self.project_repository.patch_metadata(project.id, {"updated_at": utc_now()}, expected_version=project.version)
+        self.project_command_service.sync_frames(project.id, project.version, project.frames)

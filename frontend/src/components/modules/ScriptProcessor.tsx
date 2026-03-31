@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wand2, User, MapPin, Box, ChevronRight, ChevronLeft, Save, Sparkles, Plus, Trash2, X } from "lucide-react";
+import { Wand2, User, MapPin, Box, ChevronRight, ChevronLeft, Save, Sparkles, Plus, Trash2 } from "lucide-react";
 import { api, crudApi } from "@/lib/api";
+import BillingActionButton from "@/components/billing/BillingActionButton";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
@@ -63,6 +65,7 @@ export default function ScriptProcessor() {
     const updateProject = useProjectStore((state) => state.updateProject);
     const analyzeProject = useProjectStore((state) => state.analyzeProject);
     const isAnalyzing = useProjectStore((state) => state.isAnalyzing);
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
 
     // Initialize from project data
     const [script, setScript] = useState(currentProject?.originalText || "");
@@ -72,6 +75,8 @@ export default function ScriptProcessor() {
     const [selectedNode, setSelectedNode] = useState<ScriptNode | null>(null);
     const [showPanel, setShowPanel] = useState(true);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const reparsePrice = getTaskPrice("project.reparse");
+    const reparseAffordable = canAffordTask("project.reparse");
 
     // Sync from project
     useEffect(() => {
@@ -212,14 +217,17 @@ export default function ScriptProcessor() {
                         剧本编辑器
                     </h2>
                     <div className="flex gap-2">
-                        <button
+                        <BillingActionButton
                             onClick={handleAnalyze}
-                            disabled={!script || isAnalyzing}
+                            disabled={!script || isAnalyzing || !reparseAffordable}
+                            priceCredits={reparsePrice}
+                            balanceCredits={account?.balance_credits}
                             className="glass-button px-4 py-1.5 text-sm flex items-center gap-2 text-primary border-primary/30 hover:bg-primary/10"
+                            tooltipText={reparsePrice == null ? undefined : `预计消耗${reparsePrice}算力豆${!reparseAffordable ? "，当前余额不足" : ""}`}
                         >
                             {isAnalyzing ? <Wand2 className="animate-spin" size={14} /> : <Wand2 size={14} />}
                             {isAnalyzing ? "智能分析中..." : "提取实体"}
-                        </button>
+                        </BillingActionButton>
                         <button
                             onClick={() => setShowPanel(!showPanel)}
                             className="p-2 hover:bg-white/10 rounded-lg text-gray-400"

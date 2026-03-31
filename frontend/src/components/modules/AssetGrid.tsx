@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { RefreshCw, Download, Plus } from "lucide-react";
 
-import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { api, API_URL } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
@@ -125,23 +125,19 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
                     <button className="glass-button text-xs flex items-center gap-2">
                         <Plus size={14} /> 上传
                     </button>
-                    <button
+                    <BillingActionButton
                         onClick={handleGenerate}
                         disabled={isGenerating || !assetBatchAffordable}
+                        priceCredits={assetBatchPrice}
+                        balanceCredits={account?.balance_credits}
                         className="glass-button text-xs flex items-center gap-2 text-primary border-primary/30"
-                        title={!assetBatchAffordable ? "当前组织算力豆余额不足，无法提交批量资产生成任务" : undefined}
+                        tooltipText={assetBatchPrice == null ? undefined : `预计消耗${assetBatchPrice}算力豆${!assetBatchAffordable ? "，当前余额不足" : ""}`}
                     >
                         <RefreshCw size={14} className={isGenerating ? "animate-spin" : ""} />
                         {isGenerating ? "生成中..." : "生成全部"}
-                    </button>
+                    </BillingActionButton>
                 </div>
             </div>
-            <BillingTaskHint
-                priceCredits={assetBatchPrice}
-                balanceCredits={account?.balance_credits}
-                compact
-                className="mb-4"
-            />
 
             <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
                 {assets.map((asset, i) => (

@@ -9,6 +9,7 @@ from ...repository import ProjectRepository, SeriesRepository
 from ...common.log import get_logger
 from ...providers import ScriptProcessor
 from .model_provider_service import ModelProviderService
+from .project_command_service import ProjectCommandService
 from ...schemas.models import ModelSettings, PromptConfig
 from ...utils.datetime import utc_now
 
@@ -24,6 +25,7 @@ class ProjectService:
         self.series_repository = SeriesRepository()
         self.text_provider = ScriptProcessor()
         self.model_provider_service = ModelProviderService()
+        self.project_command_service = ProjectCommandService()
 
     def create_project(
         self,
@@ -87,9 +89,24 @@ class ProjectService:
         reparsed.created_by = existing.created_by
         reparsed.updated_by = existing.updated_by
 
-        self.project_repository.replace_graph(reparsed)
+        reparsed.characters = self._reuse_entity_ids(existing.characters, reparsed.characters)
+        reparsed.scenes = self._reuse_entity_ids(existing.scenes, reparsed.scenes)
+        reparsed.props = self._reuse_entity_ids(existing.props, reparsed.props)
+
+        patched_project = self.project_repository.patch_metadata(
+            script_id,
+            {"original_text": text, "updated_at": utc_now()},
+            expected_version=existing.version,
+        )
+        updated_project = self.project_command_service.sync_entities(
+            script_id,
+            patched_project.version,
+            reparsed.characters,
+            reparsed.scenes,
+            reparsed.props,
+        )
         logger.info("PROJECT_SERVICE: reparse_project completed script_id=%s", script_id)
-        return reparsed
+        return updated_project
 
     def list_projects(self, workspace_id: str | None = None):
         """返回所有已持久化项目。"""
@@ -131,10 +148,8 @@ class ProjectService:
 
         if project.series_id:
             series = self.series_repository.get(project.series_id)
-            if series and script_id in series.episode_ids:
-                series.episode_ids.remove(script_id)
-                series.updated_at = utc_now()
-                self.series_repository.replace_graph(series)
+            if series:
+                self.series_repository.patch_metadata(series.id, {"updated_at": utc_now()}, expected_version=series.version)
 
         self.project_repository.soft_delete(script_id)
         logger.info(
@@ -165,7 +180,13 @@ class ProjectService:
             if hasattr(prop, "prompt"):
                 prop.prompt = None
 
-        updated_project = self.project_repository.replace_graph(project)
+        updated_project = self.project_command_service.sync_entities(
+            script_id,
+            project.version,
+            project.characters,
+            project.scenes,
+            project.props,
+        )
         logger.info(
             "PROJECT_SERVICE: sync_descriptions completed script_id=%s characters=%s scenes=%s props=%s",
             script_id,
@@ -174,6 +195,24 @@ class ProjectService:
             len(project.props),
         )
         return updated_project
+
+    def _reuse_entity_ids(self, existing_items: list, incoming_items: list):
+        """按归一化名称复用旧实体 ID，减少 reparse 对下游引用的冲击。"""
+        existing_by_name = {
+            self._normalize_entity_name(item.name): item
+            for item in existing_items
+            if getattr(item, "name", None)
+        }
+        for item in incoming_items:
+            matched = existing_by_name.get(self._normalize_entity_name(getattr(item, "name", "")))
+            if not matched:
+                continue
+            item.id = matched.id
+            item.created_at = matched.created_at
+        return incoming_items
+
+    def _normalize_entity_name(self, value: str) -> str:
+        return str(value or "").strip().lower()
 
     def update_style(self, script_id: str, style_preset: str, style_prompt: str | None = None):
         """更新项目级视觉风格选择。"""

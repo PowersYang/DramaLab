@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Download, Film, CheckCircle, FileVideo, Monitor, Captions } from "lucide-react";
 import clsx from "clsx";
-import BillingTaskHint from "@/components/billing/BillingTaskHint";
+import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
@@ -145,15 +145,17 @@ export default function ExportStudio() {
                     </div>
                 </div>
 
-                <button
+                <BillingActionButton
                     onClick={handleExport}
                     disabled={isExporting || !exportAffordable}
-                    className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-8"
-                    title={!exportAffordable ? "当前组织算力豆余额不足，无法提交导出任务" : undefined}
+                    priceCredits={exportPrice}
+                    balanceCredits={account?.balance_credits}
+                    wrapperClassName="mt-8 w-full"
+                    className="flex w-full items-center justify-center gap-2 bg-gradient-to-r from-primary to-purple-600 py-4 text-lg font-bold text-white shadow-xl shadow-primary/20 transition-all hover:from-primary/90 hover:to-purple-600/90 disabled:cursor-not-allowed disabled:opacity-50 rounded-xl"
+                    tooltipText={exportPrice == null ? undefined : `预计消耗${exportPrice}算力豆${!exportAffordable ? "，当前余额不足" : ""}`}
                 >
                     {isExporting ? "正在导出..." : "开始导出"}
-                </button>
-                <BillingTaskHint priceCredits={exportPrice} balanceCredits={account?.balance_credits} className="mt-3 mx-auto" />
+                </BillingActionButton>
             </div>
 
             {/* Right: Preview & Status */}
@@ -175,12 +177,15 @@ export default function ExportStudio() {
                             </div>
                             <h3 className="text-2xl font-bold mb-2 text-white">导出失败</h3>
                             <p className="text-gray-400 mb-4">{exportError}</p>
-                            <button
+                            <BillingActionButton
                                 onClick={handleExport}
+                                priceCredits={exportPrice}
+                                balanceCredits={account?.balance_credits}
                                 className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl font-bold transition-colors"
+                                tooltipText={exportPrice == null ? undefined : `预计消耗${exportPrice}算力豆${!exportAffordable ? "，当前余额不足" : ""}`}
                             >
                                 重新导出
-                            </button>
+                            </BillingActionButton>
                         </div>
                     ) : effectiveUrl ? (
                         <div className="bg-black/30 backdrop-blur-xl border border-green-500/30 rounded-2xl p-12 shadow-2xl shadow-green-900/20">

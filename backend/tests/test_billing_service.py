@@ -179,6 +179,41 @@ class BillingServiceTest(unittest.TestCase):
         account = service.get_account(org.id)
         self.assertEqual(account.balance_credits, 50)
 
+    def test_task_charge_accepts_zero_priced_rule_and_persists_zero_debit(self):
+        from src.application.services import BillingService
+        from src.schemas.task_models import TaskJob
+        from src.utils.datetime import utc_now
+
+        org = self._create_org()
+        service = BillingService()
+        service.upsert_pricing_rule(task_type="project.reparse", price_credits=0, actor_id="admin_1")
+
+        now = utc_now()
+        transaction = service.charge_task_submission(
+            job=TaskJob(
+                id="job_billing_zero_1",
+                task_type="project.reparse",
+                queue_name="llm",
+                organization_id=org.id,
+                payload_json={},
+                created_at=now,
+                updated_at=now,
+            ),
+            actor_id="user_zero",
+            idempotency_key="task-charge-zero-1",
+        )
+
+        account = service.get_account(org.id)
+        transactions = service.list_transactions(org.id, transaction_type="task_debit")
+        self.assertIsNotNone(transaction)
+        self.assertEqual(account.balance_credits, 0)
+        self.assertEqual(account.total_consumed_credits, 0)
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(transactions[0].amount_credits, 0)
+        self.assertEqual(transactions[0].balance_before, 0)
+        self.assertEqual(transactions[0].balance_after, 0)
+        self.assertEqual(transactions[0].related_id, "job_billing_zero_1")
+
     def test_task_service_create_job_charges_and_persists_job_together(self):
         from src.application.services import BillingService
         from src.application.tasks import TaskService
@@ -227,6 +262,58 @@ class BillingServiceTest(unittest.TestCase):
         self.assertIsNotNone(TaskService().get_job(receipt.job_id))
         self.assertEqual(len(TaskEventRepository().list_by_job(receipt.job_id)), 1)
         self.assertEqual(len(billing_service.list_transactions(org.id, transaction_type="task_debit")), 1)
+
+    def test_task_service_create_job_allows_zero_balance_when_task_price_is_zero(self):
+        from src.application.services import BillingService
+        from src.application.tasks import TaskService
+        from src.repository import TaskEventRepository
+        from src.repository import ProjectRepository
+        from src.schemas.models import Script
+        from src.utils.datetime import utc_now
+
+        org = self._create_org("org_billing_zero_job")
+        now = utc_now()
+        ProjectRepository().sync([
+            Script(
+                id="project_billing_zero_job",
+                title="Zero Billing Project",
+                original_text="text",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                organization_id=org.id,
+                workspace_id="ws_zero",
+                created_by="user_zero",
+                updated_by="user_zero",
+                created_at=now,
+                updated_at=now,
+            )
+        ])
+
+        billing_service = BillingService()
+        billing_service.upsert_pricing_rule(task_type="project.reparse", price_credits=0, actor_id="admin_1")
+
+        receipt = TaskService().create_job(
+            task_type="project.reparse",
+            payload={"project_id": "project_billing_zero_job", "text": "new text"},
+            project_id="project_billing_zero_job",
+            queue_name="llm",
+            resource_type="project",
+            resource_id="project_billing_zero_job",
+            idempotency_key="job-idem-zero-1",
+        )
+
+        account = billing_service.get_account(org.id)
+        transactions = billing_service.list_transactions(org.id, transaction_type="task_debit")
+        self.assertEqual(account.balance_credits, 0)
+        self.assertEqual(account.total_consumed_credits, 0)
+        self.assertIsNotNone(TaskService().get_job(receipt.job_id))
+        self.assertEqual(len(TaskEventRepository().list_by_job(receipt.job_id)), 1)
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(transactions[0].amount_credits, 0)
+        self.assertEqual(transactions[0].related_id, receipt.job_id)
 
 
 if __name__ == "__main__":

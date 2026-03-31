@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { User, MapPin, Box, Lock, Unlock, RefreshCw, Image as ImageIcon, X, Check, ChevronRight, Trash2, Plus } from "lucide-react";
+import BillingActionButton from "@/components/billing/BillingActionButton";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
-import { api, crudApi } from "@/lib/api";
+import { api, crudApi, TaskJob } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getCharacterPreviewImage } from "@/lib/characterAssets";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
@@ -21,11 +23,41 @@ function getAssetTypeLabel(type: "character" | "scene" | "prop" | string) {
     return "素材";
 }
 
+const ACTIVE_TASK_STATUSES = ["queued", "claimed", "running", "retry_waiting", "cancel_requested"];
+
+function mapJobToGeneratingTask(job: TaskJob) {
+    const assetId = job.resource_id || job.payload_json?.asset_id;
+    if (!assetId) {
+        return null;
+    }
+
+    if (job.task_type === "asset.generate" || job.task_type === "asset.generate_batch") {
+        return {
+            assetId,
+            generationType: typeof job.payload_json?.generation_type === "string" ? job.payload_json.generation_type : "all",
+            batchSize: typeof job.payload_json?.batch_size === "number" ? job.payload_json.batch_size : 1,
+        };
+    }
+
+    if (job.task_type === "asset.motion_ref.generate") {
+        return {
+            assetId,
+            generationType: job.payload_json?.asset_type === "head_shot" ? "video_head_shot" : "video_full_body",
+            batchSize: 1,
+        };
+    }
+
+    return null;
+}
+
 export default function ConsistencyVault() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const reconcileGeneratingTasks = useProjectStore((state) => state.reconcileGeneratingTasks);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
+    const fetchProjectJobs = useTaskStore((state) => state.fetchProjectJobs);
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
 
 
 
@@ -48,6 +80,10 @@ export default function ConsistencyVault() {
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [uploadTarget, setUploadTarget] = useState<{ id: string; type: string; name: string; description: string } | null>(null);
     const [togglingAssetIds, setTogglingAssetIds] = useState<string[]>([]);
+    const assetGeneratePrice = getTaskPrice("asset.generate");
+    const assetGenerateAffordable = canAffordTask("asset.generate");
+    const motionRefGeneratePrice = getTaskPrice("asset.motion_ref.generate");
+    const motionRefAffordable = canAffordTask("asset.motion_ref.generate");
 
     // Derive selected asset from currentProject
     const selectedAsset = currentProject ? (() => {
@@ -319,6 +355,51 @@ export default function ConsistencyVault() {
         activeTab === "scene" ? currentProject?.scenes :
             activeTab === "prop" ? currentProject?.props : [];
 
+    useEffect(() => {
+        if (!currentProject) {
+            return;
+        }
+
+        const projectAssetIds = [
+            ...(currentProject.characters || []).map((asset: any) => asset.id),
+            ...(currentProject.scenes || []).map((asset: any) => asset.id),
+            ...(currentProject.props || []).map((asset: any) => asset.id),
+        ];
+        const projectAssetIdSet = new Set(projectAssetIds);
+
+        let isCancelled = false;
+
+        // 生成态会被持久化到 localStorage；页面刷新后必须和 task_jobs 对账，
+        // 否则任务其实早已完成，卡片仍会永久显示“生成中”。
+        const reconcileWithTaskQueue = async () => {
+            try {
+                const jobs = await fetchProjectJobs(currentProject.id, ACTIVE_TASK_STATUSES);
+                if (isCancelled) {
+                    return;
+                }
+                const activeTasks = jobs
+                    .map(mapJobToGeneratingTask)
+                    .filter((task): task is { assetId: string; generationType: string; batchSize: number } => Boolean(task))
+                    .filter((task) => projectAssetIdSet.has(task.assetId));
+                reconcileGeneratingTasks(projectAssetIds, activeTasks);
+            } catch (error) {
+                if (!isCancelled) {
+                    console.error("Failed to reconcile asset generation tasks:", error);
+                }
+            }
+        };
+
+        void reconcileWithTaskQueue();
+        const timer = window.setInterval(() => {
+            void reconcileWithTaskQueue();
+        }, 15000);
+
+        return () => {
+            isCancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [currentProject, fetchProjectJobs, reconcileGeneratingTasks]);
+
     return (
         <div className="flex flex-col h-full text-white">
             {/* Header */}
@@ -390,6 +471,9 @@ export default function ConsistencyVault() {
                                 isGenerating={isAssetGenerating(asset.id)}
                                 isLockToggling={isAssetLockToggling(asset.id)}
                                 onGenerate={() => handleGenerate(asset.id, activeTab)}
+                                generatePriceCredits={assetGeneratePrice}
+                                balanceCredits={account?.balance_credits}
+                                generateAffordable={assetGenerateAffordable}
                                 onToggleLock={() => handleToggleLock(asset.id, activeTab)}
                                 onClick={() => {
                                     setSelectedAssetId(asset.id);
@@ -445,11 +529,17 @@ export default function ConsistencyVault() {
                             onUpdateDescription={(desc: string) => handleUpdateDescription(selectedAssetId, selectedAssetType, desc)}
                             onGenerate={(applyStyle: boolean, negativePrompt: string, batchSize: number) => handleGenerate(selectedAssetId, selectedAssetType, "all", "", applyStyle, negativePrompt, batchSize)}
                             isGenerating={isAssetGenerating(selectedAssetId)}
+                            generatePriceCredits={assetGeneratePrice}
+                            balanceCredits={account?.balance_credits}
+                            generateAffordable={assetGenerateAffordable}
                             stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
                             styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
                             onGenerateVideo={(prompt: string, duration: number) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, "", duration, "video")}
                             onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
                             isGeneratingVideo={getAssetGeneratingTypes(selectedAssetId).some((t: any) => t.type.startsWith("video"))}
+                            videoGeneratePriceCredits={motionRefGeneratePrice}
+                            videoBalanceCredits={account?.balance_credits}
+                            videoGenerateAffordable={motionRefAffordable}
                         />
                     )
                 )}
@@ -488,7 +578,25 @@ export default function ConsistencyVault() {
     );
 }
 
-function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGenerate, isGenerating, stylePrompt = "", styleNegativePrompt = "", onGenerateVideo, onDeleteVideo, isGeneratingVideo }: any) {
+function CharacterDetailModal({
+    asset,
+    type,
+    onClose,
+    onUpdateDescription,
+    onGenerate,
+    isGenerating,
+    generatePriceCredits,
+    balanceCredits,
+    generateAffordable,
+    stylePrompt = "",
+    styleNegativePrompt = "",
+    onGenerateVideo,
+    onDeleteVideo,
+    isGeneratingVideo,
+    videoGeneratePriceCredits,
+    videoBalanceCredits,
+    videoGenerateAffordable,
+}: any) {
     const [description, setDescription] = useState(asset.description);
     const [isEditing, setIsEditing] = useState(false);
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -583,6 +691,10 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                                 onDelete={handleDeleteVariant}
                                 onGenerate={handleGenerateClick}
                                 isGenerating={isGenerating}
+                                disableGenerate={!generateAffordable}
+                                generateDisabledReason="当前组织算力豆余额不足，无法提交资产生成任务"
+                                generatePriceCredits={generatePriceCredits}
+                                generateBalanceCredits={balanceCredits ?? 0}
                                 aspectRatio="16:9"
                                 className="h-full"
                             />
@@ -592,6 +704,9 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                                 onDelete={onDeleteVideo}
                                 onGenerate={(duration) => onGenerateVideo(videoPrompt, duration)}
                                 isGenerating={isGeneratingVideo}
+                                generatePriceCredits={videoGeneratePriceCredits}
+                                generateBalanceCredits={videoBalanceCredits ?? 0}
+                                disableGenerate={!videoGenerateAffordable}
                                 aspectRatio="16:9"
                                 className="h-full"
                             />
@@ -798,7 +913,20 @@ function ImageWithRetry({ src, alt, className }: { src: string, alt: string, cla
     );
 }
 
-function AssetCard({ asset, type, isGenerating, isLockToggling, onGenerate, onToggleLock, onClick, onDelete, onUpload }: any) {
+function AssetCard({
+    asset,
+    type,
+    isGenerating,
+    isLockToggling,
+    onGenerate,
+    generatePriceCredits,
+    balanceCredits,
+    generateAffordable,
+    onToggleLock,
+    onClick,
+    onDelete,
+    onUpload,
+}: any) {
     const isLocked = asset.locked || false;
     const typeLabel = getAssetTypeLabel(type);
     const getSelectedVariant = (imageAsset?: { selected_id?: string | null; variants?: Array<{ id: string; url: string; created_at?: string | number }> }) => {
@@ -904,19 +1032,25 @@ function AssetCard({ asset, type, isGenerating, isLockToggling, onGenerate, onTo
                 </div>
 
                 <div className="flex gap-2">
-                    <button
+                    <BillingActionButton
                         onClick={(e) => {
                             e.stopPropagation();
                             onGenerate();
                         }}
-                        disabled={isLocked || isGenerating}
+                        disabled={isLocked || isGenerating || !generateAffordable}
+                        priceCredits={generatePriceCredits}
+                        balanceCredits={balanceCredits}
                         className={`flex-1 min-w-0 whitespace-nowrap px-2.5 py-1.5 rounded-md text-[11px] font-semibold tracking-[0.01em] transition-colors ${isLocked
                             ? 'asset-card-action-disabled cursor-not-allowed'
-                            : 'asset-card-action-primary'
+                            : isGenerating || !generateAffordable
+                                ? 'asset-card-action-disabled cursor-not-allowed'
+                                : 'asset-card-action-primary'
                             }`}
+                        tooltipText={generatePriceCredits == null ? undefined : `预计消耗${generatePriceCredits}算力豆${!generateAffordable ? "，当前余额不足" : ""}`}
+                        costClassName="px-1.5 py-0.5 text-[10px]"
                     >
                         {isGenerating ? "生成中..." : "生成"}
-                    </button>
+                    </BillingActionButton>
                     <button
                         onClick={(e) => {
                             e.stopPropagation();

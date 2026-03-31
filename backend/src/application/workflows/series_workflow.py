@@ -10,6 +10,7 @@ import uuid
 from ...repository import SeriesRepository
 from ...utils.datetime import utc_now
 from .asset_workflow import AssetWorkflow
+from ..services.series_command_service import SeriesCommandService
 
 
 class SeriesWorkflow:
@@ -18,6 +19,7 @@ class SeriesWorkflow:
     def __init__(self):
         self.series_repository = SeriesRepository()
         self.asset_workflow = AssetWorkflow()
+        self.series_command_service = SeriesCommandService()
 
     def generate_series_asset(self, *args, **kwargs):
         """把系列共享资产生成转发到通用资产工作流。"""
@@ -61,5 +63,11 @@ class SeriesWorkflow:
             imported_ids.append(asset_id)
 
         target.updated_at = utc_now()
-        self.series_repository.save(target)
-        return target, imported_ids, skipped_ids
+        updated_target = self.series_command_service.sync_assets(
+            target.id,
+            target.version,
+            target.characters,
+            target.scenes,
+            target.props,
+        )
+        return updated_target, imported_ids, skipped_ids

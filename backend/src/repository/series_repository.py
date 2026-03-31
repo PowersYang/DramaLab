@@ -6,6 +6,7 @@ from .base import BaseRepository
 from .mappers import _audit_time_kwargs, _soft_delete_series_graph, _insert_series_children, _tenant_kwargs, hydrate_series_map, replace_series_graph
 from ..db.models import CharacterRecord, ProjectRecord, SceneRecord, SeriesRecord
 from ..schemas.models import Series
+from ..utils.datetime import utc_now
 
 
 class SeriesRepository(BaseRepository[Series]):
@@ -109,6 +110,7 @@ class SeriesRepository(BaseRepository[Series]):
         return series
 
     def replace_graph(self, series: Series) -> Series:
+        """仅供离线导入/测试使用；运行时业务写路径禁止再调用整图替换。"""
         with self._with_session() as session:
             _soft_delete_series_graph(session, {series.id}, getattr(series, "updated_by", None))
             session.merge(
@@ -137,8 +139,31 @@ class SeriesRepository(BaseRepository[Series]):
                 raise ValueError(f"Series {series_id} not found")
             if expected_version is not None and record.version != expected_version:
                 raise ValueError(f"Series {series_id} version conflict")
+            patch = dict(patch)
+            patch.setdefault("updated_at", utc_now())
             self._patch_record(record, patch)
             return hydrate_series_map(session, {series_id})[series_id]
+
+    def touch(self, series_id: str, expected_version: int, session=None) -> int:
+        """推进系列根对象版本与更新时间，作为最小更新事务的乐观锁门闩。"""
+        with self._with_session(session) as active_session:
+            rows = active_session.query(SeriesRecord).filter(
+                SeriesRecord.id == series_id,
+                SeriesRecord.is_deleted.is_(False),
+                SeriesRecord.version == expected_version,
+            ).update(
+                {
+                    "version": SeriesRecord.version + 1,
+                    "updated_at": func.now(),
+                },
+                synchronize_session=False,
+            )
+            if rows != 1:
+                raise ValueError(f"Series {series_id} version conflict")
+            next_version = active_session.query(SeriesRecord.version).filter(SeriesRecord.id == series_id).scalar()
+            if next_version is None:
+                raise ValueError(f"Series {series_id} not found")
+            return int(next_version)
 
     def soft_delete(self, series_id: str, deleted_by: str | None = None) -> None:
         with self._with_session() as session:
@@ -160,10 +185,12 @@ class SeriesRepository(BaseRepository[Series]):
             return {series_id: series for series_id, series in hydrated.items() if series.workspace_id == workspace_id}
 
     def sync(self, items: Iterable[Series]) -> None:
+        """仅供离线初始化/测试使用；运行时业务写路径禁止再调用整图替换。"""
         with self._with_session() as session:
             replace_series_graph(session, list(items))
 
     def save(self, series: Series) -> Series:
+        """仅供离线初始化/测试使用；运行时业务写路径禁止再调用整图替换。"""
         return self.replace_graph(series)
 
     def delete(self, series_id: str) -> None:

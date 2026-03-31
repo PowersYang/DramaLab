@@ -12,6 +12,7 @@ from ..common import logger, signed_response
 from ..schemas.requests import (
     AddFrameRequest,
     AnalyzeToStoryboardRequest,
+    BatchRenderFrameRequest,
     CopyFrameRequest,
     ExtractLastFrameRequest,
     RefinePromptRequest,
@@ -265,6 +266,52 @@ async def render_frame(script_id: str, request: RenderFrameRequest, idempotency_
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         logger.exception("STORYBOARD_API: render_frame unexpected_error script_id=%s frame_id=%s", script_id, request.frame_id)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/projects/{script_id}/storyboard/render_batch", response_model=list[TaskReceipt])
+async def render_frames_batch(
+    script_id: str,
+    request: BatchRenderFrameRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
+    """批量登记多个分镜渲染任务，供前端一键按顺序入队。"""
+    try:
+        if not request.items:
+            raise ValueError("至少需要一个分镜渲染项")
+
+        logger.info(
+            "STORYBOARD_API: render_frames_batch script_id=%s item_count=%s",
+            script_id,
+            len(request.items),
+        )
+        receipts: list[TaskReceipt] = []
+        for index, item in enumerate(request.items):
+            receipt = task_service.create_job(
+                task_type="storyboard.render",
+                payload={
+                    "project_id": script_id,
+                    "frame_id": item.frame_id,
+                    "composition_data": item.composition_data,
+                    "prompt": item.prompt,
+                    "batch_size": item.batch_size,
+                },
+                project_id=script_id,
+                queue_name="image",
+                resource_type="storyboard_frame",
+                resource_id=item.frame_id,
+                timeout_seconds=1200,
+                idempotency_key=f"{idempotency_key}:{index}:{item.frame_id}" if idempotency_key else None,
+                dedupe_scope=f"storyboard-render-batch:{item.frame_id}",
+            )
+            receipts.append(receipt)
+
+        return signed_response(receipts)
+    except ValueError as exc:
+        logger.warning("STORYBOARD_API: render_frames_batch failed script_id=%s detail=%s", script_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("STORYBOARD_API: render_frames_batch unexpected_error script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

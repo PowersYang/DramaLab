@@ -3,7 +3,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Sparkles, SwatchBook, Wand2, Check, Loader2, Plus } from "lucide-react";
+import { Sparkles, SwatchBook, Check, Loader2, Plus } from "lucide-react";
 import { useProjectStore, type StyleConfig, type StylePreset } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { PANEL_HEADER_CLASS, PANEL_META_TEXT_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
@@ -58,8 +58,6 @@ export default function ArtDirection() {
     const {
         currentProject,
         updateProject,
-        isAnalyzingArtStyle,
-        analyzeArtStyle
     } = useProjectStore();
 
     const [selectedStyle, setSelectedStyle] = useState<StyleConfig | null>(null);
@@ -126,21 +124,6 @@ export default function ArtDirection() {
             setUserStyles(data.styles || []);
         } catch (error) {
             console.error("Failed to load user art styles:", error);
-        }
-    };
-
-    const handleAnalyze = async () => {
-        if (!currentProject) return;
-
-        // Use global action
-        try {
-            await analyzeArtStyle(
-                currentProject.id,
-                currentProject.originalText || currentProject.title
-            );
-        } catch (error) {
-            console.error("Failed to analyze script:", error);
-            alert("风格分析失败");
         }
     };
 
@@ -298,28 +281,11 @@ export default function ArtDirection() {
 
                     {/* AI Recommendations */}
                     <div>
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="mb-4">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                 <Sparkles size={20} className="text-yellow-400" />
                                 AI 智能推荐
                             </h3>
-                            <button
-                                onClick={handleAnalyze}
-                                disabled={isAnalyzingArtStyle}
-                                className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm rounded-lg font-medium transition-all disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {isAnalyzingArtStyle ? (
-                                    <>
-                                        <Loader2 size={14} className="animate-spin" />
-                                        分析中...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Wand2 size={14} />
-                                        分析剧本
-                                    </>
-                                )}
-                            </button>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
