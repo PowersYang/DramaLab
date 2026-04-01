@@ -13,6 +13,7 @@ repo = AnnouncementRepository()
 @router.get("", response_model=List[Announcement])
 async def list_announcements(context: RequestContext = Depends(get_request_context)):
     """List active announcements for current user."""
+    # 统一通过 RequestContext.user_id 取操作者，兼容旧调用点并保持接口层简洁。
     announcements = repo.list_active(user_id=context.user_id)
     return signed_response(announcements)
 
@@ -28,6 +29,7 @@ async def create_announcement(
     context: RequestContext = Depends(require_capability(CAP_PLATFORM_MANAGE))
 ):
     """Create a new announcement (Admin only)."""
+    # 公告审计字段需要记录实际操作者，避免依赖路由层手动拆解 user 对象。
     new_announcement = repo.create(announcement, created_by=context.user_id)
     return signed_response(new_announcement)
 
@@ -45,6 +47,7 @@ async def mark_announcement_as_read(
     context: RequestContext = Depends(get_request_context)
 ):
     """Mark an announcement as read."""
+    # 已读状态按用户维度记录，因此这里显式传入当前请求用户。
     success = repo.mark_as_read(announcement_id, user_id=context.user_id)
     if not success:
         raise HTTPException(status_code=404, detail="Announcement not found")
@@ -57,6 +60,7 @@ async def update_announcement(
     context: RequestContext = Depends(require_capability(CAP_PLATFORM_MANAGE))
 ):
     """Update an existing announcement (Admin only)."""
+    # 更新与删除都沿用统一的上下文操作者 ID，便于后续审计字段扩展。
     updated = repo.update(announcement_id, update, updated_by=context.user_id)
     if not updated:
         raise HTTPException(status_code=404, detail="Announcement not found")

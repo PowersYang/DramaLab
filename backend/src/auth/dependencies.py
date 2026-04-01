@@ -25,12 +25,19 @@ logger = get_logger(__name__)
 
 @dataclass
 class RequestContext:
+    """请求级认证上下文，统一承载当前用户与租户边界信息。"""
+
     user: User
     current_workspace_id: str | None
     current_organization_id: str | None
     current_role_code: str | None
     capabilities: set[str]
     refresh_token: str | None
+
+    @property
+    def user_id(self) -> str:
+        """兼容仍按旧字段读取用户 ID 的调用点，避免接口层重复拆 user。"""
+        return self.user.id
 
 
 def _extract_bearer_token(authorization: str | None) -> str | None:

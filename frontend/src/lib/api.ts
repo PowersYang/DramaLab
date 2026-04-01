@@ -737,6 +737,7 @@ export interface ProjectSummary {
     title: string;
     series_id?: string | null;
     episode_number?: number | null;
+    status: string;
     character_count: number;
     scene_count: number;
     prop_count: number;
@@ -749,6 +750,7 @@ export interface SeriesSummary {
     id: string;
     title: string;
     description?: string | null;
+    status: string;
     episode_count: number;
     character_count: number;
     scene_count: number;
@@ -964,6 +966,7 @@ export const api = {
                 title: project.title,
                 series_id: project.series_id,
                 episode_number: project.episode_number,
+                status: project.status || "pending",
                 character_count: project.characters?.length || 0,
                 scene_count: project.scenes?.length || 0,
                 frame_count: project.frames?.length || 0,
@@ -1760,6 +1763,7 @@ export const api = {
                 id: series.id,
                 title: series.title,
                 description: series.description,
+                status: series.status || "active",
                 episode_count: series.episode_ids?.length || 0,
                 character_count: series.characters?.length || 0,
                 scene_count: series.scenes?.length || 0,

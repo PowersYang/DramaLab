@@ -236,8 +236,8 @@ function ProjectLedgerRow({ project, onDelete }: { project: ProjectSummary; onDe
         </div>
       </td>
 
-      <td className="admin-table-cell-center">
-        <span className={`text-[11px] admin-status-badge-${stage.tone}`}>{stage.label}</span>
+      <td className="admin-table-cell-center whitespace-nowrap">
+        <span className={`text-[11px] admin-status-badge-${stage.tone} whitespace-nowrap`}>{stage.label}</span>
       </td>
       <td className="admin-table-cell-center admin-table-cell-text">{project.character_count || 0}</td>
       <td className="admin-table-cell-center admin-table-cell-text">{project.scene_count || 0}</td>
@@ -608,7 +608,7 @@ export default function StudioProjectsPage() {
               <thead>
                 <tr>
                   <th style={{ width: "auto" }}>主信息</th>
-                  <th style={{ width: "80px" }} className="admin-table-cell-center">阶段</th>
+                  <th style={{ width: "120px" }} className="admin-table-cell-center whitespace-nowrap">阶段</th>
                   <th style={{ width: "60px" }} className="admin-table-cell-center">角色</th>
                   <th style={{ width: "60px" }} className="admin-table-cell-center">场景</th>
                   <th style={{ width: "60px" }} className="admin-table-cell-center">道具</th>

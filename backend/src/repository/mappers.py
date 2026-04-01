@@ -713,6 +713,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
             created_by=record.created_by,
             updated_by=record.updated_by,
             version=record.version,
+            status=record.status or "pending",
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
@@ -925,6 +926,7 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
             created_by=record.created_by,
             updated_by=record.updated_by,
             version=record.version,
+            status=record.status or "active",
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
@@ -970,6 +972,7 @@ def replace_project_graph(session: Session, items: list[Script]) -> None:
                 prompt_config=project.prompt_config.model_dump(mode="json"),
                 timeline_json=project.timeline.model_dump(mode="json") if project.timeline else None,
                 version=project.version,
+                status=project.status,
                 is_deleted=False,
                 deleted_at=None,
                 deleted_by=None,
@@ -998,6 +1001,7 @@ def replace_series_graph(session: Session, items: list[Series]) -> None:
                 model_settings=series.model_settings.model_dump(mode="json"),
                 prompt_config=series.prompt_config.model_dump(mode="json"),
                 version=series.version,
+                status=series.status,
                 is_deleted=False,
                 deleted_at=None,
                 deleted_by=None,

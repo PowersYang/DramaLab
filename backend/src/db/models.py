@@ -338,7 +338,11 @@ class ProjectRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     art_direction: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    # 中文注释：项目级时间轴工程当前先直接挂在 projects 表，兼容旧链路并降低首期迁移成本。
+    timeline_json: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # 中文注释：项目状态用于后台列表和后续任务看板汇总，旧库需由增量补列逻辑兜底补齐。
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
 
 
 class SeriesRecord(TenantAuditMixin, SoftDeleteMixin, Base):
@@ -354,6 +358,7 @@ class SeriesRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
 
 
 class CharacterRecord(TenantAuditMixin, SoftDeleteMixin, Base):

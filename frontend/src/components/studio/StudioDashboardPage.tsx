@@ -50,6 +50,21 @@ const scheduleDeferredRefresh = (task: () => void) => {
   return () => globalThis.clearTimeout(timeoutId);
 };
 
+const getProjectStatusLabel = (status?: string) => {
+  switch (status) {
+    case "pending":
+      return { label: "待开始", tone: "neutral" };
+    case "processing":
+      return { label: "进行中", tone: "warning" };
+    case "completed":
+      return { label: "已完成", tone: "accent" };
+    case "failed":
+      return { label: "失败", tone: "danger" };
+    default:
+      return { label: status || "待开始", tone: "neutral" };
+  }
+};
+
 export default function StudioDashboardPage() {
   const authStatus = useAuthStore((state) => state.authStatus);
   const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
@@ -175,15 +190,20 @@ export default function StudioDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {recentProjects.map((project) => (
-                    <tr key={project.id} className="hover:bg-slate-50/30">
-                      <td className="px-5 py-3 font-medium text-slate-700">{project.title}</td>
-                      <td className="px-5 py-3">
-                        <span className="admin-status-badge admin-status-badge-neutral">{project.status}</span>
-                      </td>
-                      <td className="px-5 py-3 text-slate-500">{formatDate(project.updated_at)}</td>
-                    </tr>
-                  ))}
+                  {recentProjects.map((project) => {
+                    const statusInfo = getProjectStatusLabel(project.status);
+                    return (
+                      <tr key={project.id} className="hover:bg-slate-50/30">
+                        <td className="px-5 py-3 font-medium text-slate-700">{project.title}</td>
+                        <td className="px-5 py-3">
+                          <span className={`admin-status-badge admin-status-badge-${statusInfo.tone}`}>
+                            {statusInfo.label}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-slate-500">{formatDate(project.updated_at)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

@@ -12,6 +12,7 @@ from ...utils.datetime import utc_now
 
 
 logger = get_logger(__name__)
+DEFAULT_NEW_ORGANIZATION_TASK_MAX_CONCURRENCY = 10
 
 
 TASK_TYPE_LABELS: dict[str, str] = {
@@ -55,7 +56,7 @@ class TaskConcurrencyService:
         """返回平台允许配置并发限制的任务类型枚举。"""
         return [
             TaskConcurrencyTaskTypeOption(task_type=task_type, label=TASK_TYPE_LABELS.get(task_type, task_type))
-            for task_type in sorted(TASK_TYPE_LABELS.keys())
+            for task_type in self._supported_task_types()
         ]
 
     def list_limits(self) -> list[TaskConcurrencyLimitSummary]:
@@ -75,6 +76,41 @@ class TaskConcurrencyService:
             (item.organization_id, item.task_type): item.max_concurrency
             for item in self.limit_repository.list()
         }
+
+    def bootstrap_default_limits_for_organization(
+        self,
+        organization_id: str,
+        *,
+        max_concurrency: int = DEFAULT_NEW_ORGANIZATION_TASK_MAX_CONCURRENCY,
+        actor_id: str | None = None,
+    ) -> list[TaskConcurrencyLimitSummary]:
+        """为新组织初始化全量任务默认并发，避免未配置时退回不限流。"""
+        self._validate_organization_exists(organization_id)
+        if max_concurrency < 0:
+            raise ValueError("Task concurrency limit must be >= 0")
+        organization = self.organization_repository.get(organization_id)
+        created_limits = []
+        for task_type in self._supported_task_types():
+            item = self.limit_repository.upsert_by_scope(
+                organization_id=organization_id,
+                task_type=task_type,
+                max_concurrency=max_concurrency,
+                actor_id=actor_id,
+                record_id=f"tcl_{uuid.uuid4().hex[:16]}",
+            )
+            created_limits.append(
+                TaskConcurrencyLimitSummary(
+                    **item.model_dump(),
+                    organization_name=organization.name if organization else None,
+                )
+            )
+        logger.info(
+            "TASK_CONCURRENCY_SERVICE: bootstrap_default_limits_for_organization organization_id=%s task_types=%s max_concurrency=%s",
+            organization_id,
+            len(created_limits),
+            max_concurrency,
+        )
+        return created_limits
 
     def upsert_limit(
         self,
@@ -116,7 +152,15 @@ class TaskConcurrencyService:
 
     def _validate_scope(self, organization_id: str, task_type: str) -> None:
         """确保组织存在、任务类型可识别，避免无效配置悄悄落库。"""
+        self._validate_organization_exists(organization_id)
+        if task_type not in self._supported_task_types():
+            raise ValueError(f"Unsupported task type: {task_type}")
+
+    def _validate_organization_exists(self, organization_id: str) -> None:
+        """集中校验组织是否存在，避免初始化默认限流时重复散落判空逻辑。"""
         if self.organization_repository.get(organization_id) is None:
             raise ValueError("Organization not found")
-        if task_type not in TASK_TYPE_LABELS:
-            raise ValueError(f"Unsupported task type: {task_type}")
+
+    def _supported_task_types(self) -> list[str]:
+        """统一从任务枚举派生支持列表，避免任务类型新增后忘记补默认限流初始化。"""
+        return sorted(task_type.value for task_type in TaskType)

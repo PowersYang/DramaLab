@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Boxes, LayoutGrid, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, type ModelCatalogEntry, type ModelProviderSummary } from "@/lib/api";
 
@@ -120,18 +121,18 @@ function Modal({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4">
-      <div className="w-full max-w-3xl rounded-[1.75rem] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
-          <h3 className="text-lg font-bold text-slate-950">{title}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="w-full max-w-3xl rounded-[2.5rem] bg-white shadow-2xl animate-in zoom-in-95 duration-300">
+        <div className="flex items-center justify-between border-b border-slate-100 px-8 py-6">
+          <h3 className="text-xl font-bold text-slate-900">{title}</h3>
           <button
             onClick={onClose}
-            className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600"
+            className="rounded-full p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-900 transition-all"
           >
-            关闭
+            <X size={20} />
           </button>
         </div>
-        <div className="max-h-[80vh] overflow-y-auto p-6">{children}</div>
+        <div className="max-h-[75vh] overflow-y-auto p-8">{children}</div>
       </div>
     </div>
   );
@@ -150,6 +151,15 @@ export default function PlatformModelAdmin() {
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderFormState>(DEFAULT_PROVIDER_FORM);
   const [catalogForm, setCatalogForm] = useState<CatalogFormState>(DEFAULT_CATALOG_FORM);
+  const [providerQuery, setProviderQuery] = useState("");
+  const [providerSelected, setProviderSelected] = useState<Set<string>>(new Set());
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogProviderFilter, setCatalogProviderFilter] = useState("");
+  const [catalogSelected, setCatalogSelected] = useState<Set<string>>(new Set());
+  const [catalogBulkSortOrder, setCatalogBulkSortOrder] = useState("");
+
+  const providerSelectAllRef = useRef<HTMLInputElement | null>(null);
+  const catalogSelectAllRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -192,6 +202,57 @@ export default function PlatformModelAdmin() {
     () => new Map(providers.map((item) => [item.provider_key, item])),
     [providers],
   );
+
+  const filteredProviders = useMemo(() => {
+    const q = providerQuery.trim().toLowerCase();
+    if (!q) return providers;
+    return providers.filter((item) => {
+      const hay = `${item.provider_key} ${item.display_name} ${item.description || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [providerQuery, providers]);
+
+  const filteredCatalog = useMemo(() => {
+    const q = catalogQuery.trim().toLowerCase();
+    return sortedCatalog.filter((item) => {
+      if (catalogProviderFilter && item.provider_key !== catalogProviderFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const providerName = providerMap.get(item.provider_key)?.display_name || item.provider_key;
+      const hay = `${item.model_id} ${item.display_name} ${providerName} ${item.task_type} ${item.description || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [catalogProviderFilter, catalogQuery, providerMap, sortedCatalog]);
+
+  useEffect(() => {
+    const allowed = new Set(providers.map((item) => item.provider_key));
+    setProviderSelected((prev) => new Set(Array.from(prev).filter((key) => allowed.has(key))));
+  }, [providers]);
+
+  useEffect(() => {
+    const allowed = new Set(sortedCatalog.map((item) => item.model_id));
+    setCatalogSelected((prev) => new Set(Array.from(prev).filter((id) => allowed.has(id))));
+  }, [sortedCatalog]);
+
+  const providerVisibleKeys = useMemo(() => filteredProviders.map((item) => item.provider_key), [filteredProviders]);
+  const providerAllSelected = providerVisibleKeys.length > 0 && providerVisibleKeys.every((key) => providerSelected.has(key));
+  const providerSomeSelected =
+    providerVisibleKeys.some((key) => providerSelected.has(key)) && !providerAllSelected;
+
+  const catalogVisibleIds = useMemo(() => filteredCatalog.map((item) => item.model_id), [filteredCatalog]);
+  const catalogAllSelected = catalogVisibleIds.length > 0 && catalogVisibleIds.every((id) => catalogSelected.has(id));
+  const catalogSomeSelected = catalogVisibleIds.some((id) => catalogSelected.has(id)) && !catalogAllSelected;
+
+  useEffect(() => {
+    if (!providerSelectAllRef.current) return;
+    providerSelectAllRef.current.indeterminate = providerSomeSelected;
+  }, [providerSomeSelected]);
+
+  useEffect(() => {
+    if (!catalogSelectAllRef.current) return;
+    catalogSelectAllRef.current.indeterminate = catalogSomeSelected;
+  }, [catalogSomeSelected]);
 
   const openCreateProviderModal = () => {
     setProviderMode("create");
@@ -323,6 +384,100 @@ export default function PlatformModelAdmin() {
     }
   };
 
+  const toggleProviderSelected = (providerKey: string) => {
+    setProviderSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(providerKey)) {
+        next.delete(providerKey);
+      } else {
+        next.add(providerKey);
+      }
+      return next;
+    });
+  };
+
+  const toggleProviderSelectAllVisible = () => {
+    setProviderSelected((prev) => {
+      const next = new Set(prev);
+      const shouldSelectAll = !providerVisibleKeys.every((key) => next.has(key));
+      providerVisibleKeys.forEach((key) => {
+        if (shouldSelectAll) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
+      });
+      return next;
+    });
+  };
+
+  const clearProviderSelection = () => setProviderSelected(new Set());
+
+  const bulkSetProvidersEnabled = async (enabled: boolean) => {
+    const keys = Array.from(providerSelected);
+    if (!keys.length) {
+      setError("请先勾选需要批量操作的厂商。");
+      return;
+    }
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      setBusyKey(`provider:bulk:${enabled ? "enable" : "disable"}`);
+      let ok = 0;
+      const failures: string[] = [];
+      for (const providerKey of keys) {
+        try {
+          await api.updateModelProvider(providerKey, { enabled });
+          ok += 1;
+        } catch {
+          failures.push(providerKey);
+        }
+      }
+      await load();
+      clearProviderSelection();
+      if (failures.length) {
+        setError(`批量${enabled ? "启用" : "停用"}：成功 ${ok}，失败 ${failures.length}（${failures.slice(0, 6).join(", ")}${failures.length > 6 ? "..." : ""}）。`);
+      } else {
+        setSuccessMessage(`已批量${enabled ? "启用" : "停用"} ${ok} 个厂商。`);
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const bulkDeleteProviders = async () => {
+    const keys = Array.from(providerSelected);
+    if (!keys.length) {
+      setError("请先勾选需要批量删除的厂商。");
+      return;
+    }
+    if (!window.confirm(`确认删除已选 ${keys.length} 个厂商吗？请确保已删除它们关联的模型。`)) return;
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      setBusyKey("provider:bulk:delete");
+      let ok = 0;
+      const failures: string[] = [];
+      for (const providerKey of keys) {
+        try {
+          await api.deleteModelProvider(providerKey);
+          ok += 1;
+        } catch {
+          failures.push(providerKey);
+        }
+      }
+      await load();
+      clearProviderSelection();
+      if (failures.length) {
+        setError(`批量删除：成功 ${ok}，失败 ${failures.length}（${failures.slice(0, 6).join(", ")}${failures.length > 6 ? "..." : ""}）。`);
+      } else {
+        setSuccessMessage(`已批量删除 ${ok} 个厂商。`);
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const saveCatalog = async () => {
     setError(null);
     setSuccessMessage(null);
@@ -436,6 +591,149 @@ export default function PlatformModelAdmin() {
     }
   };
 
+  const toggleCatalogSelected = (modelId: string) => {
+    setCatalogSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelId)) {
+        next.delete(modelId);
+      } else {
+        next.add(modelId);
+      }
+      return next;
+    });
+  };
+
+  const toggleCatalogSelectAllVisible = () => {
+    setCatalogSelected((prev) => {
+      const next = new Set(prev);
+      const shouldSelectAll = !catalogVisibleIds.every((id) => next.has(id));
+      catalogVisibleIds.forEach((id) => {
+        if (shouldSelectAll) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+  };
+
+  const clearCatalogSelection = () => setCatalogSelected(new Set());
+
+  const bulkSetModelsEnabled = async (enabled: boolean) => {
+    const ids = Array.from(catalogSelected);
+    if (!ids.length) {
+      setError("请先勾选需要批量操作的模型。");
+      return;
+    }
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      setBusyKey(`catalog:bulk:${enabled ? "enable" : "disable"}`);
+      let ok = 0;
+      const failures: string[] = [];
+      const skipped: string[] = [];
+      for (const modelId of ids) {
+        const item = sortedCatalog.find((entry) => entry.model_id === modelId);
+        if (!item) continue;
+        const provider = providerMap.get(item.provider_key);
+        if (enabled && provider && !provider.enabled) {
+          skipped.push(modelId);
+          continue;
+        }
+        try {
+          await api.updateModelCatalogEntry(modelId, { enabled });
+          ok += 1;
+        } catch {
+          failures.push(modelId);
+        }
+      }
+      await load();
+      clearCatalogSelection();
+      if (failures.length) {
+        setError(`批量${enabled ? "启用" : "停用"}：成功 ${ok}，失败 ${failures.length}（${failures.slice(0, 6).join(", ")}${failures.length > 6 ? "..." : ""}）。`);
+        return;
+      }
+      if (skipped.length) {
+        setSuccessMessage(`已批量${enabled ? "启用" : "停用"} ${ok} 个模型；跳过 ${skipped.length} 个（厂商未启用）。`);
+        return;
+      }
+      setSuccessMessage(`已批量${enabled ? "启用" : "停用"} ${ok} 个模型。`);
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const bulkDeleteModels = async () => {
+    const ids = Array.from(catalogSelected);
+    if (!ids.length) {
+      setError("请先勾选需要批量删除的模型。");
+      return;
+    }
+    if (!window.confirm(`确认删除已选 ${ids.length} 个模型吗？`)) return;
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      setBusyKey("catalog:bulk:delete");
+      let ok = 0;
+      const failures: string[] = [];
+      for (const modelId of ids) {
+        try {
+          await api.deleteModelCatalogEntry(modelId);
+          ok += 1;
+        } catch {
+          failures.push(modelId);
+        }
+      }
+      await load();
+      clearCatalogSelection();
+      if (failures.length) {
+        setError(`批量删除：成功 ${ok}，失败 ${failures.length}（${failures.slice(0, 6).join(", ")}${failures.length > 6 ? "..." : ""}）。`);
+      } else {
+        setSuccessMessage(`已批量删除 ${ok} 个模型。`);
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const bulkSetModelsSortOrder = async () => {
+    const ids = Array.from(catalogSelected);
+    if (!ids.length) {
+      setError("请先勾选需要批量设置排序值的模型。");
+      return;
+    }
+    const rawValue = catalogBulkSortOrder.trim();
+    const sortOrder = Number(rawValue);
+    if (!Number.isInteger(sortOrder) || sortOrder < 0) {
+      setError("排序值必须是大于等于 0 的整数。");
+      return;
+    }
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      setBusyKey("catalog:bulk:sort");
+      let ok = 0;
+      const failures: string[] = [];
+      for (const modelId of ids) {
+        try {
+          await api.updateModelCatalogEntry(modelId, { sort_order: sortOrder });
+          ok += 1;
+        } catch {
+          failures.push(modelId);
+        }
+      }
+      await load();
+      if (failures.length) {
+        setError(`批量设置排序：成功 ${ok}，失败 ${failures.length}（${failures.slice(0, 6).join(", ")}${failures.length > 6 ? "..." : ""}）。`);
+      } else {
+        setSuccessMessage(`已批量设置 ${ok} 个模型的排序值为 ${sortOrder}。`);
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -448,418 +746,683 @@ export default function PlatformModelAdmin() {
   }
 
   return (
-    <div className="space-y-6">
-      {error ? (
-        <section className="studio-panel p-4">
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-        </section>
-      ) : null}
-      {successMessage ? (
-        <section className="studio-panel p-4">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {successMessage}
+    <div className="mx-auto max-w-7xl space-y-8 pb-12">
+      {/* 厂商管理部分 */}
+      <section className="animate-in fade-in slide-in-from-top-4 duration-700">
+        <div className="studio-panel overflow-hidden border-none bg-white/60 backdrop-blur-xl shadow-sm transition-all hover:shadow-md">
+          <div className="border-b border-slate-100 bg-slate-50/30 px-8 py-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                <Boxes size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">厂商管理</h3>
+                <p className="text-sm text-slate-500">配置模型供应商、API 密钥与基础连接参数</p>
+              </div>
+            </div>
+            <button
+              onClick={openCreateProviderModal}
+              className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 shadow-lg shadow-slate-200"
+            >
+              <Plus size={16} /> 新增厂商
+            </button>
           </div>
-        </section>
-      ) : null}
 
-      <section className="studio-panel p-6">
-        <div className="admin-ledger-head !mb-6 !rounded-[1rem] !border">
-          <h2 className="text-xl font-bold text-slate-950">厂商管理</h2>
-          <button
-            onClick={openCreateProviderModal}
-            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
-          >
-            新增厂商
-          </button>
-        </div>
-
-        <div className="admin-governance-table">
-          <table className="bg-white text-sm">
-            <thead>
-              <tr>
-                <th className="px-4 py-3 font-semibold">厂商编码</th>
-                <th className="px-4 py-3 font-semibold">厂商名称</th>
-                <th className="px-4 py-3 font-semibold">状态</th>
-                <th className="px-4 py-3 font-semibold">凭据字段</th>
-                <th className="px-4 py-3 font-semibold">Base URL</th>
-                <th className="px-4 py-3 font-semibold text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {providers.map((provider) => (
-                <tr key={provider.provider_key} className="text-slate-700">
-                  <td className="px-4 py-3 font-mono text-xs">{provider.provider_key}</td>
-                  <td className="px-4 py-3">
-                    <div className="font-semibold text-slate-900">{provider.display_name}</div>
-                    <div className="mt-1 text-xs text-slate-500">{provider.description || "-"}</div>
-                  </td>
-                  <td className="px-4 py-3">
+          <div className="px-8 py-4 border-b border-slate-100 bg-white/40">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <Search size={14} className="text-slate-400" />
+                  <input
+                    value={providerQuery}
+                    onChange={(event) => setProviderQuery(event.target.value)}
+                    placeholder="搜索厂商编码 / 名称"
+                    className="w-56 bg-transparent text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300"
+                  />
+                </div>
+                {providerSelected.size > 0 && (
+                  <div className="flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50/60 px-4 py-2 text-xs font-bold text-indigo-700">
+                    已选 {providerSelected.size}
                     <button
-                      onClick={() => void toggleProviderStatus(provider)}
-                      disabled={busyKey === `provider:toggle:${provider.provider_key}`}
-                      aria-pressed={provider.enabled}
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-50 ${
-                        provider.enabled ? "bg-emerald-500" : "bg-slate-300"
-                      }`}
+                      onClick={clearProviderSelection}
+                      className="ml-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black text-indigo-700 hover:bg-white transition-all"
                     >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
-                          provider.enabled ? "translate-x-6" : "translate-x-1"
-                        }`}
-                      />
-                      <span className="sr-only">{provider.enabled ? "停用厂商" : "启用厂商"}</span>
+                      清空
                     </button>
-                  </td>
-                  <td className="px-4 py-3">{provider.credential_fields.join(", ") || "-"}</td>
-                  <td className="px-4 py-3 max-w-[260px] break-all">{provider.base_url || "-"}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => openEditProviderModal(provider)}
-                        className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                      >
-                        编辑
-                      </button>
-                      <button
-                        onClick={() => void deleteProvider(provider.provider_key)}
-                        disabled={busyKey === `provider:delete:${provider.provider_key}`}
-                        className="rounded-full border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 disabled:opacity-50"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!providers.length ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">
-                    还没有厂商配置。
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                  </div>
+                )}
+              </div>
 
-      <section className="studio-panel p-6">
-        <div className="admin-ledger-head !mb-6 !rounded-[1rem] !border">
-          <h2 className="text-xl font-bold text-slate-950">模型管理</h2>
-          <button
-            onClick={openCreateCatalogModal}
-            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
-          >
-            新增模型
-          </button>
-        </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => void bulkSetProvidersEnabled(true)}
+                  disabled={!providerSelected.size || Boolean(busyKey)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-30"
+                >
+                  批量启用
+                </button>
+                <button
+                  onClick={() => void bulkSetProvidersEnabled(false)}
+                  disabled={!providerSelected.size || Boolean(busyKey)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 transition-all hover:border-amber-200 hover:text-amber-700 disabled:opacity-30"
+                >
+                  批量停用
+                </button>
+                <button
+                  onClick={() => void bulkDeleteProviders()}
+                  disabled={!providerSelected.size || Boolean(busyKey)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white border border-rose-100 px-4 py-2 text-xs font-bold text-rose-600 transition-all hover:bg-rose-50 disabled:opacity-30"
+                >
+                  <Trash2 size={12} />
+                  批量删除
+                </button>
+              </div>
+            </div>
+          </div>
 
-        <div className="admin-governance-table">
-          <table className="bg-white text-sm">
-            <thead>
-              <tr>
-                <th className="px-4 py-3 font-semibold">供应商</th>
-                <th className="px-4 py-3 font-semibold">模型类型</th>
-                <th className="px-4 py-3 font-semibold">模型名称</th>
-                <th className="px-4 py-3 font-semibold">状态</th>
-                <th className="px-4 py-3 font-semibold">编辑</th>
-                <th className="px-4 py-3 font-semibold">删除</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-                {sortedCatalog.map((item) => {
-                const provider = providerMap.get(item.provider_key);
-                const effectivelyEnabled = Boolean(provider?.enabled) && item.enabled;
-                const providerDisabled = provider ? !provider.enabled : false;
-                return (
-                  <tr key={item.model_id} className="text-slate-700">
-                    <td className="px-4 py-3">{provider?.display_name || item.provider_key}</td>
-                    <td className="px-4 py-3 uppercase">{item.task_type}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-900">{item.display_name}</div>
-                      <div className="mt-1 font-mono text-xs text-slate-500">{item.model_id}</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  <th className="w-14 px-8 py-4">
+                    <input
+                      ref={providerSelectAllRef}
+                      type="checkbox"
+                      checked={providerAllSelected}
+                      onChange={toggleProviderSelectAllVisible}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 accent-indigo-600"
+                      aria-label="全选（当前筛选）"
+                    />
+                  </th>
+                  <th className="px-8 py-4">厂商编码</th>
+                  <th className="px-8 py-4">厂商名称</th>
+                  <th className="px-8 py-4">状态</th>
+                  <th className="px-8 py-4 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100/50">
+                {filteredProviders.map((provider) => {
+                  const isSelected = providerSelected.has(provider.provider_key);
+                  return (
+                  <tr
+                    key={provider.provider_key}
+                    className={`group hover:bg-slate-50/60 transition-all ${isSelected ? "bg-indigo-50/40" : ""}`}
+                  >
+                    <td className="w-14 px-8 py-5">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleProviderSelected(provider.provider_key)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 accent-indigo-600"
+                        aria-label={`选择 ${provider.provider_key}`}
+                      />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-8 py-5">
+                      <code className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-500">
+                        {provider.provider_key}
+                      </code>
+                    </td>
+                    <td className="px-8 py-5">
+                      <div className="font-bold text-slate-900">{provider.display_name}</div>
+                      <div className="mt-1 text-xs text-slate-400 truncate max-w-xs">{provider.description || "暂无描述"}</div>
+                    </td>
+                    <td className="px-8 py-5">
                       <button
-                        onClick={() => void toggleModelStatus(item)}
-                        disabled={providerDisabled || busyKey === `catalog:toggle:${item.model_id}`}
-                        aria-pressed={effectivelyEnabled}
-                        title={providerDisabled ? "厂商关闭时，模型不可单独开启" : undefined}
-                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-50 ${
-                          effectivelyEnabled ? "bg-emerald-500" : "bg-slate-300"
+                        onClick={() => void toggleProviderStatus(provider)}
+                        disabled={busyKey === `provider:toggle:${provider.provider_key}` || Boolean(busyKey?.startsWith("provider:bulk"))}
+                        aria-pressed={provider.enabled}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all disabled:opacity-50 ${
+                          provider.enabled ? "bg-emerald-500" : "bg-slate-200"
                         }`}
                       >
-                        <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
-                            effectivelyEnabled ? "translate-x-6" : "translate-x-1"
-                          }`}
-                        />
-                        <span className="sr-only">{effectivelyEnabled ? "停用模型" : "启用模型"}</span>
-                      </button>
-                      {providerDisabled ? (
-                        <p className="mt-1 text-xs text-slate-500">厂商已关闭，模型跟随关闭</p>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => openEditCatalogModal(item)}
-                        className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                      >
-                        编辑
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-all ${
+                          provider.enabled ? "translate-x-6" : "translate-x-1"
+                        }`} />
+                        <span className="sr-only">{provider.enabled ? "停用厂商" : "启用厂商"}</span>
                       </button>
                     </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => void deleteModel(item.model_id)}
-                        disabled={busyKey === `catalog:delete:${item.model_id}`}
-                        className="rounded-full border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 disabled:opacity-50"
-                      >
-                        删除
-                      </button>
+                    <td className="px-8 py-5 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => openEditProviderModal(provider)}
+                          disabled={Boolean(busyKey)}
+                          className="rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 transition-all hover:border-indigo-200 hover:text-indigo-600"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => void deleteProvider(provider.provider_key)}
+                          disabled={busyKey === `provider:delete:${provider.provider_key}` || Boolean(busyKey)}
+                          className="rounded-xl bg-white border border-rose-100 px-4 py-2 text-xs font-bold text-rose-500 transition-all hover:bg-rose-50 disabled:opacity-30"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                );
-              })}
-              {!sortedCatalog.length ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">
-                    还没有模型配置。
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+                );})}
+                {!filteredProviders.length && (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-20 text-center text-slate-400 font-medium">
+                      没有匹配的厂商配置。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
+      {/* 模型目录部分 */}
+      <section className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
+        <div className="studio-panel overflow-hidden border-none bg-white/60 backdrop-blur-xl shadow-sm transition-all hover:shadow-md">
+          <div className="border-b border-slate-100 bg-slate-50/30 px-8 py-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                <LayoutGrid size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">模型管理</h3>
+                <p className="text-sm text-slate-500">管理各厂商下的具体模型规格、可见性与参数策略</p>
+              </div>
+            </div>
+            <button
+              onClick={openCreateCatalogModal}
+              className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 shadow-lg shadow-slate-200"
+            >
+              <Plus size={16} /> 新增模型
+            </button>
+          </div>
+
+          <div className="px-8 py-4 border-b border-slate-100 bg-white/40">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <Search size={14} className="text-slate-400" />
+                  <input
+                    value={catalogQuery}
+                    onChange={(event) => setCatalogQuery(event.target.value)}
+                    placeholder="搜索模型 ID / 名称 / 厂商"
+                    className="w-64 bg-transparent text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300"
+                  />
+                </div>
+                <select
+                  value={catalogProviderFilter}
+                  onChange={(event) => setCatalogProviderFilter(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
+                >
+                  <option value="">全部厂商</option>
+                  {providers.map((provider) => (
+                    <option key={provider.provider_key} value={provider.provider_key}>
+                      {provider.display_name}
+                    </option>
+                  ))}
+                </select>
+
+                {catalogSelected.size > 0 && (
+                  <div className="flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50/60 px-4 py-2 text-xs font-bold text-indigo-700">
+                    已选 {catalogSelected.size}
+                    <button
+                      onClick={clearCatalogSelection}
+                      className="ml-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black text-indigo-700 hover:bg-white transition-all"
+                    >
+                      清空
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">排序</span>
+                  <input
+                    value={catalogBulkSortOrder}
+                    onChange={(event) => setCatalogBulkSortOrder(event.target.value)}
+                    placeholder="例如 100"
+                    className="w-24 bg-transparent text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300"
+                  />
+                </div>
+                <button
+                  onClick={() => void bulkSetModelsSortOrder()}
+                  disabled={!catalogSelected.size || Boolean(busyKey)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 transition-all hover:border-indigo-200 hover:text-indigo-600 disabled:opacity-30"
+                >
+                  批量设排序
+                </button>
+                <button
+                  onClick={() => void bulkSetModelsEnabled(true)}
+                  disabled={!catalogSelected.size || Boolean(busyKey)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-30"
+                >
+                  批量启用
+                </button>
+                <button
+                  onClick={() => void bulkSetModelsEnabled(false)}
+                  disabled={!catalogSelected.size || Boolean(busyKey)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 transition-all hover:border-amber-200 hover:text-amber-700 disabled:opacity-30"
+                >
+                  批量停用
+                </button>
+                <button
+                  onClick={() => void bulkDeleteModels()}
+                  disabled={!catalogSelected.size || Boolean(busyKey)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white border border-rose-100 px-4 py-2 text-xs font-bold text-rose-600 transition-all hover:bg-rose-50 disabled:opacity-30"
+                >
+                  <Trash2 size={12} />
+                  批量删除
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  <th className="w-14 px-8 py-4">
+                    <input
+                      ref={catalogSelectAllRef}
+                      type="checkbox"
+                      checked={catalogAllSelected}
+                      onChange={toggleCatalogSelectAllVisible}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 accent-indigo-600"
+                      aria-label="全选（当前筛选）"
+                    />
+                  </th>
+                  <th className="px-8 py-4">模型展示</th>
+                  <th className="px-8 py-4">归属厂商</th>
+                  <th className="px-8 py-4">类型与范围</th>
+                  <th className="px-8 py-4">状态</th>
+                  <th className="px-8 py-4 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100/50">
+                {filteredCatalog.map((item) => {
+                  const provider = providerMap.get(item.provider_key);
+                  const effectivelyEnabled = Boolean(provider?.enabled) && item.enabled;
+                  const providerDisabled = provider ? !provider.enabled : false;
+                  const isSelected = catalogSelected.has(item.model_id);
+                  return (
+                    <tr
+                      key={item.model_id}
+                      className={`group hover:bg-slate-50/60 transition-all ${isSelected ? "bg-indigo-50/40" : ""}`}
+                    >
+                      <td className="w-14 px-8 py-5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleCatalogSelected(item.model_id)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 accent-indigo-600"
+                          aria-label={`选择 ${item.model_id}`}
+                        />
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="font-bold text-slate-900">{item.display_name}</div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="font-mono text-[10px] font-bold text-slate-300">#{item.sort_order}</span>
+                          <code className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+                            {item.model_id}
+                          </code>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                          {provider?.display_name || item.provider_key}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                            item.task_type === "i2v" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"
+                          }`}>
+                            {item.task_type}
+                          </span>
+                          {item.is_public && (
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                              Public
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={() => void toggleModelStatus(item)}
+                            disabled={providerDisabled || busyKey === `catalog:toggle:${item.model_id}` || Boolean(busyKey?.startsWith("catalog:bulk"))}
+                            aria-pressed={effectivelyEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all disabled:opacity-50 ${
+                              effectivelyEnabled ? "bg-emerald-500" : "bg-slate-200"
+                            }`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-all ${
+                              effectivelyEnabled ? "translate-x-6" : "translate-x-1"
+                            }`} />
+                            <span className="sr-only">{effectivelyEnabled ? "停用模型" : "启用模型"}</span>
+                          </button>
+                          {providerDisabled && (
+                            <span className="text-[9px] font-bold text-amber-600">厂商已关</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => openEditCatalogModal(item)}
+                            disabled={Boolean(busyKey)}
+                            className="rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 transition-all hover:border-indigo-200 hover:text-indigo-600"
+                          >
+                            编辑
+                          </button>
+                          <button
+                            onClick={() => void deleteModel(item.model_id)}
+                            disabled={busyKey === `catalog:delete:${item.model_id}` || Boolean(busyKey)}
+                            className="rounded-xl bg-white border border-rose-100 px-4 py-2 text-xs font-bold text-rose-500 transition-all hover:bg-rose-50 disabled:opacity-30"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!filteredCatalog.length && (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-20 text-center text-slate-400 font-medium">
+                      没有匹配的模型配置。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* 全局消息提示 */}
+      <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 space-y-3 pointer-events-none">
+        {successMessage && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 flex items-center gap-3 rounded-full bg-slate-900 px-6 py-3 text-sm font-medium text-white shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+              <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            {successMessage}
+          </div>
+        )}
+        {error && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 flex items-center gap-3 rounded-full bg-rose-600 px-6 py-3 text-sm font-medium text-white shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-rose-600">
+              <X size={12} strokeWidth={3} />
+            </div>
+            {error}
+          </div>
+        )}
+      </div>
+
+      {/* 厂商配置 Modal */}
       <Modal
         open={providerModalOpen}
-        title={providerMode === "create" ? "新增厂商" : "编辑厂商"}
+        title={providerMode === "create" ? "新增厂商配置" : "编辑厂商配置"}
         onClose={closeProviderModal}
       >
-        <div className="admin-form-section">
-          <div className="admin-form-section-title">厂商基础配置</div>
-          <div className="admin-form-grid">
-          <label className="admin-form-field">
-            供应商编码
-            <input
-              value={providerForm.provider_key}
-              disabled={providerMode === "edit"}
-              onChange={(event) => setProviderForm((prev) => ({ ...prev, provider_key: event.target.value.toUpperCase() }))}
-              placeholder="例如 DASHSCOPE"
-            />
-          </label>
-          <label className="admin-form-field">
-            供应商名称
-            <input
-              value={providerForm.display_name}
-              onChange={(event) => setProviderForm((prev) => ({ ...prev, display_name: event.target.value }))}
-            />
-          </label>
-          <label className="admin-form-field lg:col-span-2">
-            描述
-            <input
-              value={providerForm.description}
-              onChange={(event) => setProviderForm((prev) => ({ ...prev, description: event.target.value }))}
-            />
-          </label>
-          <label className="admin-form-field">
-            Base URL
+        <div className="space-y-6">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">厂商编码 (provider_key)</label>
+              <input
+                value={providerForm.provider_key}
+                onChange={(event) => setProviderForm((prev) => ({ ...prev, provider_key: event.target.value.toUpperCase() }))}
+                disabled={providerMode === "edit"}
+                placeholder="例如: OPENAI"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">厂商展示名称</label>
+              <input
+                value={providerForm.display_name}
+                onChange={(event) => setProviderForm((prev) => ({ ...prev, display_name: event.target.value }))}
+                placeholder="例如: OpenAI"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 ml-1">基础 API 地址 (Base URL)</label>
             <input
               value={providerForm.base_url}
               onChange={(event) => setProviderForm((prev) => ({ ...prev, base_url: event.target.value }))}
-              placeholder="留空使用默认地址"
+              placeholder="https://api.openai.com/v1"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
             />
-          </label>
-          <label className="admin-form-field">
-            凭据字段
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 ml-1">鉴权字段定义 (英文逗号分隔)</label>
             <input
               value={providerForm.credential_fields_text}
               onChange={(event) => handleProviderCredentialFieldsChange(event.target.value)}
-              placeholder="例如 api_key, secret_key"
+              placeholder="api_key, organization_id"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
             />
-          </label>
           </div>
-        </div>
-          {providerFields.length ? (
-            <div className="admin-form-section">
-              <div className="admin-form-section-title">凭据配置</div>
-              <div className="admin-form-grid">
-              {providerFields.map((field) => (
-                <label key={field} className="admin-form-field">
-                  {field}
-                  <input
-                    type="password"
-                    value={providerForm.credential_values[field] || ""}
-                    onChange={(event) => handleProviderFieldChange(field, event.target.value)}
-                    placeholder={providerMode === "edit" ? "留空保留；输入 __CLEAR__ 清空" : "输入凭据"}
-                  />
-                </label>
-              ))}
+
+          {providerFields.length > 0 && (
+            <div className="rounded-2xl bg-amber-50/50 p-6 border border-amber-100 space-y-4">
+              <div className="text-xs font-bold uppercase tracking-wider text-amber-700">API 凭据配置</div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {providerFields.map((field) => (
+                  <div key={field} className="space-y-2">
+                    <label className="text-xs font-bold text-amber-600/80 ml-1">{field}</label>
+                    <input
+                      type="password"
+                      value={providerForm.credential_values[field] || ""}
+                      onChange={(event) => handleProviderFieldChange(field, event.target.value)}
+                      placeholder={providerMode === "edit" ? "留空保留；输入 __CLEAR__ 清空" : "请输入密钥"}
+                      className="w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-mono text-slate-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-            </div>
-          ) : null}
-          <div className="admin-form-section">
-            <div className="admin-form-section-title">供应商扩展设置</div>
-            <label className="admin-form-field">
-            供应商设置 JSON
+          )}
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 ml-1">厂商描述</label>
+            <textarea
+              value={providerForm.description}
+              onChange={(event) => setProviderForm((prev) => ({ ...prev, description: event.target.value }))}
+              rows={2}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 ml-1">供应商设置 JSON</label>
             <textarea
               value={providerForm.settings_json_text}
               onChange={(event) => setProviderForm((prev) => ({ ...prev, settings_json_text: event.target.value }))}
-              className="font-mono text-sm"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
             />
-          </label>
-          <label className="mt-4 flex items-center gap-2 text-sm font-medium text-slate-700">
-            <input
-              type="checkbox"
-              checked={providerForm.enabled}
-              onChange={(event) => setProviderForm((prev) => ({ ...prev, enabled: event.target.checked }))}
-            />
-            启用该厂商
-          </label>
           </div>
-        <div className="admin-form-actions">
-          <button
-            onClick={() => void saveProvider()}
-            disabled={busyKey?.startsWith("provider:") || false}
-            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {providerMode === "create" ? "创建厂商" : "保存厂商"}
-          </button>
-          <button
-            onClick={closeProviderModal}
-            className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            取消
-          </button>
+
+          <div className="flex items-center justify-between pt-4">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`flex h-6 w-11 items-center rounded-full p-1 transition-all ${providerForm.enabled ? "bg-indigo-600" : "bg-slate-200"}`}>
+                <div className={`h-4 w-4 rounded-full bg-white transition-all ${providerForm.enabled ? "translate-x-5" : "translate-x-0"}`} />
+              </div>
+              <input
+                type="checkbox"
+                checked={providerForm.enabled}
+                onChange={(event) => setProviderForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                className="hidden"
+              />
+              <span className="text-sm font-bold text-slate-700">启用该厂商</span>
+            </label>
+            <div className="flex gap-3">
+              <button
+                onClick={closeProviderModal}
+                className="rounded-2xl border border-slate-200 px-6 py-4 text-sm font-bold text-slate-600 transition-all hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void saveProvider()}
+                disabled={!!busyKey}
+                className="rounded-2xl bg-slate-900 px-10 py-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 disabled:opacity-30 shadow-lg shadow-slate-200"
+              >
+                {busyKey?.startsWith("provider:") ? "正在保存..." : "保存厂商配置"}
+              </button>
+            </div>
+          </div>
         </div>
       </Modal>
 
+      {/* 模型目录 Modal */}
       <Modal
         open={catalogModalOpen}
-        title={catalogMode === "create" ? "新增模型" : "编辑模型"}
+        title={catalogMode === "create" ? "新增模型目录项" : "编辑模型目录项"}
         onClose={closeCatalogModal}
       >
-        <div className="admin-form-section">
-          <div className="admin-form-section-title">模型基础配置</div>
-          <div className="admin-form-grid">
-          <label className="admin-form-field">
-            模型 ID
-            <input
-              value={catalogForm.model_id}
-              disabled={catalogMode === "edit"}
-              onChange={(event) => setCatalogForm((prev) => ({ ...prev, model_id: event.target.value }))}
-              placeholder="例如 wan2.6-i2v"
-            />
-          </label>
-          <label className="admin-form-field">
-            模型名称
-            <input
-              value={catalogForm.display_name}
-              onChange={(event) => setCatalogForm((prev) => ({ ...prev, display_name: event.target.value }))}
-            />
-          </label>
-          <label className="admin-form-field">
-            模型类型
-            <select
-              value={catalogForm.task_type}
-              onChange={(event) => setCatalogForm((prev) => ({ ...prev, task_type: event.target.value as TaskType }))}
-            >
-              <option value="t2i">t2i</option>
-              <option value="i2i">i2i</option>
-              <option value="i2v">i2v</option>
-            </select>
-          </label>
-          <label className="admin-form-field">
-            供应商
-            <select
-              value={catalogForm.provider_key}
-              onChange={(event) => setCatalogForm((prev) => ({ ...prev, provider_key: event.target.value }))}
-            >
-              <option value="">请选择供应商</option>
-              {providers.map((provider) => (
-                <option key={provider.provider_key} value={provider.provider_key}>
-                  {provider.display_name} ({provider.provider_key})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-form-field lg:col-span-2">
-            描述
+        <div className="space-y-6">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">模型唯一标识 (model_id)</label>
+              <input
+                value={catalogForm.model_id}
+                onChange={(event) => setCatalogForm((prev) => ({ ...prev, model_id: event.target.value }))}
+                disabled={catalogMode === "edit"}
+                placeholder="例如: gpt-4o"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">展示名称</label>
+              <input
+                value={catalogForm.display_name}
+                onChange={(event) => setCatalogForm((prev) => ({ ...prev, display_name: event.target.value }))}
+                placeholder="例如: GPT-4o (Vision)"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">归属厂商</label>
+              <select
+                value={catalogForm.provider_key}
+                onChange={(event) => setCatalogForm((prev) => ({ ...prev, provider_key: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              >
+                <option value="">请选择供应商</option>
+                {providers.map((p) => (
+                  <option key={p.provider_key} value={p.provider_key}>
+                    {p.display_name} ({p.provider_key})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">任务类型</label>
+              <select
+                value={catalogForm.task_type}
+                onChange={(event) => setCatalogForm((prev) => ({ ...prev, task_type: event.target.value as TaskType }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              >
+                <option value="t2i">文本生成图 (T2I)</option>
+                <option value="i2i">图片重绘 (I2I)</option>
+                <option value="i2v">图片生成视频 (I2V)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 ml-1">模型描述</label>
             <input
               value={catalogForm.description}
               onChange={(event) => setCatalogForm((prev) => ({ ...prev, description: event.target.value }))}
+              placeholder="简短描述模型能力"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
             />
-          </label>
-          <label className="admin-form-field">
-            排序
-            <input
-              type="number"
-              value={catalogForm.sort_order}
-              onChange={(event) => setCatalogForm((prev) => ({ ...prev, sort_order: Number(event.target.value) || 100 }))}
-            />
-          </label>
-          <div className="flex items-end gap-6 text-sm font-medium text-slate-700">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={catalogForm.enabled}
-                disabled={Boolean(catalogForm.provider_key) && !providerMap.get(catalogForm.provider_key)?.enabled}
-                onChange={(event) => setCatalogForm((prev) => ({ ...prev, enabled: event.target.checked }))}
-              />
-              启用
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={catalogForm.is_public}
-                onChange={(event) => setCatalogForm((prev) => ({ ...prev, is_public: event.target.checked }))}
-              />
-              对业务前台公开
-            </label>
           </div>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">排序权重 (越小越靠前)</label>
+              <input
+                type="number"
+                value={catalogForm.sort_order}
+                onChange={(event) => setCatalogForm((prev) => ({ ...prev, sort_order: Number(event.target.value) || 100 }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+            </div>
+            <div className="flex gap-4 pt-8">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={catalogForm.enabled}
+                  disabled={Boolean(catalogForm.provider_key) && !providerMap.get(catalogForm.provider_key)?.enabled}
+                  onChange={(event) => setCatalogForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-bold text-slate-700">启用该项</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={catalogForm.is_public}
+                  onChange={(event) => setCatalogForm((prev) => ({ ...prev, is_public: event.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-bold text-slate-700">对业务前台公开</span>
+              </label>
+            </div>
           </div>
-        </div>
-          {catalogForm.provider_key && !providerMap.get(catalogForm.provider_key)?.enabled ? (
+
+          {catalogForm.provider_key && !providerMap.get(catalogForm.provider_key)?.enabled && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
               当前供应商已关闭，模型不能单独启用。请先开启供应商，再修改模型启用状态。
             </div>
-          ) : null}
-          <div className="admin-form-section">
-            <div className="admin-form-section-title">能力与默认参数</div>
-            <div className="admin-form-grid">
-          <label className="admin-form-field">
-            能力 JSON
-            <textarea
-              value={catalogForm.capabilities_json_text}
-              onChange={(event) => setCatalogForm((prev) => ({ ...prev, capabilities_json_text: event.target.value }))}
-              className="min-h-[140px] font-mono text-sm"
-            />
-          </label>
-          <label className="admin-form-field">
-            默认参数 JSON
-            <textarea
-              value={catalogForm.default_settings_json_text}
-              onChange={(event) => setCatalogForm((prev) => ({ ...prev, default_settings_json_text: event.target.value }))}
-              className="min-h-[140px] font-mono text-sm"
-            />
-          </label>
+          )}
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">能力定义 (JSON)</label>
+              <textarea
+                value={catalogForm.capabilities_json_text}
+                onChange={(event) => setCatalogForm((prev) => ({ ...prev, capabilities_json_text: event.target.value }))}
+                rows={4}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">默认参数 (JSON)</label>
+              <textarea
+                value={catalogForm.default_settings_json_text}
+                onChange={(event) => setCatalogForm((prev) => ({ ...prev, default_settings_json_text: event.target.value }))}
+                rows={4}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
             </div>
           </div>
-        <div className="admin-form-actions">
-          <button
-            onClick={() => void saveCatalog()}
-            disabled={busyKey?.startsWith("catalog:") || false}
-            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {catalogMode === "create" ? "创建模型" : "保存模型"}
-          </button>
-          <button
-            onClick={closeCatalogModal}
-            className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            取消
-          </button>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              onClick={closeCatalogModal}
+              className="rounded-2xl border border-slate-200 px-6 py-4 text-sm font-bold text-slate-600 transition-all hover:bg-slate-50"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => void saveCatalog()}
+              disabled={!!busyKey}
+              className="rounded-2xl bg-slate-900 px-10 py-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 disabled:opacity-30 shadow-lg shadow-slate-200"
+            >
+              {busyKey?.startsWith("catalog:") ? "正在保存..." : "保存模型项"}
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

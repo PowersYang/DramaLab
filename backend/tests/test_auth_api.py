@@ -136,6 +136,24 @@ class AuthApiTest(unittest.TestCase):
         self.assertEqual(me["current_role_code"], "individual_creator")
         self.assertEqual(len(me["workspaces"]), 1)
 
+    def test_signup_bootstraps_default_task_concurrency_limits(self):
+        payload = self._login("concurrency@example.com", "Concurrency User")
+
+        from src.application.services.task_concurrency_service import DEFAULT_NEW_ORGANIZATION_TASK_MAX_CONCURRENCY
+        from src.repository import TaskConcurrencyLimitRepository
+        from src.schemas.task_models import TaskType
+
+        organization_id = payload["me"]["current_organization_id"]
+        limits = [
+            item
+            for item in TaskConcurrencyLimitRepository().list()
+            if item.organization_id == organization_id
+        ]
+
+        self.assertEqual(len(limits), len(TaskType))
+        self.assertTrue(all(item.max_concurrency == DEFAULT_NEW_ORGANIZATION_TASK_MAX_CONCURRENCY for item in limits))
+        self.assertEqual({item.task_type for item in limits}, {task_type.value for task_type in TaskType})
+
     def test_authenticated_project_routes_are_scoped_to_current_workspace(self):
         login_payload = self._login("alice@example.com", "Alice")
         access_token = login_payload["session"]["access_token"]

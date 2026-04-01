@@ -38,6 +38,24 @@ create table if not exists projects (
     model_settings jsonb not null default '{}'::jsonb,
     prompt_config jsonb not null default '{}'::jsonb,
     timeline_json jsonb,
+    status varchar(32) not null default 'pending',
+    is_deleted boolean not null default false,
+    deleted_at timestamptz,
+    version integer not null default 1,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists series (
+    id varchar(64) primary key,
+    organization_id varchar(64),
+    workspace_id varchar(64),
+    title varchar(255) not null,
+    description text,
+    art_direction jsonb,
+    model_settings jsonb not null default '{}'::jsonb,
+    prompt_config jsonb not null default '{}'::jsonb,
+    status varchar(32) not null default 'active',
     is_deleted boolean not null default false,
     deleted_at timestamptz,
     version integer not null default 1,
@@ -60,3 +78,4 @@ create table if not exists video_tasks (
 create index if not exists ix_style_presets_active_sort on style_presets (is_active, sort_order, created_at);
 create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type) where is_deleted = false;
 create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, is_deleted, updated_at);
+create index if not exists ix_series_org_workspace_updated on series (organization_id, workspace_id, is_deleted, updated_at);

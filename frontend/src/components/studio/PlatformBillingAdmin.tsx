@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, Save, X } from "lucide-react";
 
 import {
@@ -137,6 +137,8 @@ export default function PlatformBillingAdmin() {
   const [taskTypes, setTaskTypes] = useState<TaskConcurrencyTaskTypeOption[]>([]);
   const [rechargeTransactions, setRechargeTransactions] = useState<BillingTransactionSummary[]>([]);
   const [pricingDrafts, setPricingDrafts] = useState<Record<string, string>>({});
+  const [pricingSelected, setPricingSelected] = useState<Set<string>>(new Set());
+  const [pricingBulkValue, setPricingBulkValue] = useState<string>("");
   const [bonusForm, setBonusForm] = useState<BonusRuleFormState>(DEFAULT_BONUS_FORM);
   const [rechargeForm, setRechargeForm] = useState<RechargeFormState>(DEFAULT_RECHARGE_FORM);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string>("");
@@ -147,6 +149,8 @@ export default function PlatformBillingAdmin() {
   const [message, setMessage] = useState<string | null>(null);
   const [isBonusModalOpen, setIsBonusModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<BillingAdminTab>("accounts");
+
+  const pricingSelectAllRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -245,6 +249,25 @@ export default function PlatformBillingAdmin() {
     setPricingDrafts(nextDrafts);
   }, [pricingRuleMap, taskTypes]);
 
+  useEffect(() => {
+    if (!taskTypes.length) {
+      setPricingSelected(new Set());
+      return;
+    }
+    const allowed = new Set(taskTypes.map((item) => item.task_type));
+    setPricingSelected((prev) => new Set(Array.from(prev).filter((key) => allowed.has(key))));
+  }, [taskTypes]);
+
+  const pricingSelectedCount = pricingSelected.size;
+  const pricingAllCount = taskTypes.length;
+  const pricingAllSelected = pricingAllCount > 0 && pricingSelectedCount === pricingAllCount;
+  const pricingSomeSelected = pricingSelectedCount > 0 && pricingSelectedCount < pricingAllCount;
+
+  useEffect(() => {
+    if (!pricingSelectAllRef.current) return;
+    pricingSelectAllRef.current.indeterminate = pricingSomeSelected;
+  }, [pricingSomeSelected]);
+
   const rechargeAmountCents = useMemo(
     () => parseYuanToCents(rechargeForm.amount_yuan),
     [rechargeForm.amount_yuan],
@@ -299,6 +322,115 @@ export default function PlatformBillingAdmin() {
     } finally {
       setBusyKey(null);
     }
+  };
+
+  const togglePricingSelected = (taskType: string) => {
+    setPricingSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskType)) {
+        next.delete(taskType);
+      } else {
+        next.add(taskType);
+      }
+      return next;
+    });
+  };
+
+  const togglePricingSelectAll = () => {
+    setPricingSelected((prev) => {
+      if (prev.size === taskTypes.length) {
+        return new Set();
+      }
+      return new Set(taskTypes.map((item) => item.task_type));
+    });
+  };
+
+  const clearPricingSelection = () => setPricingSelected(new Set());
+
+  const applyBulkPricingToSelected = () => {
+    setError(null);
+    setMessage(null);
+    if (!pricingSelected.size) {
+      setError("请先勾选需要批量操作的任务类型。");
+      return;
+    }
+    const rawValue = pricingBulkValue.trim();
+    const priceCredits = Number(rawValue || "0");
+    if (!Number.isInteger(priceCredits) || priceCredits < 0) {
+      setError("批量定价必须是大于等于 0 的整数。");
+      return;
+    }
+    setPricingDrafts((prev) => {
+      const next = { ...prev };
+      pricingSelected.forEach((taskType) => {
+        next[taskType] = String(priceCredits);
+      });
+      return next;
+    });
+    setMessage(`已将新价格 ${priceCredits} 豆应用到已选 ${pricingSelected.size} 项。`);
+  };
+
+  const savePricingBatch = async (taskTypeKeys: string[], label: string) => {
+    setError(null);
+    setMessage(null);
+    if (!taskTypeKeys.length) {
+      setError("没有需要保存的项目。");
+      return;
+    }
+    const tasksByKey = new Map(taskTypes.map((item) => [item.task_type, item]));
+    const invalid = taskTypeKeys.find((key) => {
+      const rawValue = (pricingDrafts[key] || "0").trim();
+      const priceCredits = Number(rawValue || "0");
+      return !Number.isInteger(priceCredits) || priceCredits < 0;
+    });
+    if (invalid) {
+      setError(`批量保存失败：${invalid} 的新价格不是有效整数。`);
+      return;
+    }
+    try {
+      setBusyKey("pricing:bulk");
+      let ok = 0;
+      const failures: string[] = [];
+      for (const key of taskTypeKeys) {
+        const task = tasksByKey.get(key);
+        if (!task) continue;
+        const rawValue = (pricingDrafts[key] || "0").trim();
+        const priceCredits = Number(rawValue || "0");
+        try {
+          const saved = await api.upsertBillingPricingRule({
+            task_type: task.task_type,
+            price_credits: priceCredits,
+            description: task.label,
+          });
+          ok += 1;
+          setPricingRules((prev) => {
+            const others = prev.filter((item) => item.id !== saved.id);
+            return [...others, saved];
+          });
+        } catch {
+          failures.push(task.task_type);
+        }
+      }
+      if (failures.length) {
+        setError(`${label}：成功 ${ok} 项，失败 ${failures.length} 项（${failures.slice(0, 6).join(", ")}${failures.length > 6 ? "..." : ""}）。`);
+      } else {
+        setMessage(`${label}：已保存 ${ok} 项。`);
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const saveSelectedPricing = async () => {
+    const keys = Array.from(pricingSelected);
+    await savePricingBatch(keys, "批量保存已选");
+  };
+
+  const saveAllPendingPricing = async () => {
+    const pending = taskTypes
+      .map((item) => item.task_type)
+      .filter((key) => String(pricingRuleMap.get(key)?.price_credits ?? 0) !== String((pricingDrafts[key] ?? "0").trim()));
+    await savePricingBatch(pending, "批量保存待保存项");
   };
 
   const submitBonusRule = async () => {
@@ -565,11 +697,78 @@ export default function PlatformBillingAdmin() {
               <h3 className="text-lg font-bold text-slate-900">任务计费标准</h3>
               <p className="text-sm text-slate-500">配置不同类型 AI 任务的算力豆消耗价格</p>
             </div>
+            <div className="flex items-center gap-3">
+              {pricingSelectedCount > 0 && (
+                <div className="hidden sm:flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50/60 px-4 py-2 text-xs font-bold text-indigo-700">
+                  已选 {pricingSelectedCount} 项
+                  <button
+                    onClick={clearPricingSelection}
+                    className="ml-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black text-indigo-700 hover:bg-white transition-all"
+                  >
+                    清空
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={() => void saveAllPendingPricing()}
+                disabled={busyKey === "pricing:bulk"}
+                className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 transition-all hover:border-indigo-200 hover:text-indigo-600 disabled:opacity-30"
+              >
+                <Save size={12} />
+                保存待保存
+              </button>
+            </div>
+          </div>
+          <div className="px-8 py-4 border-b border-slate-100 bg-white/40">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">批量</span>
+                  <input
+                    value={pricingBulkValue}
+                    onChange={(event) => setPricingBulkValue(event.target.value)}
+                    placeholder="新价格(豆)"
+                    className="w-32 bg-transparent text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300"
+                  />
+                </div>
+                <button
+                  onClick={applyBulkPricingToSelected}
+                  disabled={!pricingSelectedCount || busyKey === "pricing:bulk"}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 disabled:opacity-30"
+                >
+                  应用到已选
+                </button>
+                <button
+                  onClick={() => void saveSelectedPricing()}
+                  disabled={!pricingSelectedCount || busyKey === "pricing:bulk"}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 transition-all hover:border-indigo-200 hover:text-indigo-600 disabled:opacity-30"
+                >
+                  <Save size={12} />
+                  保存已选
+                </button>
+              </div>
+
+              <div className="text-[10px] font-bold text-slate-400">
+                勾选行后可批量设价 / 批量保存
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  <th className="w-14 px-8 py-4">
+                    <div className="flex items-center gap-3">
+                      <input
+                        ref={pricingSelectAllRef}
+                        type="checkbox"
+                        checked={pricingAllSelected}
+                        onChange={togglePricingSelectAll}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 accent-indigo-600"
+                        aria-label="全选"
+                      />
+                    </div>
+                  </th>
                   <th className="px-8 py-4">任务类型</th>
                   <th className="px-8 py-4">任务编码</th>
                   <th className="px-8 py-4">当前价格 (豆)</th>
@@ -583,9 +782,22 @@ export default function PlatformBillingAdmin() {
                   const savedPrice = savedRule?.price_credits ?? 0;
                   const draftPrice = pricingDrafts[item.task_type] ?? "0";
                   const hasChanged = String(savedPrice) !== draftPrice;
+                  const isSelected = pricingSelected.has(item.task_type);
 
                   return (
-                    <tr key={item.task_type} className="group hover:bg-slate-50/50 transition-all">
+                    <tr
+                      key={item.task_type}
+                      className={`group transition-all hover:bg-slate-50/60 ${isSelected ? "bg-indigo-50/40" : ""}`}
+                    >
+                      <td className="w-14 px-8 py-5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => togglePricingSelected(item.task_type)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 accent-indigo-600"
+                          aria-label={`选择 ${item.task_type}`}
+                        />
+                      </td>
                       <td className="px-8 py-5">
                         <div className="font-bold text-slate-900">{item.label}</div>
                       </td>
@@ -616,7 +828,7 @@ export default function PlatformBillingAdmin() {
                       <td className="px-8 py-5 text-right">
                         <button
                           onClick={() => void handlePricingSave(item)}
-                          disabled={busyKey === `pricing:${item.task_type}`}
+                          disabled={busyKey === `pricing:${item.task_type}` || busyKey === "pricing:bulk"}
                           className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-indigo-600 active:scale-95 disabled:opacity-30"
                         >
                           {busyKey === `pricing:${item.task_type}` ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}

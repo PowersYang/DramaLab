@@ -104,8 +104,12 @@ class PostgresSchemaSqlTest(unittest.TestCase):
         self.assertIn("create table if not exists model_provider_configs", sql)
         self.assertIn("create table if not exists model_catalog_entries", sql)
         self.assertIn("create table if not exists projects", sql)
+        self.assertIn("create table if not exists series", sql)
         self.assertIn("id varchar(64) primary key", sql)
         self.assertIn("model_settings jsonb not null default '{}'::jsonb", sql)
+        self.assertIn("timeline_json jsonb", sql)
+        self.assertIn("status varchar(32) not null default 'pending'", sql)
+        self.assertIn("status varchar(32) not null default 'active'", sql)
         self.assertIn("reference_video_urls jsonb not null default '[]'::jsonb", sql)
         self.assertIn("is_deleted boolean not null default false", sql)
         self.assertIn("deleted_at timestamptz", sql)
@@ -119,3 +123,115 @@ class PostgresSchemaSqlTest(unittest.TestCase):
             "create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, is_deleted, updated_at)",
             sql,
         )
+        self.assertIn(
+            "create index if not exists ix_series_org_workspace_updated on series (organization_id, workspace_id, is_deleted, updated_at)",
+            sql,
+        )
+
+    def test_init_database_backfills_project_status_and_timeline_columns_for_legacy_sqlite(self):
+        from sqlalchemy import create_engine, inspect, text
+
+        from src.settings.env_settings import override_env_path_for_tests
+        from src.db.session import get_engine, get_session_factory, init_database
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "legacy-projects.db"
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text(f"DATABASE_URL=sqlite:///{db_path}\n", encoding="utf-8")
+
+            override_env_path_for_tests(env_path)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()
+
+            legacy_engine = create_engine(f"sqlite:///{db_path}", future=True)
+            with legacy_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        CREATE TABLE projects (
+                            id VARCHAR(64) PRIMARY KEY,
+                            organization_id VARCHAR(64),
+                            workspace_id VARCHAR(64),
+                            title VARCHAR(255) NOT NULL,
+                            original_text TEXT NOT NULL,
+                            style_preset VARCHAR(128) NOT NULL DEFAULT 'realistic',
+                            style_prompt TEXT,
+                            merged_video_url TEXT,
+                            series_id VARCHAR(64),
+                            episode_number INTEGER,
+                            art_direction JSON,
+                            model_settings JSON NOT NULL DEFAULT '{}',
+                            prompt_config JSON NOT NULL DEFAULT '{}',
+                            is_deleted BOOLEAN NOT NULL DEFAULT 0,
+                            deleted_at DATETIME,
+                            deleted_by VARCHAR(64),
+                            created_by VARCHAR(64),
+                            updated_by VARCHAR(64),
+                            created_at DATETIME NOT NULL,
+                            updated_at DATETIME NOT NULL,
+                            version INTEGER NOT NULL DEFAULT 1
+                        )
+                        """
+                    )
+                )
+
+            init_database()
+
+            columns = {column["name"] for column in inspect(get_engine()).get_columns("projects")}
+            self.assertIn("timeline_json", columns)
+            self.assertIn("status", columns)
+
+            override_env_path_for_tests(None)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()
+
+    def test_init_database_backfills_series_status_for_legacy_sqlite(self):
+        from sqlalchemy import create_engine, inspect, text
+
+        from src.settings.env_settings import override_env_path_for_tests
+        from src.db.session import get_engine, get_session_factory, init_database
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "legacy-series.db"
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text(f"DATABASE_URL=sqlite:///{db_path}\n", encoding="utf-8")
+
+            override_env_path_for_tests(env_path)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()
+
+            legacy_engine = create_engine(f"sqlite:///{db_path}", future=True)
+            with legacy_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        CREATE TABLE series (
+                            id VARCHAR(64) PRIMARY KEY,
+                            organization_id VARCHAR(64),
+                            workspace_id VARCHAR(64),
+                            title VARCHAR(255) NOT NULL,
+                            description TEXT,
+                            art_direction JSON,
+                            model_settings JSON NOT NULL DEFAULT '{}',
+                            prompt_config JSON NOT NULL DEFAULT '{}',
+                            is_deleted BOOLEAN NOT NULL DEFAULT 0,
+                            deleted_at DATETIME,
+                            deleted_by VARCHAR(64),
+                            created_by VARCHAR(64),
+                            updated_by VARCHAR(64),
+                            created_at DATETIME NOT NULL,
+                            updated_at DATETIME NOT NULL,
+                            version INTEGER NOT NULL DEFAULT 1
+                        )
+                        """
+                    )
+                )
+
+            init_database()
+
+            columns = {column["name"] for column in inspect(get_engine()).get_columns("series")}
+            self.assertIn("status", columns)
+
+            override_env_path_for_tests(None)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()

@@ -56,6 +56,7 @@ from ...schemas.models import (
 )
 from ...settings.env_settings import get_env, get_env_bool
 from ...utils.datetime import utc_now
+from .task_concurrency_service import TaskConcurrencyService
 
 
 logger = get_logger(__name__)
@@ -210,6 +211,7 @@ class AuthService:
         self.auth_rate_limit_repository = AuthRateLimitRepository()
         self.user_session_repository = UserSessionRepository()
         self.invitation_repository = InvitationRepository()
+        self.task_concurrency_service = TaskConcurrencyService()
 
     def create_captcha_challenge(self) -> CaptchaChallengePayload:
         # 中文注释：图形验证码挑战落库后即可跨进程校验，避免把一次性校验状态绑死在单机内存里。
@@ -897,6 +899,12 @@ class AuthService:
                 created_at=now,
                 updated_at=now,
             )
+        )
+        # 中文注释：新注册组织默认给所有任务类型写入并发上限 10，避免未配置时回退为不限流。
+        self.task_concurrency_service.bootstrap_default_limits_for_organization(
+            organization.id,
+            max_concurrency=10,
+            actor_id=user.id,
         )
         return self.user_repository.get(user.id) or user
 

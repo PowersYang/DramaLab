@@ -401,6 +401,7 @@ class Script(BaseModel):
     created_by: Optional[str] = Field(None, description="创建人 ID")
     updated_by: Optional[str] = Field(None, description="最后修改人 ID")
     version: int = Field(1, description="乐观锁版本号")
+    status: str = Field("pending", description="项目状态")
 
     created_at: datetime
     updated_at: datetime
@@ -435,6 +436,7 @@ class Series(BaseModel):
     created_by: Optional[str] = Field(None, description="创建人 ID")
     updated_by: Optional[str] = Field(None, description="最后修改人 ID")
     version: int = Field(1, description="乐观锁版本号")
+    status: str = Field("active", description="系列状态")
 
     created_at: datetime
     updated_at: datetime
