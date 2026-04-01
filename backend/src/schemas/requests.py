@@ -568,8 +568,20 @@ class SaveArtDirectionRequest(BaseModel):
     ai_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class UserArtStyleWriteRequest(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    positive_prompt: str
+    negative_prompt: str = ""
+    thumbnail_url: Optional[str] = None
+    is_custom: bool = True
+    reason: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
 class SaveUserArtStylesRequest(BaseModel):
-    styles: List[Dict[str, Any]] = Field(default_factory=list)
+    styles: List[UserArtStyleWriteRequest] = Field(default_factory=list)
 
 
 class PolishVideoPromptRequest(BaseModel):
