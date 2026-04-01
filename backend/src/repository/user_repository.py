@@ -2,7 +2,7 @@
 
 from typing import List
 
-from ..db.models import MembershipRecord, UserRecord
+from ..db.models import MembershipRecord, UserArtStyleRecord, UserRecord
 from ..utils.datetime import utc_now
 from .base import BaseRepository
 from ..schemas.models import User
@@ -17,7 +17,6 @@ def _to_user(record: UserRecord) -> User:
         display_name=record.display_name,
         auth_provider=record.auth_provider,
         password_hash=record.password_hash,
-        user_art_styles=record.user_art_styles or [],
         platform_role=record.platform_role,
         status=record.status,
         last_login_at=record.last_login_at,
@@ -65,7 +64,6 @@ class UserRepository(BaseRepository[User]):
                     display_name=user.display_name,
                     auth_provider=user.auth_provider,
                     password_hash=user.password_hash,
-                    user_art_styles=user.user_art_styles,
                     platform_role=user.platform_role,
                     status=user.status,
                     last_login_at=user.last_login_at,
@@ -93,6 +91,7 @@ class UserRepository(BaseRepository[User]):
 
     def delete(self, user_id: str) -> None:
         with self._with_session() as session:
+            session.query(UserArtStyleRecord).filter(UserArtStyleRecord.user_id == user_id).delete()
             record = session.get(UserRecord, user_id)
             if record is None:
                 raise ValueError(f"User {user_id} not found")

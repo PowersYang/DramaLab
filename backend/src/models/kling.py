@@ -93,7 +93,8 @@ class KlingModel(VideoGenModel):
         start_time = time.time()
 
         is_i2v = bool(img_url or img_path)
-        base_url = get_provider_base_url("KLING")
+        provider_service = ModelProviderService()
+        path_model_id = model_name
 
         if is_i2v:
             # 图生视频
@@ -111,8 +112,16 @@ class KlingModel(VideoGenModel):
             image_value = self._resolve_image(image_source)
             body["image"] = self._strip_data_prefix(image_value)
 
-            submit_url = f"{base_url}/videos/image2video"
-            poll_base = f"{base_url}/videos/image2video"
+            submit_path = provider_service.require_model_setting(
+                path_model_id,
+                "i2v_create_path",
+                task_type="i2v",
+            )
+            poll_path_template = provider_service.require_model_setting(
+                path_model_id,
+                "i2v_poll_path_template",
+                task_type="i2v",
+            )
         else:
             # 文生视频
             body = {
@@ -123,8 +132,16 @@ class KlingModel(VideoGenModel):
                 "duration": str(duration),  # T2V expects string
                 "aspect_ratio": aspect_ratio,
             }
-            submit_url = f"{base_url}/videos/text2video"
-            poll_base = f"{base_url}/videos/text2video"
+            submit_path = provider_service.require_model_setting(
+                path_model_id,
+                "t2v_create_path",
+                task_type="i2v",
+            )
+            poll_path_template = provider_service.require_model_setting(
+                path_model_id,
+                "t2v_poll_path_template",
+                task_type="i2v",
+            )
 
         # 按需补充可选参数
         if sound is not None:
@@ -132,6 +149,11 @@ class KlingModel(VideoGenModel):
         if cfg_scale is not None:
             body["cfg_scale"] = cfg_scale
 
+        submit_url = provider_service.build_provider_url(
+            "KLING",
+            base_url=get_provider_base_url("KLING"),
+            path_suffix=str(submit_path),
+        )
         # 提交任务
         logger.info(f"[Kling] Submitting {'i2v' if is_i2v else 't2v'} task (model={model_name})")
         response = requests.post(submit_url, headers=headers, json=body, timeout=30)
@@ -148,7 +170,11 @@ class KlingModel(VideoGenModel):
         logger.info(f"[Kling] Task submitted: {task_id}")
 
         # 轮询等待结果
-        poll_url = f"{poll_base}/{task_id}"
+        poll_url = provider_service.build_provider_url(
+            "KLING",
+            base_url=get_provider_base_url("KLING"),
+            path_suffix=str(poll_path_template).format(task_id=task_id),
+        )
         max_wait = 600
         poll_interval = 10
         elapsed = 0

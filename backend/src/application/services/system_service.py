@@ -13,8 +13,9 @@ import uuid
 from typing import Any
 
 from ...providers import ScriptProcessor
-from ...repository import ProjectRepository, SeriesRepository, StylePresetRepository, UserRepository
-from ...schemas.models import ArtDirection, StylePreset
+from ...repository import ProjectRepository, SeriesRepository, StylePresetRepository, UserArtStyleRepository, UserRepository
+from ...schemas.models import ArtDirection, StylePreset, UserArtStyle
+from ...schemas.requests import UserArtStyleWriteRequest
 from ...providers.text.default_prompts import (
     DEFAULT_R2V_POLISH_PROMPT,
     DEFAULT_STORYBOARD_POLISH_PROMPT,
@@ -34,6 +35,7 @@ class SystemService:
         self.series_repository = SeriesRepository()
         self.style_preset_repository = StylePresetRepository()
         self.user_repository = UserRepository()
+        self.user_art_style_repository = UserArtStyleRepository()
         self.text_provider = ScriptProcessor()
 
     def preview_import(self, text: str, suggested_episodes: int):
@@ -141,21 +143,35 @@ class SystemService:
         user = self.user_repository.get(user_id)
         if not user:
             raise ValueError("User not found")
-        return user.user_art_styles or []
+        return [
+            style.model_dump(mode="json", exclude={"user_id"})
+            for style in self.user_art_style_repository.list_by_user_id(user_id)
+        ]
 
-    def save_user_art_styles(self, user_id: str, styles: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    def save_user_art_styles(self, user_id: str, styles: list[UserArtStyleWriteRequest] | None = None) -> list[dict[str, Any]]:
         """整体覆盖保存用户级风格库，便于前端做统一新增、编辑与删除。"""
         user = self.user_repository.get(user_id)
         if not user:
             raise ValueError("User not found")
-        updated = self.user_repository.update(
-            user_id,
-            {
-                "user_art_styles": styles or [],
-                "updated_at": utc_now(),
-            },
-        )
-        return updated.user_art_styles or []
+        style_models = [
+            UserArtStyle(
+                id=style.id,
+                user_id=user_id,
+                name=style.name,
+                description=style.description,
+                positive_prompt=style.positive_prompt,
+                negative_prompt=style.negative_prompt,
+                thumbnail_url=style.thumbnail_url,
+                is_custom=style.is_custom,
+                reason=style.reason,
+                sort_order=index if style.sort_order is None else style.sort_order,
+            )
+            for index, style in enumerate(styles or [])
+        ]
+        updated = self.user_art_style_repository.replace_for_user(user_id, style_models)
+        # 中文注释：风格明细独立建表后，用户表只保留身份信息，但仍更新 users.updated_at 方便后台筛选最近活跃设置用户。
+        self.user_repository.update(user_id, {"updated_at": utc_now()})
+        return [style.model_dump(mode="json", exclude={"user_id"}) for style in updated]
 
     def get_effective_prompt(self, script_id: str, field: str) -> str:
         """按剧本、系列、默认值三级回退解析提示词字段。"""

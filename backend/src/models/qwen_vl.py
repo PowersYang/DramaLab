@@ -8,7 +8,7 @@ try:
 except ImportError:
     OpenAI = None
 
-from ..utils.endpoints import get_provider_base_url
+from ..utils.endpoints import get_provider_client_base_url
 from ..application.services.model_provider_service import ModelProviderService
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ class QwenVLModel:
                 raise RuntimeError("openai package not installed. Run: pip install openai>=1.0.0")
             self._client = OpenAI(
                 api_key=self.api_key,
-                base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
+                base_url=get_provider_client_base_url("DASHSCOPE"),
                 timeout=120.0,
             )
         return self._client

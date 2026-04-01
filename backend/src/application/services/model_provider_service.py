@@ -13,155 +13,11 @@ from ...utils.datetime import utc_now
 logger = get_logger(__name__)
 
 
-PROVIDER_DEFAULTS: dict[str, dict] = {
-    "DASHSCOPE": {
-        "display_name": "DashScope",
-        "description": "阿里云百炼 / 通义系列模型供应商",
-        "credential_fields": ["api_key"],
-        "default_base_url": "https://dashscope.aliyuncs.com",
-        "default_settings": {"default_text_model": "qwen3.5-plus"},
-    },
-    "OPENAI": {
-        "display_name": "OpenAI Compatible",
-        "description": "OpenAI 兼容文本供应商配置",
-        "credential_fields": ["api_key"],
-        "default_base_url": "https://api.openai.com/v1",
-        "default_settings": {"default_text_model": "gpt-4o"},
-    },
-    "KLING": {
-        "display_name": "Kling AI",
-        "description": "可灵视频生成供应商",
-        "credential_fields": ["access_key", "secret_key"],
-        "default_base_url": "https://api-beijing.klingai.com/v1",
-        "default_settings": {},
-    },
-    "VIDU": {
-        "display_name": "Vidu",
-        "description": "Vidu 视频生成供应商",
-        "credential_fields": ["api_key"],
-        "default_base_url": "https://api.vidu.cn/ent/v2",
-        "default_settings": {},
-    },
-    "ARK": {
-        "display_name": "Doubao Ark",
-        "description": "火山引擎 Ark / 豆包视频供应商",
-        "credential_fields": ["api_key"],
-        "default_base_url": "https://ark.cn-beijing.volces.com/api/v3",
-        "default_settings": {"default_video_model": "doubao-seedance-1-0-pro-fast-251015"},
-    },
-}
-
-
-MODEL_CATALOG_DEFAULTS: list[dict] = [
-    {"model_id": "wan2.6-t2i", "task_type": "t2i", "provider_key": "DASHSCOPE", "display_name": "Wan 2.6 T2I", "description": "Latest T2I model", "sort_order": 10},
-    {"model_id": "wan2.5-t2i-preview", "task_type": "t2i", "provider_key": "DASHSCOPE", "display_name": "Wan 2.5 T2I Preview", "description": "Default T2I", "sort_order": 20},
-    {"model_id": "wan2.2-t2i-plus", "task_type": "t2i", "provider_key": "DASHSCOPE", "display_name": "Wan 2.2 T2I Plus", "description": "Higher quality", "sort_order": 30},
-    {"model_id": "wan2.2-t2i-flash", "task_type": "t2i", "provider_key": "DASHSCOPE", "display_name": "Wan 2.2 T2I Flash", "description": "Faster generation", "sort_order": 40},
-    {"model_id": "wan2.6-image", "task_type": "i2i", "provider_key": "DASHSCOPE", "display_name": "Wan 2.6 Image", "description": "Latest I2I model (HTTP)", "sort_order": 10},
-    {"model_id": "wan2.5-i2i-preview", "task_type": "i2i", "provider_key": "DASHSCOPE", "display_name": "Wan 2.5 I2I Preview", "description": "Default I2I", "sort_order": 20},
-    {
-        "model_id": "wan2.6-i2v",
-        "task_type": "i2v",
-        "provider_key": "DASHSCOPE",
-        "display_name": "Wan 2.6 I2V / R2V",
-        "description": "Latest model, supports R2V",
-        "sort_order": 10,
-        "capabilities_json": {
-            "duration": {"type": "slider", "min": 2, "max": 15, "step": 1, "default": 5},
-            "params": {"resolution": {"options": ["480p", "720p", "1080p"], "default": "720p"}, "seed": True, "negativePrompt": True, "promptExtend": True, "shotType": True, "audio": True},
-        },
-    },
-    {
-        "model_id": "wan2.6-i2v-flash",
-        "task_type": "i2v",
-        "provider_key": "DASHSCOPE",
-        "display_name": "Wan 2.6 I2V Flash",
-        "description": "Fast generation",
-        "sort_order": 20,
-        "capabilities_json": {
-            "duration": {"type": "slider", "min": 2, "max": 15, "step": 1, "default": 5},
-            "params": {"resolution": {"options": ["480p", "720p", "1080p"], "default": "720p"}, "seed": True, "negativePrompt": True, "promptExtend": True, "shotType": True, "audio": True},
-        },
-    },
-    {
-        "model_id": "wan2.5-i2v-preview",
-        "task_type": "i2v",
-        "provider_key": "DASHSCOPE",
-        "display_name": "Wan 2.5 I2V Preview",
-        "description": "Default I2V",
-        "sort_order": 30,
-        "capabilities_json": {
-            "duration": {"type": "buttons", "options": [5, 10], "default": 5},
-            "params": {"resolution": {"options": ["480p", "720p", "1080p"], "default": "720p"}, "seed": True, "negativePrompt": True, "audio": True},
-        },
-    },
-    {
-        "model_id": "wan2.2-i2v-plus",
-        "task_type": "i2v",
-        "provider_key": "DASHSCOPE",
-        "display_name": "Wan 2.2 I2V Plus",
-        "description": "Higher quality",
-        "sort_order": 40,
-        "capabilities_json": {
-            "duration": {"type": "fixed", "value": 5},
-            "params": {"resolution": {"options": ["480p", "720p", "1080p"], "default": "720p"}, "seed": True, "negativePrompt": True},
-        },
-    },
-    {
-        "model_id": "wan2.2-i2v-flash",
-        "task_type": "i2v",
-        "provider_key": "DASHSCOPE",
-        "display_name": "Wan 2.2 I2V Flash",
-        "description": "Faster generation",
-        "sort_order": 50,
-        "capabilities_json": {
-            "duration": {"type": "fixed", "value": 5},
-            "params": {"resolution": {"options": ["480p", "720p", "1080p"], "default": "720p"}, "seed": True, "negativePrompt": True},
-        },
-    },
-    {
-        "model_id": "kling-v3",
-        "task_type": "i2v",
-        "provider_key": "KLING",
-        "display_name": "Kling v3",
-        "description": "Kling AI latest model",
-        "sort_order": 60,
-        "capabilities_json": {
-            "duration": {"type": "slider", "min": 3, "max": 15, "step": 1, "default": 5},
-            "params": {"negativePrompt": True, "mode": {"options": ["std", "pro"], "default": "std"}, "sound": True, "cfgScale": {"min": 0, "max": 1, "step": 0.1, "default": 0.5}},
-        },
-    },
-    {
-        "model_id": "viduq3-pro",
-        "task_type": "i2v",
-        "provider_key": "VIDU",
-        "display_name": "Vidu Q3 Pro",
-        "description": "Vidu latest model",
-        "sort_order": 70,
-        "capabilities_json": {
-            "duration": {"type": "slider", "min": 1, "max": 16, "step": 1, "default": 5},
-            "params": {"resolution": {"options": ["540p", "720p", "1080p"], "default": "720p"}, "seed": True, "viduAudio": True, "movementAmplitude": {"options": ["auto", "small", "medium", "large"], "default": "auto"}},
-        },
-    },
-    {
-        "model_id": "viduq3-turbo",
-        "task_type": "i2v",
-        "provider_key": "VIDU",
-        "display_name": "Vidu Q3 Turbo",
-        "description": "Vidu fast generation",
-        "sort_order": 80,
-        "capabilities_json": {
-            "duration": {"type": "slider", "min": 1, "max": 16, "step": 1, "default": 5},
-            "params": {"resolution": {"options": ["540p", "720p", "1080p"], "default": "720p"}, "seed": True, "viduAudio": True, "movementAmplitude": {"options": ["auto", "small", "medium", "large"], "default": "auto"}},
-        },
-    },
-]
-
-
 MODEL_ID_ALIASES = {
     "wan2.6-r2v": "wan2.6-i2v",
 }
 
+MODEL_TASK_TYPES = ("t2i", "i2i", "i2v", "llm")
 TEXT_PROVIDER_KEYS = {"OPENAI", "DASHSCOPE"}
 TEXT_PROVIDER_DEFAULT_FLAGS = ("is_default_text_provider", "default_for_text")
 
@@ -173,56 +29,12 @@ class ModelProviderService:
         self.provider_repository = ModelProviderConfigRepository()
         self.catalog_repository = ModelCatalogEntryRepository()
 
-    def ensure_defaults(self) -> None:
-        """补种默认供应商和模型目录。"""
-        for provider_key, meta in PROVIDER_DEFAULTS.items():
-            existing = self.provider_repository.get(provider_key)
-            if existing is not None:
-                continue
-            now = utc_now()
-            self.provider_repository.upsert(
-                ModelProviderConfig(
-                    provider_key=provider_key,
-                    display_name=meta["display_name"],
-                    description=meta.get("description"),
-                    enabled=False,
-                    base_url=None,
-                    credentials_json={},
-                    settings_json=dict(meta.get("default_settings", {})),
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-
-        for item in MODEL_CATALOG_DEFAULTS:
-            existing = self.catalog_repository.get(item["model_id"])
-            if existing is not None:
-                continue
-            now = utc_now()
-            self.catalog_repository.create(
-                ModelCatalogEntry(
-                    model_id=item["model_id"],
-                    task_type=item["task_type"],
-                    provider_key=item["provider_key"],
-                    display_name=item["display_name"],
-                    description=item.get("description"),
-                    enabled=True,
-                    sort_order=item.get("sort_order", 100),
-                    is_public=item.get("is_public", True),
-                    capabilities_json=item.get("capabilities_json", {}),
-                    default_settings_json=item.get("default_settings_json", {}),
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-
     def list_provider_summaries(self) -> list[ModelProviderConfigSummary]:
         """返回脱敏后的供应商摘要列表。"""
         providers = self.provider_repository.list()
         summaries = []
         for item in providers:
-            meta = PROVIDER_DEFAULTS.get(item.provider_key, {})
-            credential_fields = list(meta.get("credential_fields", []))
+            credential_fields = list((item.settings_json or {}).get("_credential_fields", []))
             configured_fields = [field for field in credential_fields if (item.credentials_json or {}).get(field)]
             summaries.append(
                 ModelProviderConfigSummary(
@@ -306,7 +118,9 @@ class ModelProviderService:
                 credentials[key] = value.strip()
         settings = dict(current.settings_json or {})
         for key, value in (settings_patch or {}).items():
-            if value is not None:
+            if value is None:
+                settings.pop(key, None)
+            else:
                 settings[key] = value
         updated = self.provider_repository.update(
             provider_key,
@@ -337,9 +151,7 @@ class ModelProviderService:
 
     def _to_summary(self, item: ModelProviderConfig) -> ModelProviderConfigSummary:
         """把完整配置对象转换成脱敏摘要。"""
-        meta = PROVIDER_DEFAULTS.get(item.provider_key, {})
-        dynamic_fields = list((item.settings_json or {}).get("_credential_fields", []))
-        credential_fields = list(meta.get("credential_fields", [])) or dynamic_fields
+        credential_fields = list((item.settings_json or {}).get("_credential_fields", []))
         configured_fields = [field for field in credential_fields if (item.credentials_json or {}).get(field)]
         return ModelProviderConfigSummary(
             provider_key=item.provider_key,
@@ -414,7 +226,7 @@ class ModelProviderService:
     def list_available_models(self) -> AvailableModelCatalog:
         """返回业务前台可见的模型目录。"""
         providers = self.provider_repository.list_map()
-        grouped = {"t2i": [], "i2i": [], "i2v": []}
+        grouped = {task_type: [] for task_type in MODEL_TASK_TYPES}
         for item in self.catalog_repository.list():
             provider = providers.get(item.provider_key)
             if provider is None or not provider.enabled or not item.enabled or not item.is_public:
@@ -424,6 +236,7 @@ class ModelProviderService:
             t2i=grouped.get("t2i", []),
             i2i=grouped.get("i2i", []),
             i2v=grouped.get("i2v", []),
+            llm=grouped.get("llm", []),
         )
 
     def require_model_enabled(self, model_id: str, task_type: str | None = None) -> ModelCatalogEntry:
@@ -454,15 +267,76 @@ class ModelProviderService:
         return value.strip() if isinstance(value, str) and value.strip() else None
 
     def get_provider_base_url(self, provider_key: str, default: str | None = None) -> str:
+        provider_key = provider_key.upper()
         config = self.provider_repository.get(provider_key)
         if config is None:
-            fallback = default or PROVIDER_DEFAULTS.get(provider_key, {}).get("default_base_url", "")
-            return fallback.rstrip("/")
+            if default:
+                return default.rstrip("/")
+            raise ValueError(f"Model provider is not configured: {provider_key}")
         base_url = (config.base_url or "").strip()
         if base_url:
             return base_url.rstrip("/")
-        fallback = default or PROVIDER_DEFAULTS.get(provider_key, {}).get("default_base_url", "")
-        return fallback.rstrip("/")
+        if default:
+            return default.rstrip("/")
+        raise ValueError(f"Model provider {provider_key} is missing base_url configuration")
+
+    def get_provider_setting(self, provider_key: str, setting_key: str, default: object | None = None) -> object | None:
+        """统一读取供应商级运行时设置，缺失时仅回退到调用方显式传入的默认值。"""
+        provider_key = provider_key.upper()
+        config = self.provider_repository.get(provider_key)
+        settings = config.settings_json if config is not None else {}
+        if setting_key in settings:
+            return settings.get(setting_key)
+        return default
+
+    def build_provider_url(
+        self,
+        provider_key: str,
+        *,
+        base_url: str | None = None,
+        path_suffix: str | None = None,
+        default_base_url: str | None = None,
+        default_path_suffix: str | None = None,
+    ) -> str:
+        """拼接供应商基础地址与相对路径，避免各模型层重复处理斜杠。"""
+        provider_key = provider_key.upper()
+        resolved_base_url = (base_url or self.get_provider_base_url(provider_key, default_base_url)).rstrip("/")
+        resolved_path_suffix = str(path_suffix if path_suffix is not None else default_path_suffix or "").strip()
+        if not resolved_path_suffix:
+            return resolved_base_url
+        normalized_path = "/" + resolved_path_suffix.strip("/")
+        return f"{resolved_base_url}{normalized_path}"
+
+    def get_model_catalog_entry(self, model_id: str) -> ModelCatalogEntry | None:
+        """按模型 ID 读取目录项，兼容历史别名。"""
+        return self.catalog_repository.get(MODEL_ID_ALIASES.get(model_id, model_id))
+
+    def get_model_setting(
+        self,
+        model_id: str,
+        setting_key: str,
+        *,
+        task_type: str | None = None,
+        default: object | None = None,
+    ) -> object | None:
+        """读取模型目录项里的运行时参数，便于管理员覆盖请求路径等细节。"""
+        entry = self.get_model_catalog_entry(model_id)
+        if entry is None:
+            return default
+        if task_type and entry.task_type != task_type:
+            return default
+        settings = entry.default_settings_json or {}
+        return settings.get(setting_key, default)
+
+    def require_model_setting(self, model_id: str, setting_key: str, *, task_type: str | None = None) -> object:
+        """读取模型级运行时设置；缺失时抛出明确错误，避免继续走代码硬编码。"""
+        value = self.get_model_setting(model_id, setting_key, task_type=task_type, default=None)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            task_type_label = f" ({task_type})" if task_type else ""
+            raise ValueError(
+                f"Model {model_id}{task_type_label} is missing required setting: default_settings_json.{setting_key}"
+            )
+        return value
 
     def _list_text_provider_bindings(self) -> list[dict[str, object]]:
         """收集当前可用于文本能力路由的 provider 绑定信息。"""
@@ -478,11 +352,7 @@ class ModelProviderService:
                 continue
 
             settings = provider.settings_json or {}
-            default_model = str(
-                settings.get("default_text_model")
-                or PROVIDER_DEFAULTS.get(provider_key, {}).get("default_settings", {}).get("default_text_model")
-                or ""
-            ).strip()
+            default_model = str(settings.get("default_text_model") or "").strip()
             supported_models_raw = settings.get("supported_text_models")
             supported_models = []
             if isinstance(supported_models_raw, list):
@@ -513,7 +383,7 @@ class ModelProviderService:
         if requested_model_id:
             normalized_model_id = MODEL_ID_ALIASES.get(requested_model_id, requested_model_id)
             catalog_entry = self.catalog_repository.get(normalized_model_id)
-            if catalog_entry is not None:
+            if catalog_entry is not None and catalog_entry.task_type == "llm":
                 provider = self.provider_repository.get(catalog_entry.provider_key)
                 if provider is None or not provider.enabled:
                     raise ValueError(f"Model provider is unavailable: {catalog_entry.provider_key}")
@@ -525,6 +395,8 @@ class ModelProviderService:
                     "provider_name": catalog_entry.provider_key.lower(),
                     "model_id": catalog_entry.model_id,
                 }
+            if catalog_entry is not None and catalog_entry.task_type != "llm":
+                raise ValueError(f"Model {normalized_model_id} is registered as {catalog_entry.task_type}, not llm")
 
             matches = [
                 binding

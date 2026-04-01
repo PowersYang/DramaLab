@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, type ModelCatalogEntry, type ModelProviderSummary } from "@/lib/api";
 
-type TaskType = "t2i" | "i2i" | "i2v";
+type TaskType = "t2i" | "i2i" | "i2v" | "llm";
 
 interface ProviderFormState {
   provider_key: string;
@@ -13,7 +13,11 @@ interface ProviderFormState {
   description: string;
   enabled: boolean;
   base_url: string;
+  client_base_path: string;
   credential_fields_text: string;
+  default_text_model: string;
+  supported_text_models_text: string;
+  is_default_text_provider: boolean;
   credential_values: Record<string, string>;
   settings_json_text: string;
 }
@@ -37,7 +41,11 @@ const DEFAULT_PROVIDER_FORM: ProviderFormState = {
   description: "",
   enabled: false,
   base_url: "",
+  client_base_path: "",
   credential_fields_text: "",
+  default_text_model: "",
+  supported_text_models_text: "",
+  is_default_text_provider: false,
   credential_values: {},
   settings_json_text: "{}",
 };
@@ -81,15 +89,20 @@ function parseJsonField(label: string, value: string): Record<string, unknown> {
 }
 
 function buildProviderForm(provider: ModelProviderSummary): ProviderFormState {
+  const settings = provider.settings_json || {};
   return {
     provider_key: provider.provider_key,
     display_name: provider.display_name,
     description: provider.description || "",
     enabled: provider.enabled,
     base_url: provider.base_url || "",
+    client_base_path: typeof settings.client_base_path === "string" ? settings.client_base_path : "",
     credential_fields_text: provider.credential_fields.join(", "),
+    default_text_model: typeof settings.default_text_model === "string" ? settings.default_text_model : "",
+    supported_text_models_text: Array.isArray(settings.supported_text_models) ? settings.supported_text_models.join(", ") : "",
+    is_default_text_provider: Boolean(settings.is_default_text_provider ?? settings.default_for_text),
     credential_values: Object.fromEntries(provider.credential_fields.map((field) => [field, ""])),
-    settings_json_text: stringifyJson(provider.settings_json),
+    settings_json_text: stringifyJson(settings),
   };
 }
 
@@ -106,6 +119,50 @@ function buildCatalogForm(item: ModelCatalogEntry): CatalogFormState {
     capabilities_json_text: stringifyJson(item.capabilities_json),
     default_settings_json_text: stringifyJson(item.default_settings_json),
   };
+}
+
+function buildProviderSettingsPayload(form: ProviderFormState): Record<string, unknown> {
+  const settingsJson = parseJsonField("供应商设置", form.settings_json_text);
+  const nextSettings: Record<string, unknown> = { ...settingsJson };
+  nextSettings._credential_fields = parseCommaSeparatedList(form.credential_fields_text);
+  if (form.client_base_path.trim()) {
+    nextSettings.client_base_path = form.client_base_path.trim();
+  } else {
+    nextSettings.client_base_path = null;
+  }
+  if (form.default_text_model.trim()) {
+    nextSettings.default_text_model = form.default_text_model.trim();
+  } else {
+    nextSettings.default_text_model = null;
+  }
+  const supportedTextModels = parseCommaSeparatedList(form.supported_text_models_text);
+  if (supportedTextModels.length) {
+    nextSettings.supported_text_models = supportedTextModels;
+  } else {
+    nextSettings.supported_text_models = null;
+  }
+  if (form.is_default_text_provider) {
+    nextSettings.is_default_text_provider = true;
+    nextSettings.default_for_text = null;
+  } else {
+    nextSettings.is_default_text_provider = null;
+    nextSettings.default_for_text = null;
+  }
+  return nextSettings;
+}
+
+function getTaskTypeLabel(taskType: TaskType): string {
+  if (taskType === "t2i") return "文本生成图";
+  if (taskType === "i2i") return "图片重绘";
+  if (taskType === "i2v") return "图片生成视频";
+  return "大语言模型";
+}
+
+function getTaskTypeBadgeClass(taskType: TaskType): string {
+  if (taskType === "i2v") return "bg-indigo-100 text-indigo-700";
+  if (taskType === "llm") return "bg-fuchsia-100 text-fuchsia-700";
+  if (taskType === "i2i") return "bg-cyan-100 text-cyan-700";
+  return "bg-amber-100 text-amber-700";
 }
 
 function Modal({
@@ -331,7 +388,10 @@ export default function PlatformModelAdmin() {
       return;
     }
     try {
-      const settingsJson = parseJsonField("供应商设置", providerForm.settings_json_text);
+      const settingsJson = buildProviderSettingsPayload(providerForm);
+      const createSettingsJson = Object.fromEntries(
+        Object.entries(settingsJson).filter(([, value]) => value !== null),
+      );
       const credentialsPatch = Object.fromEntries(
         credentialFields.map((field) => [field, providerForm.credential_values[field] || ""]),
       );
@@ -345,7 +405,7 @@ export default function PlatformModelAdmin() {
           base_url: providerForm.base_url.trim() || undefined,
           credential_fields: credentialFields,
           credentials_patch: credentialsPatch,
-          settings_json: settingsJson,
+          settings_json: createSettingsJson,
         });
         setSuccessMessage(`已创建供应商 ${providerKey}`);
       } else {
@@ -1074,9 +1134,9 @@ export default function PlatformModelAdmin() {
                       <td className="px-8 py-5">
                         <div className="flex flex-wrap gap-1.5">
                           <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                            item.task_type === "i2v" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"
+                            getTaskTypeBadgeClass(item.task_type as TaskType)
                           }`}>
-                            {item.task_type}
+                            {getTaskTypeLabel(item.task_type as TaskType)}
                           </span>
                           {item.is_public && (
                             <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
@@ -1199,6 +1259,19 @@ export default function PlatformModelAdmin() {
           </div>
 
           <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 ml-1">客户端路径后缀</label>
+            <input
+              value={providerForm.client_base_path}
+              onChange={(event) => setProviderForm((prev) => ({ ...prev, client_base_path: event.target.value }))}
+              placeholder="/compatible-mode/v1"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+            />
+            <p className="text-[11px] leading-5 text-slate-400">
+              用于 OpenAI 兼容客户端类调用。比如 DashScope 这里通常配置为 <code>/compatible-mode/v1</code>。
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <label className="text-xs font-bold text-slate-500 ml-1">鉴权字段定义 (英文逗号分隔)</label>
             <input
               value={providerForm.credential_fields_text}
@@ -1206,6 +1279,27 @@ export default function PlatformModelAdmin() {
               placeholder="api_key, organization_id"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
             />
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">默认文本模型</label>
+              <input
+                value={providerForm.default_text_model}
+                onChange={(event) => setProviderForm((prev) => ({ ...prev, default_text_model: event.target.value }))}
+                placeholder="例如: gpt-4o / qwen3.5-plus"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 ml-1">支持的文本模型 (英文逗号分隔)</label>
+              <input
+                value={providerForm.supported_text_models_text}
+                onChange={(event) => setProviderForm((prev) => ({ ...prev, supported_text_models_text: event.target.value }))}
+                placeholder="gpt-4o, gpt-4.1-mini"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-mono text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+            </div>
           </div>
 
           {providerFields.length > 0 && (
@@ -1248,18 +1342,29 @@ export default function PlatformModelAdmin() {
           </div>
 
           <div className="flex items-center justify-between pt-4">
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div className={`flex h-6 w-11 items-center rounded-full p-1 transition-all ${providerForm.enabled ? "bg-indigo-600" : "bg-slate-200"}`}>
-                <div className={`h-4 w-4 rounded-full bg-white transition-all ${providerForm.enabled ? "translate-x-5" : "translate-x-0"}`} />
-              </div>
-              <input
-                type="checkbox"
-                checked={providerForm.enabled}
-                onChange={(event) => setProviderForm((prev) => ({ ...prev, enabled: event.target.checked }))}
-                className="hidden"
-              />
-              <span className="text-sm font-bold text-slate-700">启用该厂商</span>
-            </label>
+            <div className="flex flex-wrap items-center gap-6">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div className={`flex h-6 w-11 items-center rounded-full p-1 transition-all ${providerForm.enabled ? "bg-indigo-600" : "bg-slate-200"}`}>
+                  <div className={`h-4 w-4 rounded-full bg-white transition-all ${providerForm.enabled ? "translate-x-5" : "translate-x-0"}`} />
+                </div>
+                <input
+                  type="checkbox"
+                  checked={providerForm.enabled}
+                  onChange={(event) => setProviderForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                  className="hidden"
+                />
+                <span className="text-sm font-bold text-slate-700">启用该厂商</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={providerForm.is_default_text_provider}
+                  onChange={(event) => setProviderForm((prev) => ({ ...prev, is_default_text_provider: event.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-bold text-slate-700">设为默认文本供应商</span>
+              </label>
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={closeProviderModal}
@@ -1334,6 +1439,7 @@ export default function PlatformModelAdmin() {
                 <option value="t2i">文本生成图 (T2I)</option>
                 <option value="i2i">图片重绘 (I2I)</option>
                 <option value="i2v">图片生成视频 (I2V)</option>
+                <option value="llm">大语言模型 (LLM)</option>
               </select>
             </div>
           </div>

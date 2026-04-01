@@ -17,12 +17,14 @@ export interface AvailableModelView {
   t2i: SimpleModelOption[];
   i2i: SimpleModelOption[];
   i2v: I2VModelConfig[];
+  llm: SimpleModelOption[];
 }
 
 const fallbackCatalog: AvailableModelView = {
   t2i: T2I_MODELS,
   i2i: I2I_MODELS,
   i2v: I2V_MODELS,
+  llm: [],
 };
 
 const toSimpleOption = (item: ModelCatalogEntry): SimpleModelOption => ({
@@ -93,6 +95,7 @@ const normalizeCatalog = (payload: AvailableModelCatalog | null | undefined): Av
     t2i: (payload.t2i ?? []).map(toSimpleOption),
     i2i: (payload.i2i ?? []).map(toSimpleOption),
     i2v: (payload.i2v ?? []).map(toI2vConfig),
+    llm: (payload.llm ?? []).map(toSimpleOption),
   };
 };
 
@@ -101,6 +104,7 @@ export function useAvailableModelCatalog(selected?: { t2i?: string; i2i?: string
     t2i: appendLegacySimpleOption(fallbackCatalog.t2i, selected?.t2i, fallbackCatalog.t2i),
     i2i: appendLegacySimpleOption(fallbackCatalog.i2i, selected?.i2i, fallbackCatalog.i2i),
     i2v: appendLegacyI2vOption(fallbackCatalog.i2v, selected?.i2v),
+    llm: fallbackCatalog.llm,
   }));
   const [loading, setLoading] = useState(true);
 
@@ -115,6 +119,7 @@ export function useAvailableModelCatalog(selected?: { t2i?: string; i2i?: string
           t2i: appendLegacySimpleOption(normalized.t2i, selected?.t2i, fallbackCatalog.t2i),
           i2i: appendLegacySimpleOption(normalized.i2i, selected?.i2i, fallbackCatalog.i2i),
           i2v: appendLegacyI2vOption(normalized.i2v, selected?.i2v),
+          llm: normalized.llm,
         });
       })
       .catch(() => {
@@ -123,6 +128,7 @@ export function useAvailableModelCatalog(selected?: { t2i?: string; i2i?: string
           t2i: appendLegacySimpleOption(fallbackCatalog.t2i, selected?.t2i, fallbackCatalog.t2i),
           i2i: appendLegacySimpleOption(fallbackCatalog.i2i, selected?.i2i, fallbackCatalog.i2i),
           i2v: appendLegacyI2vOption(fallbackCatalog.i2v, selected?.i2v),
+          llm: fallbackCatalog.llm,
         });
       })
       .finally(() => {

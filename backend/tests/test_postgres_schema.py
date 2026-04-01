@@ -101,6 +101,7 @@ class PostgresSchemaSqlTest(unittest.TestCase):
         sql_path = Path(__file__).resolve().parent.parent / "scripts" / "postgres_schema.sql"
         sql = sql_path.read_text(encoding="utf-8")
         self.assertIn("create table if not exists style_presets", sql)
+        self.assertIn("create table if not exists user_art_styles", sql)
         self.assertIn("create table if not exists model_provider_configs", sql)
         self.assertIn("create table if not exists model_catalog_entries", sql)
         self.assertIn("create table if not exists projects", sql)
@@ -111,10 +112,14 @@ class PostgresSchemaSqlTest(unittest.TestCase):
         self.assertIn("status varchar(32) not null default 'pending'", sql)
         self.assertIn("status varchar(32) not null default 'active'", sql)
         self.assertIn("reference_video_urls jsonb not null default '[]'::jsonb", sql)
+        self.assertIn("positive_prompt text not null", sql)
+        self.assertIn("negative_prompt text not null default ''", sql)
+        self.assertIn("sort_order integer not null default 0", sql)
         self.assertIn("is_deleted boolean not null default false", sql)
         self.assertIn("deleted_at timestamptz", sql)
         self.assertIn("version integer not null default 1", sql)
         self.assertIn("create index if not exists ix_style_presets_active_sort on style_presets (is_active, sort_order, created_at)", sql)
+        self.assertIn("create index if not exists ix_user_art_styles_user_sort on user_art_styles (user_id, sort_order, updated_at)", sql)
         self.assertIn(
             "create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type) where is_deleted = false",
             sql,
@@ -182,8 +187,6 @@ class PostgresSchemaSqlTest(unittest.TestCase):
             self.assertIn("status", columns)
 
             override_env_path_for_tests(None)
-            get_engine.cache_clear()
-            get_session_factory.cache_clear()
 
     def test_init_database_backfills_series_status_for_legacy_sqlite(self):
         from sqlalchemy import create_engine, inspect, text
@@ -231,6 +234,95 @@ class PostgresSchemaSqlTest(unittest.TestCase):
 
             columns = {column["name"] for column in inspect(get_engine()).get_columns("series")}
             self.assertIn("status", columns)
+
+            override_env_path_for_tests(None)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()
+
+    def test_init_database_migrates_legacy_style_library_rows_into_style_records(self):
+        from sqlalchemy import create_engine, text
+
+        from src.settings.env_settings import override_env_path_for_tests
+        from src.db.session import get_engine, get_session_factory, init_database
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "legacy-style-library.db"
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text(f"DATABASE_URL=sqlite:///{db_path}\n", encoding="utf-8")
+
+            override_env_path_for_tests(env_path)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()
+
+            legacy_engine = create_engine(f"sqlite:///{db_path}", future=True)
+            with legacy_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        CREATE TABLE users (
+                            id VARCHAR(64) PRIMARY KEY,
+                            email VARCHAR(255),
+                            phone VARCHAR(32),
+                            display_name VARCHAR(255),
+                            auth_provider VARCHAR(64) NOT NULL DEFAULT 'email_otp',
+                            password_hash VARCHAR(512),
+                            platform_role VARCHAR(64),
+                            status VARCHAR(32) NOT NULL DEFAULT 'active',
+                            last_login_at DATETIME,
+                            created_at DATETIME NOT NULL,
+                            updated_at DATETIME NOT NULL
+                        )
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        CREATE TABLE user_art_style_libraries (
+                            id VARCHAR(64) PRIMARY KEY,
+                            user_id VARCHAR(64) NOT NULL,
+                            styles_json JSON NOT NULL DEFAULT '[]',
+                            created_at DATETIME NOT NULL,
+                            updated_at DATETIME NOT NULL
+                        )
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO users (id, email, auth_provider, status, created_at, updated_at)
+                        VALUES ('user_legacy_1', 'legacy@example.com', 'email_otp', 'active', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO user_art_style_libraries (id, user_id, styles_json, created_at, updated_at)
+                        VALUES (
+                            'library_1',
+                            'user_legacy_1',
+                            '[{"id":"legacy-style","name":"Legacy Style","positive_prompt":"ink","negative_prompt":"blur"}]',
+                            '2026-01-01 00:00:00',
+                            '2026-01-01 00:00:00'
+                        )
+                        """
+                    )
+                )
+
+            init_database()
+
+            with get_engine().begin() as connection:
+                row = connection.execute(
+                    text("SELECT id, user_id, name, positive_prompt, negative_prompt FROM user_art_styles WHERE user_id = 'user_legacy_1'")
+                ).one()
+
+            self.assertEqual(row[0], "legacy-style")
+            self.assertEqual(row[1], "user_legacy_1")
+            self.assertEqual(row[2], "Legacy Style")
+            self.assertEqual(row[3], "ink")
+            self.assertEqual(row[4], "blur")
 
             override_env_path_for_tests(None)
             get_engine.cache_clear()

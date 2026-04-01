@@ -17,6 +17,7 @@ class TenantAdminApiTest(unittest.TestCase):
         from src.auth.dependencies import RequestContext, get_request_context, require_platform_role
         from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory, init_database
+        from src.repository import UserRepository
         from src.schemas.models import User
         from src.application.services.model_provider_service import ModelProviderService
         from src.utils.datetime import utc_now
@@ -27,7 +28,62 @@ class TenantAdminApiTest(unittest.TestCase):
         engine = get_engine()
         Base.metadata.drop_all(bind=engine)
         init_database()
-        ModelProviderService().ensure_defaults()
+        model_provider_service = ModelProviderService()
+        model_provider_service.create_provider(
+            {
+                "provider_key": "DASHSCOPE",
+                "display_name": "DashScope",
+                "enabled": True,
+                "base_url": "https://dashscope.example.com",
+                "credential_fields": ["api_key"],
+                "settings_json": {
+                    "default_text_model": "qwen3.5-plus",
+                    "client_base_path": "/compatible-mode/v1",
+                },
+            }
+        )
+        model_provider_service.create_model_catalog_entry(
+            {
+                "model_id": "wan2.6-t2i",
+                "task_type": "t2i",
+                "provider_key": "DASHSCOPE",
+                "display_name": "Wan 2.6 T2I",
+                "enabled": True,
+                "is_public": True,
+            }
+        )
+        model_provider_service.create_model_catalog_entry(
+            {
+                "model_id": "wan2.6-image",
+                "task_type": "i2i",
+                "provider_key": "DASHSCOPE",
+                "display_name": "Wan 2.6 Image",
+                "enabled": True,
+                "is_public": True,
+            }
+        )
+        model_provider_service.create_model_catalog_entry(
+            {
+                "model_id": "wan2.6-i2v",
+                "task_type": "i2v",
+                "provider_key": "DASHSCOPE",
+                "display_name": "Wan 2.6 I2V",
+                "enabled": True,
+                "is_public": True,
+            }
+        )
+        UserRepository().create(
+            User(
+                id="user_super_admin",
+                email="admin@example.com",
+                display_name="Admin",
+                auth_provider="email_otp",
+                platform_role="platform_super_admin",
+                status="active",
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
 
         from src.api.tenant_admin import router as tenant_admin_router
         from src.api.system import router as system_router
@@ -226,6 +282,26 @@ class TenantAdminApiTest(unittest.TestCase):
         self.assertGreaterEqual(len(payload["t2i"]), 1)
         self.assertGreaterEqual(len(payload["i2i"]), 1)
         self.assertFalse(any(item["model_id"] == "wan2.6-i2v" for item in payload["i2v"]))
+
+    def test_user_art_style_endpoints_keep_payload_shape_after_storage_split(self):
+        initial = self.client.get("/art_direction/user-styles")
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.json()["styles"], [])
+
+        saved = self.client.put(
+            "/art_direction/user-styles",
+            json={
+                "styles": [
+                    {"id": "style_1", "name": "赛博水墨", "positive_prompt": "cyberpunk, ink wash"},
+                ]
+            },
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["styles"][0]["id"], "style_1")
+
+        reloaded = self.client.get("/art_direction/user-styles")
+        self.assertEqual(reloaded.status_code, 200)
+        self.assertEqual(reloaded.json()["styles"][0]["name"], "赛博水墨")
 
     def test_disabling_provider_turns_off_related_models_and_hides_them(self):
         enable_provider = self.client.put(

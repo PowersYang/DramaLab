@@ -115,8 +115,17 @@ class WanxImageModel(ImageGenModel):
 
     def _generate_wan26_http(self, prompt: str, size: str, n: int, negative_prompt: str = None) -> str:
         """通过 HTTP 接口调用 Wan 2.6 文生图。"""
-        base = get_provider_base_url("DASHSCOPE")
-        url = f"{base}/api/v1/services/aigc/multimodal-generation/generation"
+        provider_service = ModelProviderService()
+        request_path = provider_service.require_model_setting(
+            "wan2.6-t2i",
+            "request_path",
+            task_type="t2i",
+        )
+        url = provider_service.build_provider_url(
+            "DASHSCOPE",
+            base_url=get_provider_base_url("DASHSCOPE"),
+            path_suffix=str(request_path),
+        )
         
         headers = {
             "Content-Type": "application/json",
@@ -183,8 +192,22 @@ class WanxImageModel(ImageGenModel):
 
     def _generate_wan26_image_http(self, prompt: str, size: str, n: int, negative_prompt: str = None, ref_image_paths: list = None) -> str:
         """通过 HTTP 接口调用 Wan 2.6 图生图，并轮询任务结果。"""
-        base = get_provider_base_url("DASHSCOPE")
-        create_url = f"{base}/api/v1/services/aigc/image-generation/generation"
+        provider_service = ModelProviderService()
+        create_path = provider_service.require_model_setting(
+            "wan2.6-image",
+            "create_path",
+            task_type="i2i",
+        )
+        poll_path_template = provider_service.require_model_setting(
+            "wan2.6-image",
+            "poll_path_template",
+            task_type="i2i",
+        )
+        create_url = provider_service.build_provider_url(
+            "DASHSCOPE",
+            base_url=get_provider_base_url("DASHSCOPE"),
+            path_suffix=str(create_path),
+        )
         
         headers = {
             "Content-Type": "application/json",
@@ -275,7 +298,11 @@ class WanxImageModel(ImageGenModel):
         logger.info(f"Task created: {task_id}")
         
         # 第二步：轮询任务直到完成
-        poll_url = f"{base}/api/v1/tasks/{task_id}"
+        poll_url = provider_service.build_provider_url(
+            "DASHSCOPE",
+            base_url=get_provider_base_url("DASHSCOPE"),
+            path_suffix=str(poll_path_template).format(task_id=task_id),
+        )
         poll_headers = {
             "Authorization": f"Bearer {self.api_key}"
         }

@@ -8,6 +8,21 @@ create table if not exists style_presets (
     created_at timestamptz not null default now()
 );
 
+create table if not exists user_art_styles (
+    id varchar(64) primary key,
+    user_id varchar(64) not null,
+    name varchar(255) not null,
+    description text,
+    positive_prompt text not null,
+    negative_prompt text not null default '',
+    thumbnail_url text,
+    is_custom boolean not null default true,
+    reason text,
+    sort_order integer not null default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
 create table if not exists model_provider_configs (
     id varchar(64) primary key,
     provider_key varchar(64) not null,
@@ -76,6 +91,7 @@ create table if not exists video_tasks (
 );
 
 create index if not exists ix_style_presets_active_sort on style_presets (is_active, sort_order, created_at);
+create index if not exists ix_user_art_styles_user_sort on user_art_styles (user_id, sort_order, updated_at);
 create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type) where is_deleted = false;
 create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, is_deleted, updated_at);
 create index if not exists ix_series_org_workspace_updated on series (organization_id, workspace_id, is_deleted, updated_at);

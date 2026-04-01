@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from functools import lru_cache
+import json
 import re
 
 from sqlalchemy import create_engine, event, inspect, text
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .base import Base
 from src.settings.env_settings import get_env
-
+from .models import UserArtStyleRecord
 
 _SCHEMA_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -93,6 +94,7 @@ def init_database() -> None:
 
     Base.metadata.create_all(bind=engine)
     _ensure_incremental_columns(engine, schema=schema)
+    _migrate_legacy_user_art_styles(engine, schema=schema)
 
 
 def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
@@ -110,14 +112,6 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
             statements.append(f'ALTER TABLE {target} ADD COLUMN password_hash VARCHAR(512)')
         else:
             statements.append("ALTER TABLE users ADD COLUMN password_hash VARCHAR(512)")
-
-    if "user_art_styles" not in user_columns:
-        # 中文注释：用户级风格库先收敛到 users 表上的 JSON 列，避免在没有正式 migration 体系前再引入额外关联表。
-        if engine.dialect.name == "postgresql":
-            target = f'"{schema}"."users"' if schema else '"users"'
-            statements.append(f"ALTER TABLE {target} ADD COLUMN user_art_styles JSONB NOT NULL DEFAULT '[]'::jsonb")
-        else:
-            statements.append("ALTER TABLE users ADD COLUMN user_art_styles JSON NOT NULL DEFAULT '[]'")
 
     billing_account_additions = {
         "owner_type": "VARCHAR(16) NOT NULL DEFAULT 'organization'",
@@ -171,6 +165,87 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
             connection.execute(text(statement))
 
 
+def _migrate_legacy_user_art_styles(engine, schema: str | None = None) -> None:
+    """把旧版风格 JSON 存储迁到一条风格一行的明细表。"""
+    from .models import UserArtStyleRecord
+
+    inspector = inspect(engine)
+    users_table = f'"{schema}"."users"' if engine.dialect.name == "postgresql" and schema else '"users"'
+    legacy_library_table = f'"{schema}"."user_art_style_libraries"' if engine.dialect.name == "postgresql" and schema else '"user_art_style_libraries"'
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, class_=Session)
+
+    user_columns = {column["name"] for column in inspector.get_columns("users", schema=schema)}
+    legacy_tables = set(inspector.get_table_names(schema=schema))
+
+    with SessionLocal() as session:
+        existing_user_ids = {
+            user_id
+            for (user_id,) in session.query(UserArtStyleRecord.user_id).distinct().all()
+        }
+        changed = False
+
+        if "user_art_styles" in user_columns:
+            rows = session.execute(text(f"SELECT id, user_art_styles FROM {users_table}")).all()
+            for user_id, raw_styles in rows:
+                if user_id in existing_user_ids:
+                    continue
+                styles = _normalize_legacy_style_list(raw_styles)
+                changed |= _insert_legacy_style_rows(session, user_id, styles)
+                if styles:
+                    existing_user_ids.add(user_id)
+
+        if "user_art_style_libraries" in legacy_tables:
+            rows = session.execute(text(f"SELECT user_id, styles_json FROM {legacy_library_table}")).all()
+            for user_id, raw_styles in rows:
+                if user_id in existing_user_ids:
+                    continue
+                styles = _normalize_legacy_style_list(raw_styles)
+                changed |= _insert_legacy_style_rows(session, user_id, styles)
+                if styles:
+                    existing_user_ids.add(user_id)
+
+        if changed:
+            session.commit()
+        else:
+            session.rollback()
+
+
+def _insert_legacy_style_rows(session: Session, user_id: str, styles: list[dict[str, object]]) -> bool:
+    """把旧 JSON 风格数组插成明细行。"""
+    changed = False
+    for index, style in enumerate(styles):
+        style_id = str(style.get("id") or f"{user_id}-style-{index}")
+        session.add(
+            UserArtStyleRecord(
+                id=style_id,
+                user_id=user_id,
+                name=str(style.get("name") or ""),
+                description=str(style.get("description") or ""),
+                positive_prompt=str(style.get("positive_prompt") or ""),
+                negative_prompt=str(style.get("negative_prompt") or ""),
+                thumbnail_url=str(style["thumbnail_url"]) if style.get("thumbnail_url") else None,
+                is_custom=bool(style.get("is_custom", True)),
+                reason=str(style["reason"]) if style.get("reason") else None,
+                sort_order=int(style.get("sort_order", index)),
+            )
+        )
+        changed = True
+    return changed
+
+
+def _normalize_legacy_style_list(value) -> list[dict[str, object]]:  # noqa: ANN001
+    """兼容旧 JSON 列与旧风格库表的返回值格式。"""
+    if value in (None, "", "null"):
+        return []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return [item for item in parsed if isinstance(item, dict)] if isinstance(parsed, list) else []
+    return []
 @contextmanager
 def session_scope():
     session = get_session_factory()()

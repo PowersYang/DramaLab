@@ -474,10 +474,26 @@ class User(BaseModel):
     display_name: Optional[str] = Field(None, description="显示名称")
     auth_provider: str = Field("email_otp", description="认证提供方")
     password_hash: Optional[str] = Field(None, description="密码哈希，仅服务端内部使用", exclude=True)
-    user_art_styles: List[Dict[str, Any]] = Field(default_factory=list, description="用户级自定义美术风格库")
     platform_role: Optional[str] = Field(None, description="平台级角色")
     status: str = Field("active", description="用户状态")
     last_login_at: Optional[datetime] = Field(None, description="最后登录时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
+
+
+class UserArtStyle(BaseModel):
+    """用户自定义美术风格明细。"""
+
+    id: str = Field(..., description="风格唯一标识")
+    user_id: str = Field(..., description="所属用户 ID")
+    name: str = Field(..., description="风格名称")
+    description: str = Field("", description="风格描述")
+    positive_prompt: str = Field(..., description="正向提示词")
+    negative_prompt: str = Field("", description="负向提示词")
+    thumbnail_url: Optional[str] = Field(None, description="缩略图地址")
+    is_custom: bool = Field(True, description="是否为用户自定义风格")
+    reason: Optional[str] = Field(None, description="风格说明或来源理由")
+    sort_order: int = Field(0, description="用户风格库内排序")
     created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
 
@@ -632,7 +648,7 @@ class ModelCatalogEntry(BaseModel):
     """平台可管理的模型目录项。"""
 
     model_id: str = Field(..., description="模型唯一键")
-    task_type: str = Field(..., description="适用任务类型：t2i/i2i/i2v")
+    task_type: str = Field(..., description="适用任务类型：t2i/i2i/i2v/llm")
     provider_key: str = Field(..., description="所属供应商")
     display_name: str = Field(..., description="模型展示名称")
     description: Optional[str] = Field(None, description="模型说明")
@@ -653,6 +669,7 @@ class AvailableModelCatalog(BaseModel):
     t2i: List[ModelCatalogEntry] = Field(default_factory=list, description="可用文生图模型")
     i2i: List[ModelCatalogEntry] = Field(default_factory=list, description="可用图生图模型")
     i2v: List[ModelCatalogEntry] = Field(default_factory=list, description="可用图生视频模型")
+    llm: List[ModelCatalogEntry] = Field(default_factory=list, description="可用大语言模型")
 
 
 class TaskConcurrencyTaskTypeOption(BaseModel):

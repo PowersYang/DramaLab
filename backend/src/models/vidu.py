@@ -55,7 +55,13 @@ class ViduModel(VideoGenModel):
         start_time = time.time()
 
         is_i2v = bool(img_url or img_path)
-        base_url = get_provider_base_url("VIDU")
+        provider_service = ModelProviderService()
+        poll_model_id = kwargs.get("model") or self.model_name
+        poll_path_template = provider_service.require_model_setting(
+            poll_model_id,
+            "poll_path_template",
+            task_type="i2v",
+        )
 
         if is_i2v:
             task_id, used_model = self._submit_i2v(
@@ -83,7 +89,11 @@ class ViduModel(VideoGenModel):
         logger.info(f"[Vidu] Task submitted: {task_id} (model={used_model})")
 
         # 轮询等待任务完成
-        poll_url = f"{base_url}/tasks/{task_id}/creations"
+        poll_url = provider_service.build_provider_url(
+            "VIDU",
+            base_url=get_provider_base_url("VIDU"),
+            path_suffix=str(poll_path_template).format(task_id=task_id),
+        )
         max_wait = 600
         poll_interval = 10
         elapsed = 0
@@ -137,7 +147,17 @@ class ViduModel(VideoGenModel):
             "bgm": bgm,
         }
 
-        submit_url = f"{get_provider_base_url('VIDU')}/text2video"
+        provider_service = ModelProviderService()
+        submit_path = provider_service.require_model_setting(
+            used_model,
+            "t2v_create_path",
+            task_type="i2v",
+        )
+        submit_url = provider_service.build_provider_url(
+            "VIDU",
+            base_url=get_provider_base_url("VIDU"),
+            path_suffix=str(submit_path),
+        )
         logger.info(f"[Vidu] Submitting t2v task (model={used_model}, duration={duration}s)")
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)
@@ -172,7 +192,17 @@ class ViduModel(VideoGenModel):
             "audio": audio,
         }
 
-        submit_url = f"{get_provider_base_url('VIDU')}/img2video"
+        provider_service = ModelProviderService()
+        submit_path = provider_service.require_model_setting(
+            used_model,
+            "i2v_create_path",
+            task_type="i2v",
+        )
+        submit_url = provider_service.build_provider_url(
+            "VIDU",
+            base_url=get_provider_base_url("VIDU"),
+            path_suffix=str(submit_path),
+        )
         logger.info(f"[Vidu] Submitting i2v task (model={used_model}, duration={duration}s)")
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)

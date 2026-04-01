@@ -23,6 +23,7 @@ from .task_attempt_repository import TaskAttemptRepository
 from .task_concurrency_limit_repository import TaskConcurrencyLimitRepository
 from .task_event_repository import TaskEventRepository
 from .task_job_repository import TaskJobRepository
+from .user_art_style_repository import UserArtStyleRepository
 from .user_repository import UserRepository
 from .user_session_repository import UserSessionRepository
 from .verification_code_repository import VerificationCodeRepository
@@ -56,6 +57,7 @@ __all__ = [
     "TaskConcurrencyLimitRepository",
     "TaskEventRepository",
     "TaskJobRepository",
+    "UserArtStyleRepository",
     "UserRepository",
     "UserSessionRepository",
     "VerificationCodeRepository",

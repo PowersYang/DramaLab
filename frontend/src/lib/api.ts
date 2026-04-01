@@ -384,6 +384,9 @@ export interface UserArtStyle {
     thumbnail_url?: string;
     is_custom: boolean;
     reason?: string;
+    sort_order?: number;
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface AuthBootstrapPayload {
@@ -521,7 +524,7 @@ export interface CreateModelProviderPayload {
 
 export interface ModelCatalogEntry {
     model_id: string;
-    task_type: "t2i" | "i2i" | "i2v" | string;
+    task_type: "t2i" | "i2i" | "i2v" | "llm" | string;
     provider_key: string;
     display_name: string;
     description?: string | null;
@@ -538,7 +541,7 @@ export interface ModelCatalogEntry {
 
 export interface CreateModelCatalogEntryPayload {
     model_id: string;
-    task_type: "t2i" | "i2i" | "i2v" | string;
+    task_type: "t2i" | "i2i" | "i2v" | "llm" | string;
     provider_key: string;
     display_name: string;
     description?: string;
@@ -553,6 +556,7 @@ export interface AvailableModelCatalog {
     t2i: ModelCatalogEntry[];
     i2i: ModelCatalogEntry[];
     i2v: ModelCatalogEntry[];
+    llm: ModelCatalogEntry[];
 }
 
 export interface TaskConcurrencyTaskTypeOption {

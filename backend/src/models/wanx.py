@@ -246,8 +246,22 @@ class WanxModel(VideoGenModel):
                                   watermark: bool = False, seed: int = None,
                                   shot_type: str = "single") -> str:
         """通过 HTTP 接口调用 Wan I2V（2.5/2.6）生成视频，并轮询任务结果。"""
-        base = get_provider_base_url("DASHSCOPE")
-        create_url = f"{base}/api/v1/services/aigc/video-generation/video-synthesis"
+        provider_service = ModelProviderService()
+        create_path = provider_service.require_model_setting(
+            model_name,
+            "create_path",
+            task_type="i2v",
+        )
+        poll_path_template = provider_service.require_model_setting(
+            model_name,
+            "poll_path_template",
+            task_type="i2v",
+        )
+        create_url = provider_service.build_provider_url(
+            "DASHSCOPE",
+            base_url=get_provider_base_url("DASHSCOPE"),
+            path_suffix=str(create_path),
+        )
         
         headers = {
             "Content-Type": "application/json",
@@ -302,7 +316,11 @@ class WanxModel(VideoGenModel):
         logger.info(f"Task created: {task_id}")
         
         # 第二步：轮询任务状态直到完成
-        poll_url = f"{base}/api/v1/tasks/{task_id}"
+        poll_url = provider_service.build_provider_url(
+            "DASHSCOPE",
+            base_url=get_provider_base_url("DASHSCOPE"),
+            path_suffix=str(poll_path_template).format(task_id=task_id),
+        )
         poll_headers = {
             "Authorization": f"Bearer {self.api_key}"
         }
@@ -351,8 +369,23 @@ class WanxModel(VideoGenModel):
                                   duration: int = 5, audio: bool = True,
                                   shot_type: str = "multi", seed: int = None) -> str:
         """通过 HTTP 接口调用 Wan R2V 生成视频，并轮询任务结果。"""
-        base = get_provider_base_url("DASHSCOPE")
-        create_url = f"{base}/api/v1/services/aigc/video-generation/video-synthesis"
+        provider_service = ModelProviderService()
+        normalized_model_name = "wan2.6-i2v" if model_name == "wan2.6-r2v" else model_name
+        create_path = provider_service.require_model_setting(
+            normalized_model_name,
+            "create_path",
+            task_type="i2v",
+        )
+        poll_path_template = provider_service.require_model_setting(
+            normalized_model_name,
+            "poll_path_template",
+            task_type="i2v",
+        )
+        create_url = provider_service.build_provider_url(
+            "DASHSCOPE",
+            base_url=get_provider_base_url("DASHSCOPE"),
+            path_suffix=str(create_path),
+        )
         
         headers = {
             "Content-Type": "application/json",
@@ -399,7 +432,11 @@ class WanxModel(VideoGenModel):
         logger.info(f"Task created: {task_id}")
         
         # 第二步：轮询任务状态直到完成
-        poll_url = f"{base}/api/v1/tasks/{task_id}"
+        poll_url = provider_service.build_provider_url(
+            "DASHSCOPE",
+            base_url=get_provider_base_url("DASHSCOPE"),
+            path_suffix=str(poll_path_template).format(task_id=task_id),
+        )
         poll_headers = {
             "Authorization": f"Bearer {self.api_key}"
         }

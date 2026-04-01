@@ -30,7 +30,7 @@ class DoubaoModel(VideoGenModel):
             
         if Ark:
             self.client = Ark(
-                base_url=service.get_provider_base_url("ARK", "https://ark.cn-beijing.volces.com/api/v3"),
+                base_url=service.get_provider_base_url("ARK"),
                 api_key=self.api_key
             )
         else:

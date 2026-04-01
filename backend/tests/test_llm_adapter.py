@@ -6,6 +6,7 @@ import unittest
 from src.application.services.model_provider_service import ModelProviderService
 from src.providers.text.llm_adapter import DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS, LLMAdapter
 from src.settings.env_settings import override_env_path_for_tests
+from src.utils.endpoints import get_provider_client_base_url
 
 
 class APITimeoutError(Exception):
@@ -62,12 +63,16 @@ class LLMAdapterTest(unittest.TestCase):
         init_database()
 
         service = ModelProviderService()
-        service.ensure_defaults()
-        service.update_provider(
-            "DASHSCOPE",
-            enabled=True,
-            credentials_patch={"api_key": "test-key"},
-            settings_patch=settings_patch or {},
+        service.create_provider(
+            {
+                "provider_key": "DASHSCOPE",
+                "display_name": "DashScope",
+                "enabled": True,
+                "base_url": "https://dashscope.example.com",
+                "credential_fields": ["api_key"],
+                "credentials_patch": {"api_key": "test-key"},
+                "settings_json": settings_patch or {},
+            }
         )
 
     def test_reads_timeout_from_provider_settings(self):
@@ -108,11 +113,16 @@ class LLMAdapterTest(unittest.TestCase):
 
             adapter = LLMAdapter()
             service = ModelProviderService()
-            service.update_provider(
-                "OPENAI",
-                enabled=True,
-                credentials_patch={"api_key": "openai-key"},
-                settings_patch={"default_text_model": "gpt-4.1", "is_default_text_provider": True},
+            service.create_provider(
+                {
+                    "provider_key": "OPENAI",
+                    "display_name": "OpenAI",
+                    "enabled": True,
+                    "base_url": "https://openai.example.com/v1",
+                    "credential_fields": ["api_key"],
+                    "credentials_patch": {"api_key": "openai-key"},
+                    "settings_json": {"default_text_model": "gpt-4.1", "is_default_text_provider": True},
+                }
             )
             service.update_provider(
                 "DASHSCOPE",
@@ -127,11 +137,16 @@ class LLMAdapterTest(unittest.TestCase):
             self._bootstrap_provider_db(temp_dir, {"default_text_model": "qwen3.5-plus"})
 
             service = ModelProviderService()
-            service.update_provider(
-                "OPENAI",
-                enabled=True,
-                credentials_patch={"api_key": "openai-key"},
-                settings_patch={"default_text_model": "gpt-4.1", "supported_text_models": ["gpt-4.1", "gpt-4.1-mini"]},
+            service.create_provider(
+                {
+                    "provider_key": "OPENAI",
+                    "display_name": "OpenAI",
+                    "enabled": True,
+                    "base_url": "https://openai.example.com/v1",
+                    "credential_fields": ["api_key"],
+                    "credentials_patch": {"api_key": "openai-key"},
+                    "settings_json": {"default_text_model": "gpt-4.1", "supported_text_models": ["gpt-4.1", "gpt-4.1-mini"]},
+                }
             )
 
             adapter = LLMAdapter()
@@ -140,16 +155,54 @@ class LLMAdapterTest(unittest.TestCase):
             self.assertEqual(binding["provider_key"], "OPENAI")
             self.assertEqual(binding["model_id"], "gpt-4.1-mini")
 
+    def test_dashscope_client_path_can_be_overridden_by_provider_settings(self):
+        with TemporaryDirectory() as temp_dir:
+            self._bootstrap_provider_db(
+                temp_dir,
+                {"client_base_path": "/custom-compatible/v1"},
+            )
+
+            self.assertEqual(
+                get_provider_client_base_url("DASHSCOPE"),
+                "https://dashscope.example.com/custom-compatible/v1",
+            )
+
+    def test_non_llm_catalog_entry_cannot_be_used_as_text_binding(self):
+        with TemporaryDirectory() as temp_dir:
+            self._bootstrap_provider_db(temp_dir, {"default_text_model": "qwen3.5-plus"})
+
+            service = ModelProviderService()
+            service.create_model_catalog_entry(
+                {
+                    "model_id": "wan2.6-t2i",
+                    "task_type": "t2i",
+                    "provider_key": "DASHSCOPE",
+                    "display_name": "Wan 2.6 T2I",
+                }
+            )
+
+            adapter = LLMAdapter()
+
+            with self.assertRaises(ValueError) as context:
+                adapter._resolve_text_binding("wan2.6-t2i")
+
+            self.assertIn("not llm", str(context.exception))
+
     def test_ambiguous_default_text_provider_requires_explicit_config(self):
         with TemporaryDirectory() as temp_dir:
             self._bootstrap_provider_db(temp_dir, {"default_text_model": "qwen3.5-plus"})
 
             service = ModelProviderService()
-            service.update_provider(
-                "OPENAI",
-                enabled=True,
-                credentials_patch={"api_key": "openai-key"},
-                settings_patch={"default_text_model": "gpt-4.1"},
+            service.create_provider(
+                {
+                    "provider_key": "OPENAI",
+                    "display_name": "OpenAI",
+                    "enabled": True,
+                    "base_url": "https://openai.example.com/v1",
+                    "credential_fields": ["api_key"],
+                    "credentials_patch": {"api_key": "openai-key"},
+                    "settings_json": {"default_text_model": "gpt-4.1"},
+                }
             )
 
             adapter = LLMAdapter()

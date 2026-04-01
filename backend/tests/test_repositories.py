@@ -1071,6 +1071,59 @@ class RepositoryPersistenceTest(unittest.TestCase):
         self.assertEqual(updated.description, "数据库内更新后的描述")
         self.assertEqual(repository.list_active()[0].id, updated.id)
 
+    def test_user_art_style_repository_stores_one_style_per_row(self):
+        from src.repository import UserArtStyleRepository, UserRepository
+        from src.schemas.models import User, UserArtStyle
+
+        now = utc_now()
+        user_repository = UserRepository()
+        user_repository.create(
+            User(
+                id="user_style_repo_1",
+                email="style-repo@example.com",
+                display_name="Style Repo",
+                status="active",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        repository = UserArtStyleRepository()
+        created = repository.replace_for_user(
+            "user_style_repo_1",
+            [
+                UserArtStyle(
+                    id="ink-drama",
+                    user_id="user_style_repo_1",
+                    name="水墨戏剧",
+                    positive_prompt="ink wash, dramatic lighting",
+                    negative_prompt="",
+                    sort_order=0,
+                )
+            ],
+        )
+        reloaded = repository.list_by_user_id("user_style_repo_1")
+
+        self.assertEqual(created[0].user_id, "user_style_repo_1")
+        self.assertEqual(reloaded[0].id, "ink-drama")
+        self.assertEqual(reloaded[0].positive_prompt, "ink wash, dramatic lighting")
+
+        updated = repository.replace_for_user(
+            "user_style_repo_1",
+            [
+                UserArtStyle(
+                    id="noir",
+                    user_id="user_style_repo_1",
+                    name="黑色电影",
+                    positive_prompt="film noir, high contrast",
+                    negative_prompt="",
+                    sort_order=0,
+                )
+            ],
+        )
+        self.assertEqual([style.id for style in updated], ["noir"])
+        self.assertEqual([style.id for style in repository.list_by_user_id("user_style_repo_1")], ["noir"])
+
     def test_runtime_application_code_does_not_call_root_graph_save_helpers(self):
         application_root = Path(__file__).resolve().parents[1] / "src" / "application"
         forbidden_tokens = (

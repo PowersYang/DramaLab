@@ -10,7 +10,7 @@ except ImportError:
     OpenAI = None
 
 from ...application.services.model_provider_service import ModelProviderService
-from ...utils.endpoints import get_provider_base_url
+from ...utils.endpoints import get_provider_client_base_url
 
 logger = logging.getLogger(__name__)
 DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 300.0
@@ -52,13 +52,13 @@ class LLMAdapter:
             if provider_key == "OPENAI":
                 self._client = OpenAI(
                     api_key=self.provider_service.get_provider_credential("OPENAI", "api_key"),
-                    base_url=self.provider_service.get_provider_base_url("OPENAI", "https://api.openai.com/v1"),
+                    base_url=get_provider_client_base_url("OPENAI"),
                     timeout=request_timeout_seconds,
                 )
             elif provider_key == "DASHSCOPE":
                 self._client = OpenAI(
                     api_key=self.provider_service.get_provider_credential("DASHSCOPE", "api_key"),
-                    base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
+                    base_url=get_provider_client_base_url("DASHSCOPE"),
                     timeout=request_timeout_seconds,
                 )
             else:
