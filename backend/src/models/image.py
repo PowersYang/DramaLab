@@ -33,6 +33,7 @@ class WanxImageModel(ImageGenModel):
     def __init__(self, config):
         super().__init__(config)
         self.params = config.get('params', {})
+        self.last_generation_metrics = None
 
     @property
     def api_key(self):
@@ -89,17 +90,33 @@ class WanxImageModel(ImageGenModel):
             api_start_time = time.time()
             # 2.6 系列优先走 HTTP 接口；旧模型继续走 SDK
             if final_model_name == 'wan2.6-t2i':
-                image_url = self._generate_wan26_http(prompt, size, n, negative_prompt)
+                image_url, provider_meta = self._generate_wan26_http(prompt, size, n, negative_prompt)
             elif final_model_name == 'wan2.6-image':
                 # 2.6 图像模型专门用于图生图
-                image_url = self._generate_wan26_image_http(prompt, size, n, negative_prompt, all_ref_paths)
+                image_url, provider_meta = self._generate_wan26_image_http(prompt, size, n, negative_prompt, all_ref_paths)
             else:
                 # 其他模型继续走 Dashscope SDK
-                image_url = self._generate_sdk(prompt, final_model_name, size, n, negative_prompt, all_ref_paths,
-                                               kwargs)
+                image_url, provider_meta = self._generate_sdk(prompt, final_model_name, size, n, negative_prompt, all_ref_paths,
+                                                              kwargs)
 
             api_end_time = time.time()
             api_duration = api_end_time - api_start_time
+            self.last_generation_metrics = {
+                "version": "v1",
+                "provider": {"name": "DASHSCOPE", "model": final_model_name},
+                "usage": {
+                    "request_count": 1,
+                    "images": n,
+                    "reference_images": len(all_ref_paths),
+                    "request_duration_seconds": round(api_duration, 4),
+                },
+                "cost": {"amount": None, "currency": "UNKNOWN", "pricing_basis": "provider_usage"},
+                "artifacts": {"size": size, "output_count": n},
+                "supplier_reference": {
+                    "task_id": provider_meta.get("task_id"),
+                    "request_id": provider_meta.get("request_id"),
+                },
+            }
 
             logger.info(f"Generation success. Image URL: {image_url}")
             logger.info(f"API duration: {api_duration:.2f}s")
@@ -113,7 +130,7 @@ class WanxImageModel(ImageGenModel):
             logger.error(traceback.format_exc())
             raise
 
-    def _generate_wan26_http(self, prompt: str, size: str, n: int, negative_prompt: str = None) -> str:
+    def _generate_wan26_http(self, prompt: str, size: str, n: int, negative_prompt: str = None) -> tuple[str, dict[str, Any]]:
         """通过 HTTP 接口调用 Wan 2.6 文生图。"""
         provider_service = ModelProviderService()
         request_path = provider_service.require_model_setting(
@@ -188,9 +205,9 @@ class WanxImageModel(ImageGenModel):
         if not image_url:
             raise RuntimeError(f"No image URL in content: {content}")
         
-        return image_url
+        return image_url, {"task_id": None, "request_id": result.get("request_id") or response.headers.get("x-request-id")}
 
-    def _generate_wan26_image_http(self, prompt: str, size: str, n: int, negative_prompt: str = None, ref_image_paths: list = None) -> str:
+    def _generate_wan26_image_http(self, prompt: str, size: str, n: int, negative_prompt: str = None, ref_image_paths: list = None) -> tuple[str, dict[str, Any]]:
         """通过 HTTP 接口调用 Wan 2.6 图生图，并轮询任务结果。"""
         provider_service = ModelProviderService()
         create_path = provider_service.require_model_setting(
@@ -342,7 +359,7 @@ class WanxImageModel(ImageGenModel):
                     raise RuntimeError(f"No image URL in content: {content}")
                 
                 logger.info(f"Task completed. Image URL: {image_url}")
-                return image_url
+                return image_url, {"task_id": task_id, "request_id": poll_result.get("request_id") or poll_response.headers.get("x-request-id")}
             
             elif task_status == 'FAILED':
                 # 失败时把完整响应打出来，方便排查
@@ -367,7 +384,7 @@ class WanxImageModel(ImageGenModel):
         
         raise RuntimeError(f"Wan 2.6 Image task timed out after {max_wait_time}s")
 
-    def _generate_sdk(self, prompt: str, model_name: str, size: str, n: int, negative_prompt: str, all_ref_paths: list, kwargs: dict) -> str:
+    def _generate_sdk(self, prompt: str, model_name: str, size: str, n: int, negative_prompt: str, all_ref_paths: list, kwargs: dict) -> tuple[str, dict[str, Any]]:
         """通过 Dashscope SDK 调用旧版图片模型。"""
         call_args = {
             "model": model_name,
@@ -456,7 +473,7 @@ class WanxImageModel(ImageGenModel):
              logger.error(f"Response has no output. Response: {rsp}")
              raise RuntimeError("Response has no output.")
         
-        return image_url
+        return image_url, {"task_id": None, "request_id": getattr(rsp, "request_id", None)}
 
     def _download_image(self, url: str, output_path: str):
         logger.info(f"Downloading image to {output_path}...")

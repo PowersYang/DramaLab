@@ -72,6 +72,26 @@ class TenantAdminApiTest(unittest.TestCase):
                 "is_public": True,
             }
         )
+        model_provider_service.create_provider(
+            {
+                "provider_key": "KLING",
+                "display_name": "Kling",
+                "enabled": True,
+                "base_url": "https://kling.example.com",
+                "credential_fields": ["access_key", "secret_key"],
+                "settings_json": {},
+            }
+        )
+        model_provider_service.create_model_catalog_entry(
+            {
+                "model_id": "kling-v3",
+                "task_type": "i2v",
+                "provider_key": "KLING",
+                "display_name": "Kling V3",
+                "enabled": False,
+                "is_public": True,
+            }
+        )
         UserRepository().create(
             User(
                 id="user_super_admin",
@@ -85,10 +105,12 @@ class TenantAdminApiTest(unittest.TestCase):
             )
         )
 
+        from src.api.billing import router as billing_router
         from src.api.tenant_admin import router as tenant_admin_router
         from src.api.system import router as system_router
 
         app = FastAPI()
+        app.include_router(billing_router)
         app.include_router(tenant_admin_router)
         app.include_router(system_router)
         app.dependency_overrides[require_platform_role] = lambda: None
@@ -435,3 +457,37 @@ class TenantAdminApiTest(unittest.TestCase):
         deleted_provider = self.client.delete("/model-providers/ACME")
         self.assertEqual(deleted_provider.status_code, 200)
         self.assertEqual(deleted_provider.json()["provider_key"], "ACME")
+
+    def test_admin_billing_pricing_rule_accepts_usage_fields(self):
+        created = self.client.post(
+            "/admin/billing/pricing-rules",
+            json={
+                "task_type": "video.generate.project",
+                "price_credits": 120,
+                "reserve_credits": 180,
+                "minimum_credits": 30,
+                "charge_mode": "usage",
+                "pricing_config_json": {
+                    "billing_unit": "provider_cost_ratio",
+                    "provider_cost_markup_ratio": 1.5,
+                    "per_second_credits": 8,
+                },
+                "usage_metric_key": "seconds",
+                "description": "按秒结算的视频定价",
+            },
+        )
+
+        self.assertEqual(created.status_code, 200)
+        payload = created.json()
+        self.assertEqual(payload["charge_mode"], "usage")
+        self.assertEqual(payload["reserve_credits"], 180)
+        self.assertEqual(payload["minimum_credits"], 30)
+        self.assertEqual(payload["pricing_config_json"]["per_second_credits"], 8)
+        self.assertEqual(payload["usage_metric_key"], "seconds")
+
+        listed = self.client.get("/admin/billing/pricing-rules")
+        self.assertEqual(listed.status_code, 200)
+        rules = listed.json()
+        created_rule = next(item for item in rules if item["task_type"] == "video.generate.project")
+        self.assertEqual(created_rule["charge_mode"], "usage")
+        self.assertEqual(created_rule["reserve_credits"], 180)

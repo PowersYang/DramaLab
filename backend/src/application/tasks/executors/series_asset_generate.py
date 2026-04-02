@@ -1,4 +1,5 @@
 from ....application.workflows import AssetWorkflow
+from ..metrics import attach_resource_metrics
 from ....schemas.task_models import TaskJob
 
 
@@ -22,9 +23,17 @@ class SeriesAssetGenerateExecutor:
             batch_size=payload.get("batch_size", 1),
             model_name=payload.get("model_name"),
         )
-        return {
+        result = {
             "series_id": series.id,
             "asset_id": payload["asset_id"],
             "asset_type": payload["asset_type"],
         }
-
+        metrics = attach_resource_metrics(
+            self.asset_workflow.image_provider.last_generation_metrics,
+            operation="series.asset_generate",
+            resource={"series_id": series.id, "asset_id": payload["asset_id"], "asset_type": payload["asset_type"]},
+            artifacts={"batch_size": payload.get("batch_size", 1)},
+        )
+        if metrics:
+            result["__metrics__"] = metrics
+        return result

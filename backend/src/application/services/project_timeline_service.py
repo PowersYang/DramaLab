@@ -34,7 +34,10 @@ class ProjectTimelineService:
         if not project:
             raise ValueError("Project not found")
         if project.timeline:
-            return self._normalize_timeline(project.timeline, bump_version=False)
+            normalized = self._normalize_timeline(project.timeline, bump_version=False)
+            if normalized.model_dump(mode="json") != project.timeline.model_dump(mode="json"):
+                self.project_repository.cache_timeline_snapshot(project_id, normalized.model_dump(mode="json"))
+            return normalized
         return self._build_default_timeline(project)
 
     def save_timeline(self, project_id: str, timeline: ProjectTimeline) -> ProjectTimeline:
@@ -145,7 +148,7 @@ class ProjectTimelineService:
                 "assets": assets,
                 "clips": clips,
                 "version": max(int(timeline.version or 0), 0) + (1 if bump_version else 0),
-                "updated_at": utc_now(),
+                "updated_at": utc_now() if bump_version else timeline.updated_at,
             }
         )
 

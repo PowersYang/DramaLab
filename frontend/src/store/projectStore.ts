@@ -609,7 +609,6 @@ interface ProjectStore {
     currentProject: Project | null;
     hasHydrated: boolean;
     isLoading: boolean;
-    isAnalyzing: boolean;
     isAnalyzingArtStyle: boolean;
 
 
@@ -648,10 +647,6 @@ interface ProjectStore {
     addRenderingFrame: (frameId: string) => void;
     removeRenderingFrame: (frameId: string) => void;
 
-    // Storyboard Analysis State (persists across tab switches)
-    isAnalyzingStoryboard: boolean;
-    setIsAnalyzingStoryboard: (value: boolean) => void;
-
     // Series State
     seriesList: Series[];
     currentSeries: Series | null;
@@ -670,7 +665,6 @@ export const useProjectStore = create<ProjectStore>()(
             currentProject: null,
             hasHydrated: false,
             isLoading: false,
-            isAnalyzing: false,
             selectedFrameId: null,
             selectedAudioCharacterId: null,
 
@@ -698,7 +692,6 @@ export const useProjectStore = create<ProjectStore>()(
 
             analyzeProject: async (script: string) => {
                 const { currentProject, createProject } = get();
-                set({ isAnalyzing: true });
 
                 try {
                     if (currentProject && currentProject.id) {
@@ -725,8 +718,6 @@ export const useProjectStore = create<ProjectStore>()(
                 } catch (error) {
                     console.error("Failed to analyze script:", error);
                     throw error;
-                } finally {
-                    set({ isAnalyzing: false });
                 }
             },
 
@@ -880,10 +871,6 @@ export const useProjectStore = create<ProjectStore>()(
                 newSet.delete(frameId);
                 return { renderingFrames: newSet };
             }),
-
-            // Storyboard Analysis State
-            isAnalyzingStoryboard: false,
-            setIsAnalyzingStoryboard: (value: boolean) => set({ isAnalyzingStoryboard: value }),
 
             // Series State
             seriesList: [],

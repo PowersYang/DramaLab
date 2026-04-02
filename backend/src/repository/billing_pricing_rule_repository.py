@@ -16,6 +16,10 @@ def _to_domain(record: BillingPricingRuleRecord) -> BillingPricingRule:
         task_type=record.task_type,
         charge_mode=record.charge_mode,
         price_credits=record.price_credits,
+        reserve_credits=record.reserve_credits,
+        minimum_credits=record.minimum_credits,
+        pricing_config_json=record.pricing_config_json or {},
+        usage_metric_key=record.usage_metric_key,
         status=record.status,
         effective_from=record.effective_from,
         effective_to=record.effective_to,
@@ -101,12 +105,19 @@ class BillingPricingRuleRepository(BaseRepository[BillingPricingRule]):
         *,
         task_type: str,
         price_credits: int,
+        reserve_credits: int | None = None,
+        minimum_credits: int = 0,
+        charge_mode: str = "fixed",
+        pricing_config_json: dict | None = None,
+        usage_metric_key: str | None = None,
         organization_id: str | None = None,
         actor_id: str | None = None,
         status: str = "active",
         description: str | None = None,
     ) -> BillingPricingRule:
         scope_type = "organization" if organization_id else "platform"
+        effective_reserve_credits = price_credits if reserve_credits is None else reserve_credits
+        effective_pricing_config = pricing_config_json or {}
         with self._with_session() as session:
             record = (
                 session.query(BillingPricingRuleRecord)
@@ -126,8 +137,12 @@ class BillingPricingRuleRepository(BaseRepository[BillingPricingRule]):
                     scope_type=scope_type,
                     organization_id=organization_id,
                     task_type=task_type,
-                    charge_mode="fixed",
+                    charge_mode=charge_mode,
                     price_credits=price_credits,
+                    reserve_credits=effective_reserve_credits,
+                    minimum_credits=minimum_credits,
+                    pricing_config_json=effective_pricing_config,
+                    usage_metric_key=usage_metric_key,
                     status=status,
                     effective_from=now,
                     effective_to=None,
@@ -139,7 +154,12 @@ class BillingPricingRuleRepository(BaseRepository[BillingPricingRule]):
                 )
                 session.add(record)
             else:
+                record.charge_mode = charge_mode
                 record.price_credits = price_credits
+                record.reserve_credits = effective_reserve_credits
+                record.minimum_credits = minimum_credits
+                record.pricing_config_json = effective_pricing_config
+                record.usage_metric_key = usage_metric_key
                 record.status = status
                 record.description = description
                 record.updated_by = actor_id

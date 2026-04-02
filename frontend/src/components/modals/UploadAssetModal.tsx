@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Upload, Image as ImageIcon, User, Layout, Eye } from "lucide-react";
+import { X, Upload, Image as ImageIcon, User, Layout, Eye, Check, RefreshCw } from "lucide-react";
 
 interface UploadAssetModalProps {
     isOpen: boolean;
@@ -125,14 +125,14 @@ export default function UploadAssetModal({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8"
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 md:p-8"
                 onClick={handleClose}
             >
                 <motion.div
                     initial={{ scale: 0.95, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                    className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-xl overflow-hidden shadow-2xl"
+                    className="asset-workbench-shell asset-surface-strong border border-white/10 rounded-[32px] w-full max-w-xl overflow-hidden shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* ── Header ── */}
@@ -143,10 +143,10 @@ export default function UploadAssetModal({
                             </div>
                             <div>
                                 <h2 className="text-xl font-bold text-white tracking-tight">上传资产</h2>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-0.5">{assetName}</p>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mt-0.5">{assetName}</p>
                             </div>
                         </div>
-                        <button onClick={handleClose} className="p-2.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
+                        <button onClick={handleClose} className="p-2.5 hover:bg-white/10 rounded-full text-gray-500 hover:text-white transition-all">
                             <X size={24} />
                         </button>
                     </div>
@@ -155,7 +155,7 @@ export default function UploadAssetModal({
                         {/* ── Type Selector ── */}
                         {assetType === "character" && (
                             <section className="space-y-4">
-                                <div className="flex items-center gap-2 text-slate-400">
+                                <div className="flex items-center gap-2 text-gray-400">
                                     <Layout size={14} />
                                     <h3 className="text-[10px] font-bold uppercase tracking-widest">资产类型</h3>
                                 </div>
@@ -170,7 +170,7 @@ export default function UploadAssetModal({
                                                 className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all duration-300 ${
                                                     isActive 
                                                         ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20" 
-                                                        : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10 hover:text-slate-300"
+                                                        : "bg-white/5 border-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
                                                 }`}
                                             >
                                                 <Icon size={20} />
@@ -184,7 +184,7 @@ export default function UploadAssetModal({
 
                         {/* ── File Upload ── */}
                         <section className="space-y-4">
-                            <div className="flex items-center gap-2 text-slate-400">
+                            <div className="flex items-center gap-2 text-gray-400">
                                 <ImageIcon size={14} />
                                 <h3 className="text-[10px] font-bold uppercase tracking-widest">参考图文件</h3>
                             </div>
@@ -214,12 +214,12 @@ export default function UploadAssetModal({
                                     </>
                                 ) : (
                                     <>
-                                        <div className="p-5 rounded-2xl bg-white/5 text-slate-500 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all">
+                                        <div className="p-5 rounded-2xl bg-white/5 text-gray-500 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all">
                                             <Upload size={32} strokeWidth={1.5} />
                                         </div>
                                         <div className="text-center px-6">
-                                            <p className="text-sm font-bold text-slate-400 group-hover:text-white transition-colors">拖拽或点击上传</p>
-                                            <p className="text-[10px] text-slate-600 mt-1 uppercase tracking-wider">JPG, PNG, WebP · Max 10MB</p>
+                                            <p className="text-sm font-bold text-gray-400 group-hover:text-white transition-colors">拖拽或点击上传</p>
+                                            <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-wider">JPG, PNG, WebP · Max 10MB</p>
                                         </div>
                                     </>
                                 )}
@@ -228,14 +228,14 @@ export default function UploadAssetModal({
 
                         {/* ── Description ── */}
                         <section className="space-y-4">
-                            <div className="flex items-center gap-2 text-slate-400">
+                            <div className="flex items-center gap-2 text-gray-400">
                                 <Layout size={14} />
                                 <h3 className="text-[10px] font-bold uppercase tracking-widest">素材特征描述</h3>
                             </div>
                             <textarea
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                className="w-full h-32 bg-black/40 border border-white/10 rounded-[24px] p-5 text-[13px] leading-relaxed text-slate-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all custom-scrollbar"
+                                className="w-full h-32 bg-black/40 border border-white/10 rounded-[24px] p-5 text-[13px] leading-relaxed text-gray-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all custom-scrollbar"
                                 placeholder="描述素材的核心视觉特征..."
                             />
                         </section>
@@ -265,7 +265,7 @@ export default function UploadAssetModal({
                             disabled={!selectedFile || isUploading}
                             className={`flex-1 py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
                                 !selectedFile || isUploading 
-                                    ? "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed" 
+                                    ? "bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed" 
                                     : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
                             }`}
                         >

@@ -69,6 +69,20 @@ class AssetGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxImageModel(self.config.get("model", {}))
+        self.last_generation_metrics = None
+
+    def _remember_model_metrics(self, *, resource: Dict[str, Any], artifacts: Dict[str, Any] | None = None) -> None:
+        """把底层模型最近一次生成 metrics 抬升到 provider 层，供任务执行器读取。"""
+        if not self.model.last_generation_metrics:
+            return
+        self.last_generation_metrics = {
+            **self.model.last_generation_metrics,
+            "resource": resource,
+            "artifacts": {
+                **(self.model.last_generation_metrics.get("artifacts") or {}),
+                **(artifacts or {}),
+            },
+        }
 
     def _raise_generation_failure(self, stage_label: str, last_error: Exception | None) -> None:
         """保留最后一次真实异常，避免任务表只落笼统失败文案。"""
@@ -134,6 +148,10 @@ class AssetGenerator:
                                 negative_prompt=negative_prompt,
                                 model_name=effective_model_name,
                                 size=effective_size,
+                            )
+                            self._remember_model_metrics(
+                                resource={"asset_type": "character", "asset_id": character.id, "generation_type": "full_body"},
+                                artifacts={"variant_kind": "full_body"},
                             )
 
                             if not character.full_body_asset:
@@ -226,6 +244,10 @@ class AssetGenerator:
                         sheet_path = create_temp_file_path(prefix=f"dramalab-character-sheet-{character.id}-{variant_id}-", suffix=".png")
                         try:
                             self.model.generate(generation_prompt, sheet_path, ref_image_path=fullbody_path, negative_prompt=sheet_negative, ref_strength=0.8, model_name=i2i_model_name)
+                            self._remember_model_metrics(
+                                resource={"asset_type": "character", "asset_id": character.id, "generation_type": "three_view"},
+                                artifacts={"variant_kind": "three_view"},
+                            )
                             if not character.three_view_asset:
                                 character.three_view_asset = ImageAsset()
                             if not character.three_views:
@@ -276,6 +298,10 @@ class AssetGenerator:
                         avatar_path = create_temp_file_path(prefix=f"dramalab-character-headshot-{character.id}-{variant_id}-", suffix=".png")
                         try:
                             self.model.generate(generation_prompt, avatar_path, ref_image_path=fullbody_path, negative_prompt=negative_prompt, ref_strength=0.8, model_name=i2i_model_name)
+                            self._remember_model_metrics(
+                                resource={"asset_type": "character", "asset_id": character.id, "generation_type": "headshot"},
+                                artifacts={"variant_kind": "headshot"},
+                            )
                             if not character.headshot_asset:
                                 character.headshot_asset = ImageAsset()
                             if not character.head_shot:
@@ -337,6 +363,10 @@ class AssetGenerator:
                 output_path = create_temp_file_path(prefix=f"dramalab-scene-{scene.id}-{variant_id}-", suffix=".png")
                 try:
                     self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+                    self._remember_model_metrics(
+                        resource={"asset_type": "scene", "asset_id": scene.id, "generation_type": "scene"},
+                        artifacts={"variant_kind": "scene"},
+                    )
                     if not scene.image_asset:
                         scene.image_asset = ImageAsset()
                     uploader = OSSImageUploader()
@@ -371,6 +401,10 @@ class AssetGenerator:
                 output_path = create_temp_file_path(prefix=f"dramalab-prop-{prop.id}-{variant_id}-", suffix=".png")
                 try:
                     self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+                    self._remember_model_metrics(
+                        resource={"asset_type": "prop", "asset_id": prop.id, "generation_type": "prop"},
+                        artifacts={"variant_kind": "prop"},
+                    )
                     if not prop.image_asset:
                         prop.image_asset = ImageAsset()
                     uploader = OSSImageUploader()

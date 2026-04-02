@@ -162,16 +162,13 @@ export default function StoryboardComposer() {
     const addRenderingFrame = useProjectStore((state) => state.addRenderingFrame);
     const removeRenderingFrame = useProjectStore((state) => state.removeRenderingFrame);
 
-    // Use global storyboard analysis state (persists across tab switches)
-    const isAnalyzing = useProjectStore((state) => state.isAnalyzingStoryboard);
-    const setIsAnalyzing = useProjectStore((state) => state.setIsAnalyzingStoryboard);
-
     const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [insertIndex, setInsertIndex] = useState<number | null>(null);
     const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
     const [renderAllBatchSize, setRenderAllBatchSize] = useState<1 | 2 | 3 | 4>(1);
     const [isSubmittingAllFrames, setIsSubmittingAllFrames] = useState(false);
+    const [isSubmittingAnalysis, setIsSubmittingAnalysis] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const previousActiveStoryboardJobIdsRef = useRef<string[]>([]);
@@ -231,6 +228,24 @@ export default function StoryboardComposer() {
                 .filter((resourceId): resourceId is string => Boolean(resourceId))
         );
     }, [activeStoryboardRenderJobs]);
+
+    const isAnalyzingTasks = useMemo(() => {
+        if (!currentProject) {
+            return false;
+        }
+        const activeAnalyzeJobs = (jobIdsByProject[currentProject.id] || [])
+            .map((jobId) => jobsById[jobId])
+            .filter((job): job is TaskJob => {
+                return Boolean(
+                    job
+                    && job.task_type === "storyboard.analyze"
+                    && ACTIVE_STORYBOARD_JOB_STATUSES.includes(job.status as typeof ACTIVE_STORYBOARD_JOB_STATUSES[number])
+                );
+            });
+        return activeAnalyzeJobs.length > 0;
+    }, [currentProject, jobIdsByProject, jobsById]);
+
+    const isAnalyzing = isAnalyzingTasks || isSubmittingAnalysis;
 
     const batchRenderableFrames = useMemo(
         () => sortedFrames.filter((frame) => !frame.locked && !activeStoryboardRenderFrameIds.has(frame.id)),
@@ -346,7 +361,7 @@ export default function StoryboardComposer() {
             if (!confirm("这将覆盖当前的所有分镜帧。是否继续？")) return;
         }
 
-        setIsAnalyzing(true);
+        setIsSubmittingAnalysis(true);
         try {
             const receipt = await api.analyzeToStoryboard(currentProject.id, text);
             enqueueReceipts(currentProject.id, [receipt]);
@@ -372,7 +387,7 @@ export default function StoryboardComposer() {
                 alert(`分镜生成失败：${detail || "请查看控制台了解详情。"}`);
             }
         } finally {
-            setIsAnalyzing(false);
+            setIsSubmittingAnalysis(false);
         }
     };
 
@@ -591,7 +606,7 @@ export default function StoryboardComposer() {
 
     return (
         <div className="flex flex-col h-full text-white overflow-hidden">
-            <div className="flex-shrink-0 border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,250,252,0.96))] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(2,6,23,0.96))]">
+            <div className="flex-shrink-0 border-b border-white/10 bg-black/20">
                 <div className={PANEL_HEADER_CLASS}>
                     <h3 className={PANEL_TITLE_CLASS}>
                         <Layout size={16} className="text-primary" /> 分镜设计
@@ -602,60 +617,87 @@ export default function StoryboardComposer() {
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                        className="relative overflow-hidden rounded-[28px] border border-slate-200/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,248,251,0.95))] shadow-[0_28px_60px_-44px_rgba(15,23,42,0.46)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,14,24,0.9),rgba(3,7,18,0.94))]"
+                        className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-[0_28px_60px_-44px_rgba(15,23,42,0.46)] backdrop-blur-xl"
                     >
-                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_left_top,rgba(251,191,36,0.12),transparent_28%),radial-gradient(circle_at_88%_28%,rgba(13,148,136,0.14),transparent_30%)] dark:bg-[radial-gradient(circle_at_left_top,rgba(251,191,36,0.08),transparent_24%),radial-gradient(circle_at_88%_28%,rgba(45,212,191,0.1),transparent_28%)]" />
-                        <div className="relative flex flex-col items-stretch gap-3 px-4 py-4 xl:flex-row xl:items-center xl:justify-center">
-                            <div className="flex min-h-[84px] flex-1 flex-wrap items-center justify-between gap-3 rounded-[24px] border border-amber-100/80 bg-[linear-gradient(135deg,rgba(255,248,235,0.92),rgba(255,255,255,0.96))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_18px_32px_-28px_rgba(180,83,9,0.3)] dark:border-amber-400/10 dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))]">
-                                <BillingActionButton
-                                    onClick={handleAnalyzeToStoryboard}
-                                    disabled={isAnalyzing || !storyboardAnalyzeAffordable}
-                                    priceCredits={storyboardAnalyzePrice}
-                                    balanceCredits={account?.balance_credits}
-                                    className="group inline-flex min-w-[176px] items-center justify-center gap-3 rounded-full border border-slate-950/95 bg-slate-950 px-5 py-3.5 text-[15px] font-semibold tracking-[-0.02em] text-white shadow-[0_20px_38px_-24px_rgba(15,23,42,0.92)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-900 hover:shadow-[0_24px_42px_-24px_rgba(15,23,42,0.98)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none dark:border-white/10 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
-                                    tooltipText={storyboardAnalyzePrice == null ? undefined : `预计消耗${storyboardAnalyzePrice}算力豆${!storyboardAnalyzeAffordable ? "，当前余额不足" : ""}`}
-                                >
-                                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(251,191,36,0.28),rgba(249,115,22,0.18))] text-amber-200 transition-transform duration-200 group-hover:scale-105 dark:bg-amber-500/16 dark:text-amber-600">
-                                        {isAnalyzing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
-                                    </span>
-                                    {isAnalyzing ? "分析中..." : "生成分镜"}
-                                </BillingActionButton>
+                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(56,189,248,0.12),transparent_42%),radial-gradient(circle_at_86%_32%,rgba(34,197,94,0.10),transparent_44%),radial-gradient(circle_at_40%_90%,rgba(251,191,36,0.08),transparent_42%)]" />
+                        <div className="relative grid gap-3 p-3 xl:grid-cols-12">
+                            <div className="xl:col-span-5 rounded-2xl border border-white/10 bg-black/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary ring-1 ring-primary/20">
+                                                <Zap size={14} />
+                                            </span>
+                                            <div className="font-semibold tracking-[-0.02em] text-white">步骤 1：生成分镜</div>
+                                        </div>
+                                        <div className="mt-1 text-xs leading-relaxed text-gray-400">
+                                            从剧本解析结果生成镜头列表，可再逐帧编辑与补充。
+                                        </div>
+                                    </div>
+
+                                    <BillingActionButton
+                                        onClick={handleAnalyzeToStoryboard}
+                                        disabled={isAnalyzing || !storyboardAnalyzeAffordable}
+                                        priceCredits={storyboardAnalyzePrice}
+                                        balanceCredits={account?.balance_credits}
+                                        className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-primary/25 bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(49,95,145,0.72)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_22px_36px_-20px_rgba(49,95,145,0.84)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
+                                        tooltipText={storyboardAnalyzePrice == null ? undefined : `预计消耗${storyboardAnalyzePrice}算力豆${!storyboardAnalyzeAffordable ? "，当前余额不足" : ""}`}
+                                    >
+                                        {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                                        {isAnalyzing ? "分析中..." : "生成分镜"}
+                                    </BillingActionButton>
+                                </div>
                             </div>
 
-                            <div className="hidden h-10 w-px shrink-0 bg-[linear-gradient(180deg,transparent,rgba(148,163,184,0.35),transparent)] xl:block dark:bg-[linear-gradient(180deg,transparent,rgba(255,255,255,0.16),transparent)]" />
+                            <div className="xl:col-span-7 rounded-2xl border border-white/10 bg-black/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/15">
+                                                <ImageIcon size={14} />
+                                            </span>
+                                            <div className="font-semibold tracking-[-0.02em] text-white">步骤 2：生成分镜图片</div>
+                                        </div>
+                                        <div className="mt-1 text-xs leading-relaxed text-gray-400">
+                                            为每个分镜生成候选图。候选数越多，方便挑选替换。
+                                        </div>
+                                    </div>
 
-                            <div className="flex min-h-[84px] flex-1 flex-wrap items-center justify-between gap-3 rounded-[24px] border border-emerald-100/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.9),rgba(255,255,255,0.96))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_18px_32px_-28px_rgba(13,148,136,0.28)] dark:border-emerald-400/10 dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))]">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <div className="flex items-center gap-1 rounded-full border border-emerald-100/90 bg-white/92 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] dark:border-white/10 dark:bg-white/[0.04]">
-                                        {[1, 2, 3, 4].map((size) => (
-                                            <button
-                                                key={size}
-                                                type="button"
-                                                onClick={() => setRenderAllBatchSize(size as 1 | 2 | 3 | 4)}
-                                                className={`rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.02em] transition-all ${
-                                                    renderAllBatchSize === size
-                                                        ? "bg-slate-950 text-white shadow-[0_16px_28px_-20px_rgba(15,23,42,0.82)] dark:bg-white dark:text-slate-950"
-                                                        : "text-slate-500 hover:bg-emerald-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
-                                                }`}
-                                            >
-                                                x{size}
-                                            </button>
-                                        ))}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-2 py-1.5">
+                                            <span className="pl-1 text-[11px] font-medium text-gray-400">每帧候选</span>
+                                            <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1">
+                                                {[1, 2, 3, 4].map((size) => (
+                                                    <button
+                                                        key={size}
+                                                        type="button"
+                                                        onClick={() => setRenderAllBatchSize(size as 1 | 2 | 3 | 4)}
+                                                        className={`rounded-md px-2.5 py-1 text-[12px] font-semibold tracking-[-0.02em] transition-all ${
+                                                            renderAllBatchSize === size
+                                                                ? "bg-white/15 text-white shadow-[0_10px_18px_-14px_rgba(15,23,42,0.9)]"
+                                                                : "text-gray-500 hover:bg-white/10 hover:text-white"
+                                                        }`}
+                                                        title={`每个分镜生成 ${size} 张候选图`}
+                                                    >
+                                                        x{size}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <BillingActionButton
+                                            onClick={handleRenderAllFrames}
+                                            disabled={isSubmittingAllFrames || sortedFrames.length === 0 || !storyboardRenderAffordable}
+                                            priceCredits={storyboardRenderPrice}
+                                            balanceCredits={account?.balance_credits}
+                                            className="group inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/20 bg-[linear-gradient(135deg,rgba(16,185,129,0.92),rgba(8,145,178,0.86))] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_34px_-20px_rgba(16,185,129,0.72)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_42px_-24px_rgba(8,145,178,0.9)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
+                                            tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
+                                        >
+                                            {isSubmittingAllFrames ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                                            {isSubmittingAllFrames ? "批量提交中..." : `批量生成 x${renderAllBatchSize}`}
+                                        </BillingActionButton>
                                     </div>
                                 </div>
-                                <BillingActionButton
-                                    onClick={handleRenderAllFrames}
-                                    disabled={isSubmittingAllFrames || sortedFrames.length === 0 || !storyboardRenderAffordable}
-                                    priceCredits={storyboardRenderPrice}
-                                    balanceCredits={account?.balance_credits}
-                                    className="group inline-flex min-w-[196px] items-center justify-center gap-3 rounded-full border border-[#0f766e] bg-[linear-gradient(135deg,#0f766e,#0891b2)] px-5 py-3.5 text-[15px] font-semibold tracking-[-0.02em] text-white shadow-[0_20px_40px_-24px_rgba(15,118,110,0.86)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-24px_rgba(8,145,178,0.92)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none dark:border-emerald-300/20 dark:bg-[linear-gradient(135deg,#14b8a6,#06b6d4)] dark:text-slate-950"
-                                    tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
-                                >
-                                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/12 transition-transform duration-200 group-hover:scale-105 dark:bg-slate-950/12">
-                                        {isSubmittingAllFrames ? <Loader2 size={15} className="animate-spin" /> : <ImageIcon size={15} />}
-                                    </span>
-                                    {isSubmittingAllFrames ? "批量提交中..." : "一键生成图片"}
-                                </BillingActionButton>
                             </div>
                         </div>
                     </motion.div>
@@ -720,58 +762,65 @@ export default function StoryboardComposer() {
                                         }
 
                                         {/* Hover Actions - pointer-events-none to allow image click */}
-                                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none">
-                                            {/* Lock Button */}
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    if (!currentProject) return;
-                                                    try {
-                                                        await api.toggleFrameLock(currentProject.id, frame.id);
-                                                        const updated = await api.getProject(currentProject.id);
-                                                        updateProject(currentProject.id, updated);
-                                                    } catch (error) {
-                                                        console.error("Toggle lock failed:", error);
-                                                    }
-                                                }}
-                                                className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold flex items-center gap-1 pointer-events-auto"
-                                                title={frame.locked ? "解锁" : "锁定"}
-                                            >
-                                                {frame.locked ? <Unlock size={14} /> : <Lock size={14} />}
-                                            </button>
+                                        <div className="pointer-events-none absolute inset-0 opacity-0 transition-all duration-200 group-hover:opacity-100">
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                                            <div className="absolute inset-0 flex flex-col justify-between p-2">
+                                                <div className="flex items-center justify-end">
+                                                    <button
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            if (!currentProject) return;
+                                                            try {
+                                                                await api.toggleFrameLock(currentProject.id, frame.id);
+                                                                const updated = await api.getProject(currentProject.id);
+                                                                updateProject(currentProject.id, updated);
+                                                            } catch (error) {
+                                                                console.error("Toggle lock failed:", error);
+                                                            }
+                                                        }}
+                                                        className={`pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full border text-white shadow-[0_14px_28px_-20px_rgba(0,0,0,0.8)] backdrop-blur-md transition-all ${
+                                                            frame.locked
+                                                                ? "border-amber-300/25 bg-amber-500/20 hover:bg-amber-500/28"
+                                                                : "border-white/15 bg-black/35 hover:bg-black/50"
+                                                        }`}
+                                                        title={frame.locked ? "解锁" : "锁定"}
+                                                        aria-label={frame.locked ? "解锁分镜" : "锁定分镜"}
+                                                    >
+                                                        {frame.locked ? <Unlock size={16} /> : <Lock size={16} />}
+                                                    </button>
+                                                </div>
 
-                                            {/* Render Buttons with Batch Size - only show if not locked */}
-                                            {!frame.locked && (
-                                                <div className="flex items-center gap-1 pointer-events-auto">
-                                                    {isFrameRendering ? (
-                                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 rounded-lg">
-                                                            <Loader2 size={14} className="animate-spin text-white" />
-                                                            <span className="text-xs text-white">生成中...</span>
+                                                <div className="flex items-center justify-center">
+                                                    {frame.locked ? (
+                                                        <div className="pointer-events-none inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-semibold text-gray-200 backdrop-blur-md">
+                                                            <Lock size={14} className="opacity-90" />
+                                                            已锁定
+                                                        </div>
+                                                    ) : isFrameRendering ? (
+                                                        <div className="pointer-events-none inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/45 px-3 py-2 text-xs font-semibold text-white backdrop-blur-md">
+                                                            <Loader2 size={14} className="animate-spin" />
+                                                            生成中...
                                                         </div>
                                                     ) : (
-                                                        <>
-                                                            {[1, 2, 3, 4].map(size => (
-                                                                <BillingActionButton
-                                                                    key={size}
-                                                                    onClick={(e) => { e.stopPropagation(); handleRenderFrame(frame, size); }}
-                                                                    disabled={!storyboardRenderAffordable}
-                                                                    priceCredits={storyboardRenderPrice}
-                                                                    balanceCredits={account?.balance_credits}
-                                                                    className="px-2 py-1.5 bg-primary/80 hover:bg-primary text-white rounded text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                                                    tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
-                                                                    tooltipClassName="bottom-full top-auto mb-2 mt-0"
-                                                                    costClassName="px-1.5 py-0.5 text-[10px]"
-                                                                >
-                                                                    <div className="flex items-center gap-1">
-                                                                        <Wand2 size={12} />
-                                                                        <span>x{size}</span>
-                                                                    </div>
-                                                                </BillingActionButton>
-                                                            ))}
-                                                        </>
+                                                        <BillingActionButton
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRenderFrame(frame, renderAllBatchSize);
+                                                            }}
+                                                            disabled={!storyboardRenderAffordable}
+                                                            priceCredits={storyboardRenderPrice}
+                                                            balanceCredits={account?.balance_credits}
+                                                            className="pointer-events-auto inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_18px_38px_-28px_rgba(0,0,0,0.9)] backdrop-blur-md transition-all hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                            tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
+                                                            tooltipClassName="bottom-full top-auto mb-2 mt-0"
+                                                            costClassName="px-1.5 py-0.5 text-[10px]"
+                                                        >
+                                                            <Wand2 size={14} />
+                                                            生成 x{renderAllBatchSize}
+                                                        </BillingActionButton>
                                                     )}
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
                                     </div>
 

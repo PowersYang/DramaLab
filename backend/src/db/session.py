@@ -94,6 +94,7 @@ def init_database() -> None:
 
     Base.metadata.create_all(bind=engine)
     _ensure_incremental_columns(engine, schema=schema)
+    _ensure_incremental_indexes(engine, schema=schema)
     _migrate_legacy_user_art_styles(engine, schema=schema)
 
 
@@ -101,6 +102,9 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
     inspector = inspect(engine)
     user_columns = {column["name"] for column in inspector.get_columns("users", schema=schema)}
     billing_account_columns = {column["name"] for column in inspector.get_columns("billing_accounts", schema=schema)}
+    billing_transaction_columns = {column["name"] for column in inspector.get_columns("billing_transactions", schema=schema)}
+    billing_charge_columns = {column["name"] for column in inspector.get_columns("billing_charges", schema=schema)}
+    billing_pricing_rule_columns = {column["name"] for column in inspector.get_columns("billing_pricing_rules", schema=schema)}
     project_columns = {column["name"] for column in inspector.get_columns("projects", schema=schema)}
     series_columns = {column["name"] for column in inspector.get_columns("series", schema=schema)}
     statements: list[str] = []
@@ -157,8 +161,81 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
         else:
             statements.append("ALTER TABLE series ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'")
 
+    billing_transaction_additions = {
+        "charge_id": "VARCHAR(64)",
+        "source_event": "VARCHAR(64)",
+        "external_ref": "VARCHAR(255)",
+    }
+    for column_name, definition in billing_transaction_additions.items():
+        if column_name in billing_transaction_columns:
+            continue
+        if engine.dialect.name == "postgresql":
+            target = f'"{schema}"."billing_transactions"' if schema else '"billing_transactions"'
+            statements.append(f"ALTER TABLE {target} ADD COLUMN {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE billing_transactions ADD COLUMN {column_name} {definition}")
+
+    billing_charge_additions = {
+        "reserved_credits": "INTEGER NOT NULL DEFAULT 0",
+        "settled_credits": "INTEGER",
+        "refunded_credits": "INTEGER NOT NULL DEFAULT 0",
+        "adjusted_credits": "INTEGER NOT NULL DEFAULT 0",
+        "pricing_mode": "VARCHAR(16) NOT NULL DEFAULT 'fixed'",
+        "usage_snapshot_json": "JSONB" if engine.dialect.name == "postgresql" else "JSON",
+        "settlement_reason": "VARCHAR(64)",
+        "settled_at": "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME",
+        "reconciled_at": "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME",
+        "last_reconcile_error": "TEXT",
+        "version": "INTEGER NOT NULL DEFAULT 1",
+    }
+    for column_name, definition in billing_charge_additions.items():
+        if column_name in billing_charge_columns:
+            continue
+        if engine.dialect.name == "postgresql":
+            target = f'"{schema}"."billing_charges"' if schema else '"billing_charges"'
+            statements.append(f"ALTER TABLE {target} ADD COLUMN {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE billing_charges ADD COLUMN {column_name} {definition}")
+
+    billing_pricing_rule_additions = {
+        "reserve_credits": "INTEGER NOT NULL DEFAULT 0",
+        "minimum_credits": "INTEGER NOT NULL DEFAULT 0",
+        "pricing_config_json": "JSONB NOT NULL DEFAULT '{}'::jsonb" if engine.dialect.name == "postgresql" else "JSON",
+        "usage_metric_key": "VARCHAR(64)",
+    }
+    for column_name, definition in billing_pricing_rule_additions.items():
+        if column_name in billing_pricing_rule_columns:
+            continue
+        if engine.dialect.name == "postgresql":
+            target = f'"{schema}"."billing_pricing_rules"' if schema else '"billing_pricing_rules"'
+            statements.append(f"ALTER TABLE {target} ADD COLUMN {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE billing_pricing_rules ADD COLUMN {column_name} {definition}")
+
     if not statements:
         return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
+def _ensure_incremental_indexes(engine, schema: str | None = None) -> None:
+    statements: list[str] = []
+
+    if engine.dialect.name == "postgresql":
+        task_jobs_table = f'"{schema}"."task_jobs"' if schema else '"task_jobs"'
+        statements.append(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_task_jobs_active_dedupe_key "
+            f"ON {task_jobs_table}(dedupe_key) "
+            "WHERE dedupe_key IS NOT NULL AND status IN ('queued','claimed','running','retry_waiting','cancel_requested')"
+        )
+    else:
+        statements.append(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_task_jobs_active_dedupe_key "
+            "ON task_jobs(dedupe_key) "
+            "WHERE dedupe_key IS NOT NULL AND status IN ('queued','claimed','running','retry_waiting','cancel_requested')"
+        )
 
     with engine.begin() as connection:
         for statement in statements:

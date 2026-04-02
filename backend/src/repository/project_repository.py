@@ -236,6 +236,16 @@ class ProjectRepository(BaseRepository[Script]):
             record.version += 1
             return hydrate_project_map(session, {project_id})[project_id]
 
+    def cache_timeline_snapshot(self, project_id: str, timeline_json: dict) -> Script:
+        """写回时间轴派生缓存，不推进版本，也不使导出缓存失效。"""
+        with self._with_session() as session:
+            record = self._get_active(session, ProjectRecord, project_id)
+            if record is None:
+                raise ValueError(f"Project {project_id} not found")
+
+            record.timeline_json = timeline_json
+            return hydrate_project_map(session, {project_id})[project_id]
+
     def touch(self, project_id: str, expected_version: int, session=None) -> int:
         """推进项目根对象版本与更新时间，作为最小更新事务的乐观锁门闩。"""
         with self._with_session(session) as active_session:

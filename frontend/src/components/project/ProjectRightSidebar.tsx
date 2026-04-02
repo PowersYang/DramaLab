@@ -54,9 +54,9 @@ export default function ProjectRightSidebar({ activeStep }: ProjectRightSidebarP
                 <button
                     type="button"
                     onClick={() => setActiveTab("properties")}
-                    className={`flex-1 h-full text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "properties"
-                        ? "border-b-2 border-primary bg-white/80 text-slate-950 dark:bg-white/10 dark:text-white"
-                        : "text-slate-500 hover:bg-white/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100"
+                    className={`flex-1 h-full text-sm font-semibold flex items-center justify-center gap-2 transition-colors border-b-2 ${activeTab === "properties"
+                        ? "border-primary bg-[color:var(--studio-surface-20)] text-[color:var(--studio-text-strong)]"
+                        : "border-transparent text-[color:var(--studio-text-muted)] hover:bg-[color:var(--studio-surface-10)] hover:text-[color:var(--studio-text-strong)]"
                         }`}
                 >
                     <Settings2 size={16} />
@@ -65,9 +65,9 @@ export default function ProjectRightSidebar({ activeStep }: ProjectRightSidebarP
                 <button
                     type="button"
                     onClick={() => setActiveTab("queue")}
-                    className={`flex-1 h-full text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === "queue"
-                        ? "border-b-2 border-primary bg-white/80 text-slate-950 dark:bg-white/10 dark:text-white"
-                        : "text-slate-500 hover:bg-white/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100"
+                    className={`flex-1 h-full text-sm font-semibold flex items-center justify-center gap-2 transition-colors border-b-2 ${activeTab === "queue"
+                        ? "border-primary bg-[color:var(--studio-surface-20)] text-[color:var(--studio-text-strong)]"
+                        : "border-transparent text-[color:var(--studio-text-muted)] hover:bg-[color:var(--studio-surface-10)] hover:text-[color:var(--studio-text-strong)]"
                         }`}
                 >
                     <List size={16} />

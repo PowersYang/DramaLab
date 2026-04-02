@@ -392,6 +392,11 @@ class UpsertBillingPricingRuleRequest(BaseModel):
     organization_id: Optional[str] = None
     task_type: str
     price_credits: int = Field(..., ge=0)
+    reserve_credits: Optional[int] = Field(None, ge=0)
+    minimum_credits: int = Field(0, ge=0)
+    charge_mode: str = "fixed"
+    pricing_config_json: Dict[str, Any] = Field(default_factory=dict)
+    usage_metric_key: Optional[str] = None
     status: str = "active"
     description: Optional[str] = None
 
@@ -412,6 +417,31 @@ class CreateManualRechargeRequest(BaseModel):
     workspace_id: Optional[str] = None
     billing_email: Optional[str] = None
     idempotency_key: Optional[str] = None
+
+
+class CreatePaymentOrderRequest(BaseModel):
+    channel: str
+    amount_cents: int = Field(..., gt=0)
+    subject: Optional[str] = None
+    description: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
+
+class SimulatePaymentOrderPaidRequest(BaseModel):
+    provider_trade_no: Optional[str] = None
+    provider_buyer_id: Optional[str] = None
+
+
+class ManualAdjustBillingChargeRequest(BaseModel):
+    direction: str
+    amount_credits: int = Field(..., gt=0)
+    reason: str
+    remark: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
+
+class RunBillingReconcileRequest(BaseModel):
+    dry_run: bool = False
 
 
 class CreateMembershipRequest(BaseModel):

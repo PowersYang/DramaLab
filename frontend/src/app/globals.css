@@ -249,6 +249,45 @@ body {
   --admin-radius-lg: 20px;
 }
 
+.pipeline-theme-root[data-studio-theme="dark"] {
+  --studio-surface-solid: rgba(2, 6, 23, 1);
+  --studio-panel-solid: rgba(9, 14, 27, 1);
+  --studio-surface-5: rgba(255, 255, 255, 0.04);
+  --studio-surface-10: rgba(255, 255, 255, 0.06);
+  --studio-surface-20: rgba(15, 23, 42, 0.42);
+  --studio-surface-30: rgba(15, 23, 42, 0.58);
+  --studio-surface-40: rgba(15, 23, 42, 0.74);
+  --studio-surface-50: rgba(2, 6, 23, 0.82);
+  --studio-surface-60: rgba(2, 6, 23, 0.9);
+  --studio-surface-70: rgba(2, 6, 23, 0.94);
+  --studio-surface-80: rgba(2, 6, 23, 0.96);
+  --studio-text-strong: rgba(248, 250, 252, 0.96);
+  --studio-text-soft: rgba(226, 232, 240, 0.92);
+  --studio-text-muted: rgba(148, 163, 184, 0.92);
+  --studio-text-faint: rgba(100, 116, 139, 0.96);
+  --studio-border-soft: rgba(148, 163, 184, 0.16);
+  --studio-border-medium: rgba(148, 163, 184, 0.24);
+  --studio-shell-bg:
+    radial-gradient(circle at 16% 12%, rgba(59, 130, 246, 0.14), transparent 30%),
+    radial-gradient(circle at 78% 0%, rgba(249, 115, 22, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.94) 0%, rgba(1, 4, 16, 0.98) 100%);
+  --studio-shell-panel: rgba(11, 18, 32, 0.74);
+  --studio-shell-panel-strong: rgba(15, 23, 42, 0.86);
+  --studio-shell-panel-soft: rgba(255, 255, 255, 0.04);
+  --studio-shell-border: rgba(148, 163, 184, 0.16);
+  --studio-shell-shadow: 0 26px 70px rgba(0, 0, 0, 0.38);
+  --studio-shell-text: rgba(248, 250, 252, 0.96);
+  --studio-shell-text-soft: rgba(226, 232, 240, 0.9);
+  --studio-shell-text-faint: rgba(148, 163, 184, 0.82);
+  --studio-shell-accent: #6ea1d8;
+  --studio-shell-accent-strong: #8bb8eb;
+  --studio-shell-accent-soft: rgba(110, 161, 216, 0.16);
+  --studio-shell-accent-subtle: rgba(110, 161, 216, 0.08);
+  --studio-shell-warning: #d58a3a;
+  --studio-shell-warning-soft: rgba(210, 137, 51, 0.16);
+  --studio-shell-danger-soft: rgba(211, 88, 88, 0.16);
+}
+
 /* 中文注释：视频制作区单独抽一套轻量 token，保证浅深色下的面板与控件语言保持统一。 */
 [data-studio-theme="dark"] {
   --video-workspace-panel: rgba(11, 18, 32, 0.72);
@@ -297,8 +336,47 @@ body {
 .studio-theme-root .hover\:bg-white\/5:hover { background-color: var(--studio-surface-5) !important; }
 .studio-theme-root .hover\:bg-white\/10:hover { background-color: var(--studio-surface-10) !important; }
 .studio-theme-root .group:hover .group-hover\:text-white { color: var(--studio-text-strong) !important; }
+
+.studio-theme-root .billing-cost-badge {
+  color: var(--studio-text-strong) !important;
+}
+
+.studio-theme-root .billing-cost-badge--ok {
+  border-color: color-mix(in srgb, var(--studio-shell-warning) 48%, var(--studio-border-soft)) !important;
+  background: color-mix(in srgb, var(--studio-shell-warning) 12%, var(--studio-surface-70)) !important;
+}
+
+.studio-theme-root .billing-cost-badge--ok .billing-bean {
+  color: var(--studio-shell-warning) !important;
+}
+
+.studio-theme-root .billing-cost-badge--insufficient {
+  border-color: color-mix(in srgb, #b43838 46%, var(--studio-border-soft)) !important;
+  background: color-mix(in srgb, #b43838 10%, var(--studio-surface-70)) !important;
+}
+
+.studio-theme-root .billing-cost-badge--insufficient .billing-bean {
+  color: #b43838 !important;
+}
+
+.studio-theme-root .billing-cost-badge .billing-cost-value {
+  color: var(--studio-text-strong) !important;
+}
+
+.studio-theme-root .billing-tooltip {
+  border-color: var(--studio-border-medium) !important;
+  background: color-mix(in srgb, var(--studio-surface-80) 96%, transparent) !important;
+  color: var(--studio-text-strong) !important;
+  box-shadow: 0 20px 52px rgba(15, 23, 42, 0.18) !important;
+}
+
+.studio-theme-root .billing-tooltip--insufficient {
+  border-color: color-mix(in srgb, #b43838 28%, var(--studio-border-medium)) !important;
+}
 [data-studio-theme="light"] .bg-primary.text-white,
 [data-studio-theme="light"] .bg-primary\/80.text-white,
+[data-studio-theme="light"] .bg-indigo-600.text-white,
+[data-studio-theme="light"] .bg-indigo-500.text-white,
 [data-studio-theme="light"] .bg-purple-600.text-white,
 [data-studio-theme="light"] .bg-green-600.text-white,
 [data-studio-theme="light"] .bg-red-500.text-white,

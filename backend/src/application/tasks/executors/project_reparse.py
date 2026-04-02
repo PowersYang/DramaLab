@@ -1,4 +1,5 @@
 from ....application.services import ProjectService
+from ..metrics import attach_resource_metrics
 from ....schemas.task_models import TaskJob
 
 
@@ -14,9 +15,22 @@ class ProjectReparseExecutor:
             payload["project_id"],
             payload["text"],
         )
-        return {
+        result = {
             "project_id": project.id,
             "character_count": len(project.characters or []),
             "scene_count": len(project.scenes or []),
             "prop_count": len(project.props or []),
         }
+        metrics = attach_resource_metrics(
+            self.project_service.text_provider.get_last_metrics(),
+            operation="project.reparse",
+            resource={"project_id": project.id},
+            artifacts={
+                "character_count": len(project.characters or []),
+                "scene_count": len(project.scenes or []),
+                "prop_count": len(project.props or []),
+            },
+        )
+        if metrics:
+            result["__metrics__"] = metrics
+        return result

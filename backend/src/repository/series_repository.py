@@ -21,12 +21,17 @@ class SeriesRepository(BaseRepository[Series]):
                 return []
 
             series_ids = [row.id for row in rows]
+            # 中文注释：项目中心的 series summaries 必须与 episode_briefs 使用同一套 workspace 过滤，
+            # 否则会出现“列表显示集数>0，但展开分集为空”的计数错觉（通常来自跨 workspace 的历史关联数据）。
+            project_filters = [
+                ProjectRecord.is_deleted.is_(False),
+                ProjectRecord.series_id.in_(series_ids),
+            ]
+            if workspace_id is not None:
+                project_filters.append(ProjectRecord.workspace_id == workspace_id)
             episode_counts = dict(
                 session.query(ProjectRecord.series_id, func.count(ProjectRecord.id))
-                .filter(
-                    ProjectRecord.is_deleted.is_(False),
-                    ProjectRecord.series_id.in_(series_ids),
-                )
+                .filter(*project_filters)
                 .group_by(ProjectRecord.series_id)
                 .all()
             )
@@ -64,8 +69,7 @@ class SeriesRepository(BaseRepository[Series]):
                 session.query(ProjectRecord.series_id, func.count(StoryboardFrameRecord.id))
                 .join(StoryboardFrameRecord, ProjectRecord.id == StoryboardFrameRecord.project_id)
                 .filter(
-                    ProjectRecord.is_deleted.is_(False),
-                    ProjectRecord.series_id.in_(series_ids),
+                    *project_filters,
                     StoryboardFrameRecord.is_deleted.is_(False),
                 )
                 .group_by(ProjectRecord.series_id)

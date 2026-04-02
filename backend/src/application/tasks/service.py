@@ -3,6 +3,8 @@ import json
 import uuid
 from datetime import timedelta, timezone
 
+from sqlalchemy.exc import IntegrityError
+
 from ...common.log import get_logger
 from ...db.session import session_scope
 from ...repository import ProjectRepository, TaskAttemptRepository, TaskEventRepository, TaskJobRepository, VideoTaskRepository
@@ -14,6 +16,10 @@ from ...utils.datetime import utc_now
 
 
 logger = get_logger(__name__)
+
+
+class TaskRetryLimitReached(ValueError):
+    pass
 
 
 class TaskService:
@@ -85,40 +91,49 @@ class TaskService:
             updated_at=utc_now(),
         )
         with session_scope() as session:
-            self.billing_service.charge_task_submission(
-                job=job,
-                actor_id=job.created_by,
-                idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
-                session=session,
-            )
-            self.task_job_repository.create(job, session=session)
-            # 中文注释：先把 task_jobs flush 到当前事务，确保后续 video_task / task_event 的外键引用稳定可见。
-            session.flush()
-            video_task.source_job_id = job.id
-            self.video_task_repository.save(video_task, session=session)
-            self.task_event_repository.create(
-                TaskEvent(
-                    id=f"evt_{uuid.uuid4().hex[:16]}",
-                    job_id=job.id,
-                    organization_id=job.organization_id,
-                    workspace_id=job.workspace_id,
-                    created_by=job.created_by,
-                    updated_by=job.updated_by,
-                    event_type="job.created",
-                    to_status=job.status,
-                    progress=0,
-                    message="Video generation job queued",
-                    event_payload_json={
-                        "task_type": task_type,
-                        "resource_type": resource_type,
-                        "resource_id": resource_id,
-                        "source_video_task_id": video_task.id,
-                    },
-                    created_at=utc_now(),
-                    updated_at=utc_now(),
-                ),
-                session=session,
-            )
+            try:
+                self.billing_service.charge_task_submission(
+                    job=job,
+                    actor_id=job.created_by,
+                    idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
+                    session=session,
+                )
+                self.task_job_repository.create(job, session=session)
+                session.flush()
+                video_task.source_job_id = job.id
+                self.video_task_repository.save(video_task, session=session)
+                self.task_event_repository.create(
+                    TaskEvent(
+                        id=f"evt_{uuid.uuid4().hex[:16]}",
+                        job_id=job.id,
+                        organization_id=job.organization_id,
+                        workspace_id=job.workspace_id,
+                        created_by=job.created_by,
+                        updated_by=job.updated_by,
+                        event_type="job.created",
+                        to_status=job.status,
+                        progress=0,
+                        message="Video generation job queued",
+                        event_payload_json={
+                            "task_type": task_type,
+                            "resource_type": resource_type,
+                            "resource_id": resource_id,
+                            "source_video_task_id": video_task.id,
+                        },
+                        created_at=utc_now(),
+                        updated_at=utc_now(),
+                    ),
+                    session=session,
+                )
+            except IntegrityError:
+                session.rollback()
+                existing = self.task_job_repository.get_active_by_dedupe_key(dedupe_key)
+                if existing:
+                    if not video_task.source_job_id:
+                        video_task.source_job_id = existing.id
+                        self.video_task_repository.save(video_task)
+                    return self._to_receipt(existing, source_video_task_id=video_task.id)
+                raise
         logger.info(
             "TASK_SERVICE: create_video_generation_job job_id=%s task_type=%s project_id=%s source_video_task_id=%s",
             job.id,
@@ -184,37 +199,43 @@ class TaskService:
             updated_at=now,
         )
         with session_scope() as session:
-            self.billing_service.charge_task_submission(
-                job=job,
-                actor_id=job.created_by,
-                idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
-                session=session,
-            )
-            self.task_job_repository.create(job, session=session)
-            # 中文注释：job.created 事件依赖 task_jobs 外键，先 flush 父记录可避免 PostgreSQL 先插子表时报 FK 错误。
-            session.flush()
-            self.task_event_repository.create(
-                TaskEvent(
-                    id=f"evt_{uuid.uuid4().hex[:16]}",
-                    job_id=job.id,
-                    organization_id=job.organization_id,
-                    workspace_id=job.workspace_id,
-                    created_by=job.created_by,
-                    updated_by=job.updated_by,
-                    event_type="job.created",
-                    to_status=job.status,
-                    progress=0,
-                    message=f"{task_type} queued",
-                    event_payload_json={
-                        "task_type": task_type,
-                        "resource_type": resource_type,
-                        "resource_id": resource_id,
-                    },
-                    created_at=now,
-                    updated_at=now,
-                ),
-                session=session,
-            )
+            try:
+                self.billing_service.charge_task_submission(
+                    job=job,
+                    actor_id=job.created_by,
+                    idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
+                    session=session,
+                )
+                self.task_job_repository.create(job, session=session)
+                session.flush()
+                self.task_event_repository.create(
+                    TaskEvent(
+                        id=f"evt_{uuid.uuid4().hex[:16]}",
+                        job_id=job.id,
+                        organization_id=job.organization_id,
+                        workspace_id=job.workspace_id,
+                        created_by=job.created_by,
+                        updated_by=job.updated_by,
+                        event_type="job.created",
+                        to_status=job.status,
+                        progress=0,
+                        message=f"{task_type} queued",
+                        event_payload_json={
+                            "task_type": task_type,
+                            "resource_type": resource_type,
+                            "resource_id": resource_id,
+                        },
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                    session=session,
+                )
+            except IntegrityError:
+                session.rollback()
+                existing = self.task_job_repository.get_active_by_dedupe_key(dedupe_key)
+                if existing:
+                    return self._to_receipt(existing)
+                raise
         logger.info("TASK_SERVICE: create_job job_id=%s task_type=%s project_id=%s series_id=%s", job.id, task_type, project_id, series_id)
         return self._to_receipt(job)
 
@@ -316,82 +337,99 @@ class TaskService:
         return recovered
 
     def cancel_job(self, job_id: str) -> TaskJob:
-        job = self.task_job_repository.get(job_id)
-        if not job:
-            raise ValueError(f"Task job {job_id} not found")
-        if job.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.TIMED_OUT}:
-            return job
+        with session_scope() as session:
+            job = self.task_job_repository.get(job_id, session=session)
+            if not job:
+                raise ValueError(f"Task job {job_id} not found")
+            if job.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.TIMED_OUT}:
+                return job
 
-        now = utc_now()
-        next_status = TaskStatus.CANCELLED if job.status == TaskStatus.QUEUED else TaskStatus.CANCEL_REQUESTED
-        updated = self.task_job_repository.patch(
-            job_id,
-            {
-                "status": next_status.value,
-                "cancel_requested_at": now,
-                "finished_at": now if next_status == TaskStatus.CANCELLED else None,
-            },
-        )
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job_id,
-                organization_id=updated.organization_id,
-                workspace_id=updated.workspace_id,
-                created_by=updated.created_by,
-                updated_by=updated.updated_by,
-                event_type="job.cancel_requested",
-                from_status=job.status,
-                to_status=updated.status,
-                progress=0,
-                message="Task cancellation requested",
-                created_at=now,
-                updated_at=now,
+            now = utc_now()
+            next_status = TaskStatus.CANCELLED if job.status == TaskStatus.QUEUED else TaskStatus.CANCEL_REQUESTED
+            updated = self.task_job_repository.patch(
+                job_id,
+                {
+                    "status": next_status.value,
+                    "cancel_requested_at": now,
+                    "finished_at": now if next_status == TaskStatus.CANCELLED else None,
+                },
+                session=session,
             )
-        )
-        return updated
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job_id,
+                    organization_id=updated.organization_id,
+                    workspace_id=updated.workspace_id,
+                    created_by=updated.created_by,
+                    updated_by=updated.updated_by,
+                    event_type="job.cancel_requested",
+                    from_status=job.status,
+                    to_status=updated.status,
+                    progress=0,
+                    message="Task cancellation requested",
+                    created_at=now,
+                    updated_at=now,
+                ),
+                session=session,
+            )
+            if next_status == TaskStatus.CANCELLED:
+                self.billing_service.settle_task_charge_for_completion(
+                    job=updated,
+                    outcome_status=TaskStatus.CANCELLED.value,
+                    actor_id=updated.updated_by,
+                    session=session,
+                )
+            return updated
 
     def retry_job(self, job_id: str) -> TaskJob:
-        job = self.task_job_repository.get(job_id)
-        if not job:
-            raise ValueError(f"Task job {job_id} not found")
-        if job.status not in {TaskStatus.FAILED, TaskStatus.TIMED_OUT, TaskStatus.CANCELLED}:
-            return job
+        with session_scope() as session:
+            job = self.task_job_repository.get(job_id, session=session)
+            if not job:
+                raise ValueError(f"Task job {job_id} not found")
+            if job.status not in {TaskStatus.FAILED, TaskStatus.TIMED_OUT, TaskStatus.CANCELLED}:
+                return job
+            if job.attempt_count >= job.max_attempts:
+                raise TaskRetryLimitReached(f"Task job {job_id} reached max attempts")
 
-        now = utc_now()
-        updated = self.task_job_repository.patch(
-            job_id,
-            {
-                "status": TaskStatus.QUEUED.value,
-                "scheduled_at": now,
-                "claimed_at": None,
-                "started_at": None,
-                "heartbeat_at": None,
-                "finished_at": None,
-                "cancel_requested_at": None,
-                "error_code": None,
-                "error_message": None,
-                "worker_id": None,
-            },
-        )
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job_id,
-                organization_id=updated.organization_id,
-                workspace_id=updated.workspace_id,
-                created_by=updated.created_by,
-                updated_by=updated.updated_by,
-                event_type="job.retry_scheduled",
-                from_status=job.status,
-                to_status=updated.status,
-                progress=0,
-                message="Task re-queued manually",
-                created_at=now,
-                updated_at=now,
+            self.billing_service.reopen_task_charge_for_retry(job=job, actor_id=job.updated_by, session=session)
+
+            now = utc_now()
+            updated = self.task_job_repository.patch(
+                job_id,
+                {
+                    "status": TaskStatus.QUEUED.value,
+                    "scheduled_at": now,
+                    "claimed_at": None,
+                    "started_at": None,
+                    "heartbeat_at": None,
+                    "finished_at": None,
+                    "cancel_requested_at": None,
+                    "error_code": None,
+                    "error_message": None,
+                    "worker_id": None,
+                },
+                session=session,
             )
-        )
-        return updated
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job_id,
+                    organization_id=updated.organization_id,
+                    workspace_id=updated.workspace_id,
+                    created_by=updated.created_by,
+                    updated_by=updated.updated_by,
+                    event_type="job.retry_scheduled",
+                    from_status=job.status,
+                    to_status=updated.status,
+                    progress=0,
+                    message="Task re-queued manually",
+                    created_at=now,
+                    updated_at=now,
+                ),
+                session=session,
+            )
+            return updated
 
     def create_attempt(self, job: TaskJob, worker_id: str) -> TaskAttempt:
         attempt = TaskAttempt(
@@ -448,142 +486,192 @@ class TaskService:
         return self.task_job_repository.patch(job_id, {"heartbeat_at": utc_now()})
 
     def mark_job_succeeded(self, job_id: str, result_json: dict | None = None) -> TaskJob:
-        job = self.task_job_repository.get(job_id)
-        if not job:
-            raise ValueError(f"Task job {job_id} not found")
-        now = utc_now()
-        updated = self.task_job_repository.patch(
-            job_id,
-            {
-                "status": TaskStatus.SUCCEEDED.value,
-                "result_json": result_json,
-                "error_code": None,
-                "error_message": None,
-                "heartbeat_at": now,
-                "finished_at": now,
-            },
-        )
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job_id,
-                organization_id=updated.organization_id,
-                workspace_id=updated.workspace_id,
-                created_by=updated.created_by,
-                updated_by=updated.updated_by,
-                event_type="job.succeeded",
-                from_status=job.status,
-                to_status=updated.status,
-                progress=100,
-                message="Task finished successfully",
-                event_payload_json=result_json or {},
-                created_at=now,
-                updated_at=now,
+        with session_scope() as session:
+            job = self.task_job_repository.get(job_id, session=session)
+            if not job:
+                raise ValueError(f"Task job {job_id} not found")
+            now = utc_now()
+            updated = self.task_job_repository.patch(
+                job_id,
+                {
+                    "status": TaskStatus.SUCCEEDED.value,
+                    "result_json": result_json,
+                    "error_code": None,
+                    "error_message": None,
+                    "heartbeat_at": now,
+                    "finished_at": now,
+                },
+                session=session,
             )
-        )
-        return updated
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job_id,
+                    organization_id=updated.organization_id,
+                    workspace_id=updated.workspace_id,
+                    created_by=updated.created_by,
+                    updated_by=updated.updated_by,
+                    event_type="job.succeeded",
+                    from_status=job.status,
+                    to_status=updated.status,
+                    progress=100,
+                    message="Task finished successfully",
+                    event_payload_json=result_json or {},
+                    created_at=now,
+                    updated_at=now,
+                ),
+                session=session,
+            )
+            charge = self.billing_service.settle_task_charge_for_completion(
+                job=updated,
+                outcome_status=TaskStatus.SUCCEEDED.value,
+                actor_id=updated.updated_by,
+                session=session,
+            )
+            if charge is not None and isinstance(updated.result_json, dict):
+                billing_summary = {
+                    "charge_status": charge.status,
+                    "estimated_credits": charge.estimated_credits,
+                    "final_credits": charge.final_credits,
+                    "hold_transaction_id": charge.hold_transaction_id,
+                    "settle_transaction_id": charge.settle_transaction_id,
+                    "pricing_version": (charge.pricing_snapshot_json or {}).get("pricing_version"),
+                }
+                updated = self.task_job_repository.patch(
+                    job_id,
+                    {"result_json": {**updated.result_json, "billing_summary": billing_summary}},
+                    session=session,
+                )
+            return updated
 
     def mark_job_failed(self, job_id: str, error_message: str, error_code: str | None = None) -> TaskJob:
-        job = self.task_job_repository.get(job_id)
-        if not job:
-            raise ValueError(f"Task job {job_id} not found")
-        now = utc_now()
-        updated = self.task_job_repository.patch(
-            job_id,
-            {
-                "status": TaskStatus.FAILED.value,
-                "error_code": error_code,
-                "error_message": error_message,
-                "heartbeat_at": now,
-                "finished_at": now,
-            },
-        )
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job_id,
-                organization_id=updated.organization_id,
-                workspace_id=updated.workspace_id,
-                created_by=updated.created_by,
-                updated_by=updated.updated_by,
-                event_type="job.failed",
-                from_status=job.status,
-                to_status=updated.status,
-                progress=100,
-                message=error_message,
-                created_at=now,
-                updated_at=now,
+        with session_scope() as session:
+            job = self.task_job_repository.get(job_id, session=session)
+            if not job:
+                raise ValueError(f"Task job {job_id} not found")
+            now = utc_now()
+            updated = self.task_job_repository.patch(
+                job_id,
+                {
+                    "status": TaskStatus.FAILED.value,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                    "heartbeat_at": now,
+                    "finished_at": now,
+                },
+                session=session,
             )
-        )
-        return updated
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job_id,
+                    organization_id=updated.organization_id,
+                    workspace_id=updated.workspace_id,
+                    created_by=updated.created_by,
+                    updated_by=updated.updated_by,
+                    event_type="job.failed",
+                    from_status=job.status,
+                    to_status=updated.status,
+                    progress=100,
+                    message=error_message,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                session=session,
+            )
+            self.billing_service.settle_task_charge_for_completion(
+                job=updated,
+                outcome_status=TaskStatus.FAILED.value,
+                actor_id=updated.updated_by,
+                session=session,
+            )
+            return updated
 
     def mark_job_timed_out(self, job_id: str, error_message: str) -> TaskJob:
         """把已无剩余重试次数的陈旧任务标记为超时，便于前端退出等待态。"""
-        job = self.task_job_repository.get(job_id)
-        if not job:
-            raise ValueError(f"Task job {job_id} not found")
-        now = utc_now()
-        updated = self.task_job_repository.patch(
-            job_id,
-            {
-                "status": TaskStatus.TIMED_OUT.value,
-                "error_code": "task_timeout",
-                "error_message": error_message,
-                "heartbeat_at": now,
-                "finished_at": now,
-                "worker_id": None,
-            },
-        )
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job_id,
-                organization_id=updated.organization_id,
-                workspace_id=updated.workspace_id,
-                created_by=updated.created_by,
-                updated_by=updated.updated_by,
-                event_type="job.timed_out",
-                from_status=job.status,
-                to_status=updated.status,
-                progress=100,
-                message=error_message,
-                created_at=now,
-                updated_at=now,
+        with session_scope() as session:
+            job = self.task_job_repository.get(job_id, session=session)
+            if not job:
+                raise ValueError(f"Task job {job_id} not found")
+            now = utc_now()
+            updated = self.task_job_repository.patch(
+                job_id,
+                {
+                    "status": TaskStatus.TIMED_OUT.value,
+                    "error_code": "task_timeout",
+                    "error_message": error_message,
+                    "heartbeat_at": now,
+                    "finished_at": now,
+                    "worker_id": None,
+                },
+                session=session,
             )
-        )
-        return updated
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job_id,
+                    organization_id=updated.organization_id,
+                    workspace_id=updated.workspace_id,
+                    created_by=updated.created_by,
+                    updated_by=updated.updated_by,
+                    event_type="job.timed_out",
+                    from_status=job.status,
+                    to_status=updated.status,
+                    progress=100,
+                    message=error_message,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                session=session,
+            )
+            self.billing_service.settle_task_charge_for_completion(
+                job=updated,
+                outcome_status=TaskStatus.TIMED_OUT.value,
+                actor_id=updated.updated_by,
+                session=session,
+            )
+            return updated
 
     def mark_job_cancelled(self, job_id: str, message: str = "Task cancelled") -> TaskJob:
-        job = self.task_job_repository.get(job_id)
-        if not job:
-            raise ValueError(f"Task job {job_id} not found")
-        now = utc_now()
-        updated = self.task_job_repository.patch(
-            job_id,
-            {
-                "status": TaskStatus.CANCELLED.value,
-                "heartbeat_at": now,
-                "finished_at": now,
-            },
-        )
-        self.task_event_repository.create(
-            TaskEvent(
-                id=f"evt_{uuid.uuid4().hex[:16]}",
-                job_id=job_id,
-                organization_id=updated.organization_id,
-                workspace_id=updated.workspace_id,
-                created_by=updated.created_by,
-                updated_by=updated.updated_by,
-                event_type="job.cancelled",
-                from_status=job.status,
-                to_status=updated.status,
-                progress=100,
-                message=message,
-                created_at=now,
-                updated_at=now,
+        with session_scope() as session:
+            job = self.task_job_repository.get(job_id, session=session)
+            if not job:
+                raise ValueError(f"Task job {job_id} not found")
+            now = utc_now()
+            updated = self.task_job_repository.patch(
+                job_id,
+                {
+                    "status": TaskStatus.CANCELLED.value,
+                    "heartbeat_at": now,
+                    "finished_at": now,
+                },
+                session=session,
             )
-        )
-        return updated
+            self.task_event_repository.create(
+                TaskEvent(
+                    id=f"evt_{uuid.uuid4().hex[:16]}",
+                    job_id=job_id,
+                    organization_id=updated.organization_id,
+                    workspace_id=updated.workspace_id,
+                    created_by=updated.created_by,
+                    updated_by=updated.updated_by,
+                    event_type="job.cancelled",
+                    from_status=job.status,
+                    to_status=updated.status,
+                    progress=100,
+                    message=message,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                session=session,
+            )
+            self.billing_service.settle_task_charge_for_completion(
+                job=updated,
+                outcome_status=TaskStatus.CANCELLED.value,
+                actor_id=updated.updated_by,
+                session=session,
+            )
+            return updated
 
     def _build_video_payload(self, video_task: VideoTask) -> dict:
         return {

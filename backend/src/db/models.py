@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -148,6 +148,42 @@ class BillingTransactionRecord(TenantAuditMixin, Base):
     remark: Mapped[str | None] = mapped_column(Text, nullable=True)
     operator_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     operator_source: Mapped[str] = mapped_column(String(32), default="system", nullable=False)
+    charge_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source_event: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+
+
+class BillingChargeRecord(TenantAuditMixin, Base):
+    __tablename__ = "billing_charges"
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_billing_charges_job"),
+        Index("ix_billing_charges_org_created", "organization_id", "created_at"),
+        Index("ix_billing_charges_status_updated", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    billing_account_id: Mapped[str] = mapped_column(String(64), ForeignKey("billing_accounts.id"), nullable=False, index=True)
+    job_id: Mapped[str] = mapped_column(String(64), ForeignKey("task_jobs.id"), nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="held", nullable=False, index=True)
+    estimated_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    final_credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reserved_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    settled_credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    refunded_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    adjusted_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pricing_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="fixed")
+    pricing_snapshot_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    cost_snapshot_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    usage_snapshot_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    settlement_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_reconcile_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    hold_transaction_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("billing_transactions.id"), nullable=True, index=True)
+    settle_transaction_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("billing_transactions.id"), nullable=True, index=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
 
 
@@ -164,6 +200,10 @@ class BillingPricingRuleRecord(GlobalAuditMixin, Base):
     task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     charge_mode: Mapped[str] = mapped_column(String(16), default="fixed", nullable=False)
     price_credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    reserve_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    minimum_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pricing_config_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    usage_metric_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -187,6 +227,76 @@ class BillingRechargeBonusRuleRecord(GlobalAuditMixin, Base):
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PaymentOrderRecord(TenantAuditMixin, Base):
+    __tablename__ = "payment_orders"
+    __table_args__ = (
+        Index("ix_payment_orders_org_created", "organization_id", "created_at"),
+        Index("ix_payment_orders_status_updated", "status", "updated_at"),
+        Index("ix_payment_orders_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    billing_account_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("billing_accounts.id"), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("users.id"), nullable=True, index=True)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(16), default="CNY", nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_mode: Mapped[str] = mapped_column(String(32), default="mock", nullable=False)
+    provider_order_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    provider_trade_no: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    provider_buyer_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_response_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    exchange_snapshot_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    bonus_rule_snapshot_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    base_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    bonus_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    qr_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    qr_code_svg: Mapped[str | None] = mapped_column(Text, nullable=True)
+    qr_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+
+
+class PaymentEventRecord(TenantAuditMixin, Base):
+    __tablename__ = "payment_events"
+    __table_args__ = (
+        Index("ix_payment_events_order_created", "payment_order_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payment_order_id: Mapped[str] = mapped_column(String(64), ForeignKey("payment_orders.id"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    event_payload_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+
+
+class BillingReconcileRunRecord(GlobalAuditMixin, Base):
+    __tablename__ = "billing_reconcile_runs"
+    __table_args__ = (
+        Index("ix_billing_reconcile_runs_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), default="completed", nullable=False)
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    scan_scope_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    examined_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    repaired_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class VerificationCodeRecord(Base):
@@ -601,6 +711,17 @@ class TaskJobRecord(TenantAuditMixin, Base):
         Index("ix_task_jobs_project_created", "project_id", "created_at"),
         Index("ix_task_jobs_series_created", "series_id", "created_at"),
         Index("ix_task_jobs_resource_created", "resource_type", "resource_id", "created_at"),
+        Index(
+            "uq_task_jobs_active_dedupe_key",
+            "dedupe_key",
+            unique=True,
+            sqlite_where=text(
+                "dedupe_key IS NOT NULL AND status IN ('queued','claimed','running','retry_waiting','cancel_requested')"
+            ),
+            postgresql_where=text(
+                "dedupe_key IS NOT NULL AND status IN ('queued','claimed','running','retry_waiting','cancel_requested')"
+            ),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

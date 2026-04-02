@@ -1,5 +1,6 @@
 from ....application.services import SystemService
 from ....providers import ScriptProcessor
+from ..metrics import attach_resource_metrics
 from ....schemas.task_models import TaskJob
 
 
@@ -22,8 +23,17 @@ class VideoPolishR2VPromptExecutor:
             payload.get("feedback", ""),
             custom_prompt,
         )
-        return {
+        response = {
             "prompt_cn": result.get("prompt_cn", ""),
             "prompt_en": result.get("prompt_en", ""),
             "script_id": payload.get("script_id"),
         }
+        metrics = attach_resource_metrics(
+            self.text_provider.get_last_metrics(),
+            operation="video.polish_r2v_prompt",
+            resource={"project_id": payload.get("script_id")},
+            artifacts={"slot_count": len(payload.get("slots", []) or [])},
+        )
+        if metrics:
+            response["__metrics__"] = metrics
+        return response

@@ -11,12 +11,15 @@ volcengine-python-sdk[ark]>=4.0.0
 # Data Validation & Processing
 pydantic>=2.0.0
 SQLAlchemy>=2.0.0
+alembic>=1.14.0
 
 # Utilities
 python-dotenv>=1.0.0
 requests>=2.31.0
 PyYAML>=6.0
 PyJWT>=2.8.0
+cryptography>=43.0.0
+qrcode>=7.4.2
 
 # Database Drivers
 psycopg[binary]>=3.2.0

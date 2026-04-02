@@ -20,6 +20,10 @@ MODEL_ID_ALIASES = {
 MODEL_TASK_TYPES = ("t2i", "i2i", "i2v", "llm")
 TEXT_PROVIDER_KEYS = {"OPENAI", "DASHSCOPE"}
 TEXT_PROVIDER_DEFAULT_FLAGS = ("is_default_text_provider", "default_for_text")
+TEXT_PROVIDER_FALLBACK_MODELS = {
+    "DASHSCOPE": "qwen3.5-plus",
+    "OPENAI": "gpt-4.1",
+}
 
 
 class ModelProviderService:
@@ -418,14 +422,15 @@ class ModelProviderService:
         default_bindings = [binding for binding in bindings if binding["is_default"]]
         if len(default_bindings) == 1:
             default_binding = default_bindings[0]
-            if not default_binding["default_model"]:
+            resolved_default_model = self._resolve_binding_default_model(default_binding)
+            if not resolved_default_model:
                 raise ValueError(
                     f"Default text provider {default_binding['provider_key']} is missing default_text_model configuration"
                 )
             return {
                 "provider_key": str(default_binding["provider_key"]),
                 "provider_name": str(default_binding["provider_name"]),
-                "model_id": str(default_binding["default_model"]),
+                "model_id": resolved_default_model,
             }
         if len(default_bindings) > 1:
             providers = ", ".join(sorted(str(binding["provider_key"]) for binding in default_bindings))
@@ -433,12 +438,13 @@ class ModelProviderService:
 
         if len(bindings) == 1:
             binding = bindings[0]
-            if not binding["default_model"]:
+            resolved_default_model = self._resolve_binding_default_model(binding)
+            if not resolved_default_model:
                 raise ValueError(f"Text provider {binding['provider_key']} is missing default_text_model configuration")
             return {
                 "provider_key": str(binding["provider_key"]),
                 "provider_name": str(binding["provider_name"]),
-                "model_id": str(binding["default_model"]),
+                "model_id": resolved_default_model,
             }
 
         if not bindings:
@@ -450,6 +456,25 @@ class ModelProviderService:
             f"{providers}. Set settings_json.is_default_text_provider=true on exactly one provider "
             "or pass a model_id explicitly."
         )
+
+    @staticmethod
+    def _resolve_binding_default_model(binding: dict[str, object]) -> str | None:
+        """为单 provider 或默认 provider 兜底一个稳定的文本模型，避免缺少显式默认值时无法读取公共设置。"""
+        default_model = str(binding.get("default_model") or "").strip()
+        if default_model:
+            return default_model
+
+        supported_models = binding.get("supported_models") or []
+        if supported_models:
+            first_supported = str(supported_models[0]).strip()
+            if first_supported:
+                return first_supported
+
+        provider_key = str(binding.get("provider_key") or "").strip().upper()
+        fallback = TEXT_PROVIDER_FALLBACK_MODELS.get(provider_key)
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback.strip()
+        return None
 
     def ensure_model_settings_allowed(self, settings_updates: dict[str, str]) -> None:
         mapping = {"t2i_model": "t2i", "i2i_model": "i2i", "i2v_model": "i2v"}

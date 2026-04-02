@@ -43,6 +43,10 @@ class ScriptProcessor:
         """暴露底层 LLM 适配器是否已完成配置。"""
         return self.llm.is_configured
 
+    def get_last_metrics(self) -> Dict[str, Any] | None:
+        """暴露最近一次文本模型调用采集到的 usage metrics。"""
+        return self.llm.get_last_response_metrics()
+
     def parse_novel(self, title: str, text: str) -> Script:
         """把原始故事文本解析成项目内部结构化剧本模型。"""
         logger.info("Parsing novel: %s...", title)

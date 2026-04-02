@@ -18,6 +18,7 @@ import ExportStudio from "@/components/modules/ExportStudio";
 import { usePathname, useRouter } from "next/navigation";
 import { PROJECT_REFRESH_PATH_STORAGE_KEY, isPageReloadNavigation } from "@/components/project/projectNavigation";
 import { persistStudioTheme, readStoredStudioTheme, type StudioTheme } from "@/components/studio/studioTheme";
+import { StudioOverlaysProvider } from "@/components/studio/ui/StudioOverlays";
 
 import CreativeCanvas from "@/components/canvas/CreativeCanvas";
 const PROJECT_STEP_STORAGE_KEY_PREFIX = "dramalab-project-active-step";
@@ -153,72 +154,70 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
 
     const segments = breadcrumbSegments || [{ label: "项目中心", href: homeHref }, { label: currentProject.title }];
     return (
-        <main
-            data-studio-theme={theme}
-            className="studio-theme-root flex h-screen w-screen overflow-hidden relative bg-background"
-        >
-            {/* Background Canvas */}
-            <div className="absolute inset-0 z-0 pointer-events-auto">
-                <CreativeCanvas theme={theme} />
-            </div>
-
-            {/* Left Sidebar — unified PipelineSidebar with integrated breadcrumb */}
-            <div className="relative z-20 h-full flex flex-col overflow-hidden">
-                <PipelineSidebar
-                    activeStep={activeStep}
-                    onStepChange={setActiveStep}
-                    steps={steps}
-                    breadcrumbSegments={segments}
-                    headerActions={
-                        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
-                            <button
-                                type="button"
-                                onClick={() => setTheme("light")}
-                                aria-pressed={theme === "light"}
-                                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
-                                    theme === "light"
-                                        ? "bg-white text-slate-950 shadow-sm"
-                                        : "text-gray-400 hover:text-white"
-                                }`}
-                            >
-                                <Sun size={14} />
-                                浅色
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setTheme("dark")}
-                                aria-pressed={theme === "dark"}
-                                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
-                                    theme === "dark"
-                                        ? "bg-primary text-white shadow-sm"
-                                        : "text-gray-400 hover:text-white"
-                                }`}
-                            >
-                                <Moon size={14} />
-                                深色
-                            </button>
-                        </div>
-                    }
-                />
-            </div>
-
-            {/* Main Content Area */}
-            <div className="flex-1 flex overflow-hidden relative z-10">
-                <div className="flex-1 overflow-hidden relative">
-                    {activeStep === "script" && <ScriptProcessor />}
-                    {activeStep === "art_direction" && <ArtDirection />}
-                    {activeStep === "assets" && <ConsistencyVault />}
-                    {activeStep === "storyboard" && <StoryboardComposer />}
-                    {activeStep === "motion" && <VideoGenerator />}
-                    {activeStep === "assembly" && <VideoAssembly />}
-                    {activeStep === "audio" && <VoiceActingStudio />}
-                    {activeStep === "mix" && <FinalMixStudio />}
-                    {activeStep === "export" && <ExportStudio />}
+        <StudioOverlaysProvider>
+            <main
+                data-studio-theme={theme}
+                className="studio-theme-root pipeline-theme-root flex h-screen w-screen overflow-hidden relative bg-background"
+            >
+                <div className="absolute inset-0 z-0 pointer-events-auto">
+                    <CreativeCanvas theme={theme} />
                 </div>
 
-                {/* Right Sidebar - Contextual Inspector */}
-                {activeStep !== "assembly" && activeStep !== "art_direction" && <ProjectRightSidebar activeStep={activeStep} />}
-            </div>
-        </main>
+                <div className="relative z-20 h-full flex flex-col overflow-hidden">
+                    <PipelineSidebar
+                        activeStep={activeStep}
+                        onStepChange={setActiveStep}
+                        steps={steps}
+                        breadcrumbSegments={segments}
+                        headerActions={
+                            <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setTheme("light")}
+                                    aria-pressed={theme === "light"}
+                                    className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                                        theme === "light"
+                                            ? "bg-white text-slate-950 shadow-sm"
+                                            : "text-gray-400 hover:text-white"
+                                    }`}
+                                >
+                                    <Sun size={14} />
+                                    浅色
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setTheme("dark")}
+                                    aria-pressed={theme === "dark"}
+                                    className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                                        theme === "dark"
+                                            ? "bg-primary text-white shadow-sm"
+                                            : "text-gray-400 hover:text-white"
+                                    }`}
+                                >
+                                    <Moon size={14} />
+                                    深色
+                                </button>
+                            </div>
+                        }
+                    />
+                </div>
+
+                <div className="flex-1 flex overflow-hidden relative z-10">
+                    <div className="flex-1 overflow-hidden relative">
+                        {activeStep === "script" && <ScriptProcessor />}
+                        {activeStep === "art_direction" && <ArtDirection />}
+                        {activeStep === "assets" && <ConsistencyVault />}
+                        {activeStep === "storyboard" && <StoryboardComposer />}
+                        {activeStep === "motion" && <VideoGenerator />}
+                        {activeStep === "assembly" && <VideoAssembly />}
+                        {activeStep === "audio" && <VoiceActingStudio />}
+                        {activeStep === "mix" && <FinalMixStudio />}
+                        {activeStep === "export" && <ExportStudio />}
+                    </div>
+
+                    {activeStep !== "assembly" && activeStep !== "art_direction" && <ProjectRightSidebar activeStep={activeStep} />}
+                </div>
+            </main>
+        </StudioOverlaysProvider>
     );
 }

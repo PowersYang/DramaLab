@@ -799,7 +799,7 @@ export default function PlatformModelAdmin() {
       <div className="flex h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
-          <p className="text-sm font-bold text-slate-400">正在同步模型资源编排...</p>
+          <p className="text-sm font-bold text-slate-400">正在同步模型配置...</p>
         </div>
       </div>
     );

@@ -371,6 +371,11 @@ class TenantAdminService:
         return BillingService().upsert_pricing_rule(
             task_type=payload["task_type"],
             price_credits=payload["price_credits"],
+            reserve_credits=payload.get("reserve_credits"),
+            minimum_credits=payload.get("minimum_credits", 0),
+            charge_mode=payload.get("charge_mode", "fixed"),
+            pricing_config_json=payload.get("pricing_config_json"),
+            usage_metric_key=payload.get("usage_metric_key"),
             organization_id=payload.get("organization_id"),
             actor_id=actor_id,
             status=payload.get("status", "active"),

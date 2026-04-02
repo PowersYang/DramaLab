@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, MapPin, Box, Lock, Unlock, RefreshCw, Image as ImageIcon, X, Check, ChevronRight, Trash2, Plus, Sparkles, Video, FileText, Wand2, Palette, Sliders } from "lucide-react";
-import BillingActionButton from "@/components/billing/BillingActionButton";
+import { User, Users, MapPin, Box, RefreshCw, Image as ImageIcon, X, Check, ChevronRight, Trash2, Plus, Video, FileText, Wand2, Palette, Sliders } from "lucide-react";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { api, crudApi, TaskJob } from "@/lib/api";
@@ -13,8 +12,7 @@ import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
-import UploadAssetModal from "../modals/UploadAssetModal";
-import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
+import { PANEL_HEADER_CLASS, PANEL_META_TEXT_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 function getAssetTypeLabel(type: "character" | "scene" | "prop" | string) {
     if (type === "character") return "角色";
@@ -75,11 +73,6 @@ export default function ConsistencyVault() {
 
     // Create asset dialog state
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-
-    // Upload modal state
-    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-    const [uploadTarget, setUploadTarget] = useState<{ id: string; type: string; name: string; description: string } | null>(null);
-    const [togglingAssetIds, setTogglingAssetIds] = useState<string[]>([]);
     const assetGeneratePrice = getTaskPrice("asset.generate");
     const assetGenerateAffordable = canAffordTask("asset.generate");
     const motionRefGeneratePrice = getTaskPrice("asset.motion_ref.generate");
@@ -97,8 +90,6 @@ export default function ConsistencyVault() {
     const isAssetGenerating = (assetId: string) => {
         return generatingTasks?.some((t: any) => t.assetId === assetId);
     };
-
-    const isAssetLockToggling = (assetId: string) => togglingAssetIds.includes(assetId);
 
     const getAssetGeneratingTypes = (assetId: string) => {
         return generatingTasks?.filter((t: any) => t.assetId === assetId).map((t: any) => ({
@@ -184,15 +175,26 @@ export default function ConsistencyVault() {
     };
 
     // Create asset handler
-    const handleCreateAsset = async (data: { name: string; description: string }) => {
+    const handleCreateAsset = async (
+        type: "character" | "scene" | "prop",
+        data: {
+            name: string;
+            description?: string;
+            age?: string;
+            gender?: string;
+            clothing?: string;
+            time_of_day?: string;
+            lighting_mood?: string;
+        }
+    ) => {
         if (!currentProject) return;
 
         try {
-            if (activeTab === "character") {
+            if (type === "character") {
                 await crudApi.createCharacter(currentProject.id, data);
-            } else if (activeTab === "scene") {
+            } else if (type === "scene") {
                 await crudApi.createScene(currentProject.id, data);
-            } else if (activeTab === "prop") {
+            } else if (type === "prop") {
                 await crudApi.createProp(currentProject.id, data);
             }
             // Refresh project data
@@ -276,81 +278,6 @@ export default function ConsistencyVault() {
         }
     };
 
-    // Sync descriptions from Script module to Assets
-    const handleSyncDescriptions = async () => {
-        if (!currentProject) return;
-
-        const confirmed = confirm(
-            "同步描述说明：\n\n" +
-            "此操作会将 Script 页面中的最新描述同步到所有素材。\n" +
-            "已生成的图片不会被删除，但后续重新生成时将使用新描述。\n\n" +
-            "是否继续？"
-        );
-
-        if (!confirmed) return;
-
-        try {
-            const receipt = await api.syncDescriptions(currentProject.id);
-            enqueueReceipts(currentProject.id, [receipt]);
-            const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
-            if (job.status !== "succeeded") {
-                throw new Error(job.error_message || "描述同步失败");
-            }
-            const updatedProject = await api.getProject(currentProject.id);
-            updateProject(currentProject.id, updatedProject);
-            alert("描述同步成功！");
-        } catch (error: any) {
-            console.error("Failed to sync descriptions:", error);
-            alert(`同步失败: ${error.message}`);
-        }
-    };
-
-    // Upload handlers
-    const handleOpenUploadModal = (asset: any, type: string) => {
-        setUploadTarget({
-            id: asset.id,
-            type: type,
-            name: asset.name,
-            description: asset.description
-        });
-        setIsUploadModalOpen(true);
-    };
-
-    const handleUploadComplete = async (updatedScript: any) => {
-        if (currentProject) {
-            updateProject(currentProject.id, updatedScript);
-        }
-        setIsUploadModalOpen(false);
-        setUploadTarget(null);
-    };
-
-    const handleToggleLock = async (assetId: string, assetType: "character" | "scene" | "prop") => {
-        if (!currentProject || isAssetLockToggling(assetId)) return;
-
-        const assetListKey = assetType === "character" ? "characters" : assetType === "scene" ? "scenes" : "props";
-        const currentAssets = currentProject[assetListKey] || [];
-        const targetAsset = currentAssets.find((asset: any) => asset.id === assetId);
-        if (!targetAsset) return;
-
-        const nextLocked = !targetAsset.locked;
-        const patchedAssets = currentAssets.map((asset: any) =>
-            asset.id === assetId ? { ...asset, locked: nextLocked } : asset
-        );
-
-        setTogglingAssetIds((prev) => [...prev, assetId]);
-        updateProject(currentProject.id, { [assetListKey]: patchedAssets } as any);
-
-        try {
-            await api.toggleAssetLock(currentProject.id, assetId, assetType);
-        } catch (error) {
-            console.error("Failed to toggle asset lock:", error);
-            updateProject(currentProject.id, { [assetListKey]: currentAssets } as any);
-            alert("锁定状态更新失败，请稍后重试");
-        } finally {
-            setTogglingAssetIds((prev) => prev.filter((id) => id !== assetId));
-        }
-    };
-
     const assets = activeTab === "character" ? currentProject?.characters :
         activeTab === "scene" ? currentProject?.scenes :
             activeTab === "prop" ? currentProject?.props : [];
@@ -401,121 +328,85 @@ export default function ConsistencyVault() {
     }, [currentProject, fetchProjectJobs, reconcileGeneratingTasks]);
 
     return (
-        <div className="flex flex-col h-full bg-slate-950/20 backdrop-blur-sm">
-            {/* ── Header Section ── */}
-            <div className="px-6 py-6 border-b border-white/5 bg-slate-900/40">
-                <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            <Box size={20} />
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-white tracking-tight">资产中心</h2>
-                            <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wider mt-0.5">Asset Workbench</p>
-                        </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={handleSyncDescriptions}
-                            className="group flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
-                            title="同步 Script 页面中的描述到所有素材"
-                        >
-                            <RefreshCw size={14} className="text-indigo-400 group-hover:rotate-180 transition-transform duration-500" />
-                            <span className="text-xs font-bold text-slate-300">同步剧本描述</span>
-                        </button>
-                    </div>
-                </div>
+        <div className="flex flex-col h-full overflow-hidden">
+            <div className={PANEL_HEADER_CLASS}>
+                <h2 className={PANEL_TITLE_CLASS}>
+                    <Users className="text-primary" size={16} />
+                    资产制作
+                    <span className={`${PANEL_META_TEXT_CLASS} font-normal`}>角色 / 场景 / 道具 - 统一制作与沉淀</span>
+                </h2>
+            </div>
 
-                <div className="flex items-center gap-2 p-1 bg-black/40 rounded-2xl w-fit border border-white/5">
-                    <TabButton
-                        active={activeTab === "character"}
-                        onClick={() => setActiveTab("character")}
-                        icon={<User size={16} />}
-                        label="角色"
-                        count={currentProject?.characters?.length || 0}
-                    />
-                    <TabButton
-                        active={activeTab === "scene"}
-                        onClick={() => setActiveTab("scene")}
-                        icon={<MapPin size={16} />}
-                        label="场景"
-                        count={currentProject?.scenes?.length || 0}
-                    />
-                    <TabButton
-                        active={activeTab === "prop"}
-                        onClick={() => setActiveTab("prop")}
-                        icon={<Box size={16} />}
-                        label="道具"
-                        count={currentProject?.props?.length || 0}
-                    />
+            <div className="studio-panel-subheader px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="studio-panel-chip-rail flex items-center gap-1 rounded-xl p-1">
+                        <TabButton
+                            active={activeTab === "character"}
+                            onClick={() => setActiveTab("character")}
+                            icon={<User size={14} />}
+                            label="角色"
+                            count={currentProject?.characters?.length || 0}
+                        />
+                        <TabButton
+                            active={activeTab === "scene"}
+                            onClick={() => setActiveTab("scene")}
+                            icon={<MapPin size={14} />}
+                            label="场景"
+                            count={currentProject?.scenes?.length || 0}
+                        />
+                        <TabButton
+                            active={activeTab === "prop"}
+                            onClick={() => setActiveTab("prop")}
+                            icon={<Box size={14} />}
+                            label="道具"
+                            count={currentProject?.props?.length || 0}
+                        />
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setIsCreateDialogOpen(true)}
+                        disabled={!currentProject}
+                        className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--studio-shell-accent-soft)] bg-[color:var(--studio-shell-accent-soft)] px-4 py-2 text-xs font-semibold text-[color:var(--studio-shell-accent-strong)] shadow-sm transition-colors hover:bg-[color:var(--studio-shell-accent-subtle)] hover:border-[color:var(--studio-shell-accent)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Plus size={14} />
+                        新增{getAssetTypeLabel(activeTab)}
+                    </button>
                 </div>
             </div>
 
-            {/* ── Content Grid ── */}
             <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {!currentProject ? (
                     <div className="flex items-center justify-center h-full">
                         <div className="flex flex-col items-center gap-4 animate-pulse">
                             <div className="h-12 w-12 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
-                            <p className="text-xs font-bold text-slate-500 tracking-widest uppercase">Loading Assets</p>
+                            <p className="text-xs font-bold text-gray-500 tracking-widest uppercase">Loading Assets</p>
                         </div>
                     </div>
                 ) : assets?.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full py-20 px-6">
                         <div className="w-24 h-24 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-2xl">
-                            {activeTab === "character" ? <User size={48} className="text-slate-600" /> : activeTab === "scene" ? <MapPin size={48} className="text-slate-600" /> : <Box size={48} className="text-slate-600" />}
+                            {activeTab === "character" ? <User size={48} className="text-gray-500" /> : activeTab === "scene" ? <MapPin size={48} className="text-gray-500" /> : <Box size={48} className="text-gray-500" />}
                         </div>
                         <h3 className="text-lg font-bold text-white mb-2">暂无{getAssetTypeLabel(activeTab)}资产</h3>
-                        <p className="text-sm text-slate-500 text-center max-w-xs mb-8">
-                            您可以点击下方按钮手动添加，或者返回“剧本解析”步骤自动提取。
+                        <p className="text-sm text-gray-500 text-center max-w-xs">
+                            使用上方“新增{getAssetTypeLabel(activeTab)}”开始创建，或返回“剧本处理”步骤自动提取。
                         </p>
-                        <button
-                            onClick={() => setIsCreateDialogOpen(true)}
-                            className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20"
-                        >
-                            <Plus size={18} />
-                            新增{getAssetTypeLabel(activeTab)}
-                        </button>
                     </div>
                 ) : (
-                    <div className="p-8">
+                    <div className="p-6">
                         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-                            {/* Create New Asset Button - Always First or Last? Let's put it first for better UX */}
-                            <motion.div
-                                layout
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                onClick={() => setIsCreateDialogOpen(true)}
-                                className="group relative aspect-[3/4] bg-white/[0.02] rounded-2xl border-2 border-dashed border-white/10 hover:border-indigo-500/50 hover:bg-white/5 transition-all cursor-pointer flex flex-col items-center justify-center gap-4"
-                            >
-                                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-500 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-all">
-                                    <Plus size={32} strokeWidth={1.5} />
-                                </div>
-                                <div className="text-center px-4">
-                                    <span className="text-[13px] font-bold text-slate-400 group-hover:text-white transition-colors">新增{getAssetTypeLabel(activeTab)}</span>
-                                    <p className="text-[10px] text-slate-600 mt-1">手动录入资产信息</p>
-                                </div>
-                            </motion.div>
-
                             {assets?.map((asset: any) => (
                                 <AssetCard
                                     key={asset.id}
                                     asset={asset}
                                     type={activeTab}
                                     isGenerating={isAssetGenerating(asset.id)}
-                                    isLockToggling={isAssetLockToggling(asset.id)}
-                                    onGenerate={() => handleGenerate(asset.id, activeTab)}
-                                    generatePriceCredits={assetGeneratePrice}
-                                    balanceCredits={account?.balance_credits}
-                                    generateAffordable={assetGenerateAffordable}
-                                    onToggleLock={() => handleToggleLock(asset.id, activeTab)}
                                     onClick={() => {
                                         setSelectedAssetId(asset.id);
                                         setSelectedAssetType(activeTab);
                                     }}
                                     onDelete={() => handleDeleteAsset(asset.id, activeTab)}
-                                    onUpload={() => handleOpenUploadModal(asset, activeTab)}
                                 />
                             ))}
                         </div>
@@ -574,29 +465,12 @@ export default function ConsistencyVault() {
             <AnimatePresence>
                 {isCreateDialogOpen && (
                     <CreateAssetDialog
-                        type={activeTab}
+                        initialType={activeTab}
                         onClose={() => setIsCreateDialogOpen(false)}
                         onCreate={handleCreateAsset}
                     />
                 )}
             </AnimatePresence>
-
-            {/* Upload Asset Modal */}
-            {uploadTarget && currentProject && (
-                <UploadAssetModal
-                    isOpen={isUploadModalOpen}
-                    onClose={() => {
-                        setIsUploadModalOpen(false);
-                        setUploadTarget(null);
-                    }}
-                    assetId={uploadTarget.id}
-                    assetType={uploadTarget.type as "character" | "scene" | "prop"}
-                    assetName={uploadTarget.name}
-                    defaultDescription={uploadTarget.description}
-                    scriptId={currentProject.id}
-                    onUploadComplete={handleUploadComplete}
-                />
-            )}
         </div >
     );
 }
@@ -682,12 +556,12 @@ function CharacterDetailModal({
     const typeLabel = getAssetTypeLabel(type);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 md:p-8">
             <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+                className="asset-workbench-shell asset-surface-strong border border-white/10 rounded-[32px] w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl"
             >
                 {/* ── Header ── */}
                 <div className="flex h-20 items-center justify-between border-b border-white/5 bg-white/[0.02] px-8">
@@ -700,14 +574,14 @@ function CharacterDetailModal({
                         <div>
                             <div className="flex items-center gap-2">
                                 <h2 className="text-xl font-bold text-white">{asset.name}</h2>
-                                <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                                     {typeLabel}详情
                                 </span>
                             </div>
-                            <p className="text-xs text-slate-500 mt-0.5">管理资产参考图与视频变体</p>
+                            <p className="text-xs text-gray-500 mt-0.5">管理资产参考图与视频变体</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
+                    <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full text-gray-500 hover:text-white transition-all">
                         <X size={24} />
                     </button>
                 </div>
@@ -723,7 +597,7 @@ function CharacterDetailModal({
                                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
                                     activeTab === "image" 
                                         ? "bg-white/10 text-white shadow-lg ring-1 ring-white/10" 
-                                        : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
                                 }`}
                             >
                                 <ImageIcon size={16} />
@@ -734,7 +608,7 @@ function CharacterDetailModal({
                                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
                                     activeTab === "video" 
                                         ? "bg-white/10 text-white shadow-lg ring-1 ring-white/10" 
-                                        : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
                                 }`}
                             >
                                 <Video size={16} />
@@ -775,12 +649,12 @@ function CharacterDetailModal({
                     </div>
 
                     {/* Right: Info & Settings */}
-                    <div className="flex-1 flex flex-col bg-slate-900/50">
+                    <div className="flex-1 flex flex-col bg-black/20">
                         <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
                             {/* Section: Description */}
                             <section>
                                 <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-2 text-slate-400">
+                                    <div className="flex items-center gap-2 text-gray-400">
                                         <FileText size={14} />
                                         <h3 className="text-xs font-bold uppercase tracking-widest">素材描述</h3>
                                     </div>
@@ -799,13 +673,13 @@ function CharacterDetailModal({
                                         <textarea
                                             value={description}
                                             onChange={(e) => setDescription(e.target.value)}
-                                            className="w-full h-40 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-slate-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all"
+                                            className="w-full h-40 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-gray-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all"
                                             placeholder="请输入详细的素材描述..."
                                         />
                                         <div className="flex justify-end gap-2">
                                             <button 
                                                 onClick={() => { setIsEditing(false); setDescription(asset.description); }} 
-                                                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors"
+                                                className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-300 transition-colors"
                                             >
                                                 取消
                                             </button>
@@ -819,7 +693,7 @@ function CharacterDetailModal({
                                     </div>
                                 ) : (
                                     <div className="group relative">
-                                        <p className="text-[13px] text-slate-300 leading-relaxed bg-white/[0.03] p-5 rounded-2xl border border-white/5 group-hover:border-white/10 transition-all">
+                                        <p className="text-[13px] text-gray-300 leading-relaxed bg-white/[0.03] p-5 rounded-2xl border border-white/5 group-hover:border-white/10 transition-all">
                                             {asset.description || "暂未填写描述"}
                                         </p>
                                     </div>
@@ -830,21 +704,21 @@ function CharacterDetailModal({
                             <section className="space-y-6">
                                 {activeTab === "video" ? (
                                     <div className="space-y-4">
-                                        <div className="flex items-center gap-2 text-slate-400">
+                                        <div className="flex items-center gap-2 text-gray-400">
                                             <Wand2 size={14} />
                                             <h3 className="text-xs font-bold uppercase tracking-widest">视频提示词</h3>
                                         </div>
                                         <textarea
                                             value={videoPrompt}
                                             onChange={(e) => setVideoPrompt(e.target.value)}
-                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-slate-300 resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
+                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-gray-300 resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
                                             placeholder="描述您想要的视频动态效果..."
                                         />
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
                                         <div className="space-y-4">
-                                            <div className="flex items-center gap-2 text-slate-400">
+                                            <div className="flex items-center gap-2 text-gray-400">
                                                 <Palette size={14} />
                                                 <h3 className="text-xs font-bold uppercase tracking-widest">全局风格</h3>
                                             </div>
@@ -857,14 +731,14 @@ function CharacterDetailModal({
                                                             onChange={(e) => setApplyStyle(e.target.checked)}
                                                             className="peer sr-only"
                                                         />
-                                                        <div className="h-5 w-9 rounded-full bg-slate-700 transition-colors peer-checked:bg-indigo-600" />
+                                                        <div className="h-5 w-9 rounded-full bg-white/10 transition-colors peer-checked:bg-indigo-600" />
                                                         <div className="absolute left-1 top-1 h-3 w-3 rounded-full bg-white transition-transform peer-checked:translate-x-4" />
                                                     </div>
-                                                    <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">应用艺术指导风格</span>
+                                                    <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">应用艺术指导风格</span>
                                                 </label>
 
                                                 {stylePrompt && (
-                                                    <div className="text-[11px] text-slate-500 font-mono bg-black/40 p-3 rounded-xl border border-white/5 leading-relaxed">
+                                                    <div className="text-[11px] text-gray-500 font-mono bg-black/40 p-3 rounded-xl border border-white/5 leading-relaxed">
                                                         <span className="text-indigo-400 font-bold mr-2">STYLE:</span> 
                                                         {stylePrompt}
                                                     </div>
@@ -877,11 +751,11 @@ function CharacterDetailModal({
                                                 onClick={() => setShowAdvanced(!showAdvanced)}
                                                 className="flex items-center justify-between w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-all"
                                             >
-                                                <div className="flex items-center gap-2 text-slate-400">
+                                                <div className="flex items-center gap-2 text-gray-400">
                                                     <Sliders size={14} />
                                                     <span className="text-xs font-bold uppercase tracking-widest">高级设置（负向提示词）</span>
                                                 </div>
-                                                <ChevronRight size={16} className={`text-slate-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
+                                                <ChevronRight size={16} className={`text-gray-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
                                             </button>
 
                                             <AnimatePresence>
@@ -895,7 +769,7 @@ function CharacterDetailModal({
                                                         <textarea
                                                             value={negativePrompt}
                                                             onChange={(e) => setNegativePrompt(e.target.value)}
-                                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-slate-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
+                                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-gray-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
                                                             placeholder="排除您不想要的视觉元素..."
                                                         />
                                                     </motion.div>
@@ -928,18 +802,20 @@ function TabButton({ active, onClick, icon, label, count }: any) {
     return (
         <button
             onClick={onClick}
-            className={`group relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl transition-all duration-300 ${active
-                ? "bg-white/10 text-white ring-1 ring-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
-                : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+            type="button"
+            aria-pressed={active}
+            className={`group relative inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${active
+                ? "bg-[color:var(--studio-surface-20)] text-[color:var(--studio-shell-accent-strong)] shadow-sm ring-1 ring-[color:var(--studio-shell-accent-soft)]"
+                : "text-[color:var(--studio-text-muted)] hover:bg-[color:var(--studio-surface-10)] hover:text-[color:var(--studio-text-strong)]"
                 }`}
         >
-            <div className={`transition-colors duration-300 ${active ? "text-indigo-400" : "text-slate-600 group-hover:text-slate-400"}`}>
+            <div className={`transition-colors ${active ? "text-[color:var(--studio-shell-accent)]" : "text-[color:var(--studio-text-faint)] group-hover:text-[color:var(--studio-text-muted)]"}`}>
                 {icon}
             </div>
-            <span className="font-bold text-sm tracking-tight">{label}</span>
-            <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-colors duration-300 ${active
-                ? "bg-indigo-500/20 text-indigo-400"
-                : "bg-slate-800 text-slate-600 group-hover:bg-slate-700 group-hover:text-slate-500"
+            <span className="font-semibold tracking-tight">{label}</span>
+            <span className={`ml-0.5 inline-flex min-w-[18px] items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${active
+                ? "bg-[color:var(--studio-shell-accent-soft)] text-[color:var(--studio-shell-accent-strong)]"
+                : "bg-[color:var(--studio-surface-10)] text-[color:var(--studio-text-faint)] group-hover:text-[color:var(--studio-text-muted)]"
                 }`}>
                 {count}
             </span>
@@ -947,7 +823,7 @@ function TabButton({ active, onClick, icon, label, count }: any) {
             {active && (
                 <motion.div
                     layoutId="activeTabGlow"
-                    className="absolute inset-0 rounded-xl bg-indigo-500/5 blur-md -z-10"
+                    className="absolute inset-0 rounded-lg bg-[color:var(--studio-shell-accent-subtle)] -z-10"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                 />
@@ -1011,18 +887,9 @@ function AssetCard({
     asset,
     type,
     isGenerating,
-    isLockToggling,
-    onGenerate,
-    generatePriceCredits,
-    balanceCredits,
-    generateAffordable,
-    onToggleLock,
     onClick,
     onDelete,
-    onUpload,
 }: any) {
-    const isLocked = asset.locked || false;
-    const typeLabel = getAssetTypeLabel(type);
     const getSelectedVariant = (imageAsset?: { selected_id?: string | null; variants?: Array<{ id: string; url: string; created_at?: string | number }> }) => {
         if (!imageAsset?.variants?.length) return null;
         return imageAsset.variants.find((variant) => variant.id === imageAsset.selected_id) || imageAsset.variants[0];
@@ -1051,14 +918,10 @@ function AssetCard({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             onClick={onClick}
-            className={`group relative flex flex-col overflow-hidden rounded-2xl border transition-all duration-300 cursor-pointer ${
-                isLocked 
-                    ? 'border-amber-500/30 bg-amber-500/5 shadow-lg shadow-amber-500/5' 
-                    : 'border-white/10 bg-white/5 hover:border-indigo-500/50 hover:bg-white/[0.08] hover:shadow-2xl hover:shadow-indigo-500/10'
-            }`}
+            className="group relative flex flex-col rounded-2xl border border-white/10 bg-white/5 transition-all duration-300 cursor-pointer hover:border-indigo-500/50 hover:bg-white/[0.08] hover:shadow-2xl hover:shadow-indigo-500/10"
         >
             {/* ── Image Container ── */}
-            <div className="relative aspect-[3/4] overflow-hidden">
+            <div className="relative aspect-[3/4] overflow-hidden rounded-t-2xl">
                 {previewPath ? (
                     <ImageWithRetry
                         src={fullImageUrl}
@@ -1066,46 +929,22 @@ function AssetCard({
                         className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />
                 ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-slate-900/50">
+                    <div className="flex h-full w-full items-center justify-center bg-black/40">
                         <ImageIcon className="text-white/10" size={48} strokeWidth={1} />
                     </div>
                 )}
 
-                {/* ── Badges & Top Actions ── */}
-                <div className="absolute inset-x-0 top-0 flex items-start justify-between p-3 z-20">
-                    <span className={`inline-flex items-center rounded-lg px-2 py-1 text-[10px] font-bold tracking-wider uppercase backdrop-blur-md border ${
-                        isLocked ? "border-amber-500/30 bg-amber-500/20 text-amber-200" : "border-white/10 bg-black/40 text-white/70"
-                    }`}>
-                        {typeLabel}
-                    </span>
-
-                    <div className="flex gap-1.5 opacity-0 translate-y-[-10px] group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleLock();
-                            }}
-                            disabled={isLockToggling}
-                            className={`p-2 rounded-lg backdrop-blur-md border transition-all ${
-                                isLocked
-                                    ? "bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/40"
-                                    : "bg-black/40 text-white/60 border-white/10 hover:text-white hover:bg-black/60"
-                            }`}
-                            title={isLocked ? "解除锁定" : "锁定素材"}
-                        >
-                            {isLockToggling ? <RefreshCw size={14} className="animate-spin" /> : isLocked ? <Lock size={14} /> : <Unlock size={14} />}
-                        </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete();
-                            }}
-                            className="p-2 rounded-lg backdrop-blur-md bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/40 transition-all"
-                            title="删除"
-                        >
-                            <Trash2 size={14} />
-                        </button>
-                    </div>
+                <div className="absolute right-3 top-3 z-20">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete();
+                        }}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-black/45 text-white/75 shadow-lg shadow-black/30 backdrop-blur-md transition-all hover:border-red-400/30 hover:bg-red-500/25 hover:text-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                        title="删除"
+                    >
+                        <Trash2 size={16} />
+                    </button>
                 </div>
 
                 {/* ── Overlay Gradient ── */}
@@ -1130,43 +969,10 @@ function AssetCard({
                         <h3 className="text-[13px] font-bold text-white truncate group-hover:text-indigo-400 transition-colors">
                             {asset.name}
                         </h3>
-                        {isLocked && <div className="h-1 w-1 rounded-full bg-amber-500 animate-pulse" />}
                     </div>
-                    <p className="text-[11px] leading-relaxed text-slate-400 line-clamp-2">
+                    <p className="text-[11px] leading-relaxed text-gray-400 line-clamp-2">
                         {asset.description || "暂未填写描述"}
                     </p>
-                </div>
-
-                {/* ── Actions ── */}
-                <div className="flex items-center gap-2">
-                    <BillingActionButton
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onGenerate();
-                        }}
-                        disabled={isLocked || isGenerating || !generateAffordable}
-                        priceCredits={generatePriceCredits}
-                        balanceCredits={balanceCredits}
-                        className={`flex-[1.5] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
-                            isLocked || isGenerating || !generateAffordable
-                                ? 'bg-white/5 text-slate-600 cursor-not-allowed border border-white/5'
-                                : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20'
-                        }`}
-                        tooltipText={generatePriceCredits == null ? undefined : `预计消耗${generatePriceCredits}算力豆${!generateAffordable ? "，当前余额不足" : ""}`}
-                    >
-                        <Sparkles size={12} className={isGenerating ? "animate-spin" : ""} />
-                        {isGenerating ? "正在生成" : "生成资产"}
-                    </BillingActionButton>
-                    
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onUpload?.();
-                        }}
-                        className="flex-1 flex items-center justify-center px-3 py-2 rounded-xl bg-white/5 text-slate-300 text-[11px] font-bold border border-white/10 hover:bg-white/10 hover:text-white transition-all"
-                    >
-                        上传
-                    </button>
                 </div>
             </div>
         </motion.div>
@@ -1175,25 +981,92 @@ function AssetCard({
 
 
 
-function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose: () => void; onCreate: (data: { name: string; description: string }) => void }) {
-    const [name, setName] = useState("");
-    const [description, setDescription] = useState("");
+function CreateAssetDialog({
+    initialType,
+    onClose,
+    onCreate,
+}: {
+    initialType: "character" | "scene" | "prop";
+    onClose: () => void;
+    onCreate: (
+        type: "character" | "scene" | "prop",
+        data: {
+            name: string;
+            description?: string;
+            age?: string;
+            gender?: string;
+            clothing?: string;
+            time_of_day?: string;
+            lighting_mood?: string;
+        }
+    ) => void | Promise<void>;
+}) {
+    const [activeType, setActiveType] = useState<"character" | "scene" | "prop">(initialType);
+    const [characterForm, setCharacterForm] = useState({
+        name: "",
+        description: "",
+        age: "",
+        gender: "",
+        clothing: "",
+    });
+    const [sceneForm, setSceneForm] = useState({
+        name: "",
+        description: "",
+        time_of_day: "",
+        lighting_mood: "",
+    });
+    const [propForm, setPropForm] = useState({
+        name: "",
+        description: "",
+    });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleSubmit = async () => {
-        if (!name.trim()) {
+        const currentName =
+            activeType === "character"
+                ? characterForm.name
+                : activeType === "scene"
+                    ? sceneForm.name
+                    : propForm.name;
+
+        if (!currentName.trim()) {
             alert("请先填写名称");
             return;
         }
         setIsSubmitting(true);
         try {
-            await onCreate({ name: name.trim(), description: description.trim() });
+            const prune = (value: string) => {
+                const trimmed = value.trim();
+                return trimmed ? trimmed : undefined;
+            };
+
+            if (activeType === "character") {
+                await onCreate("character", {
+                    name: characterForm.name.trim(),
+                    description: prune(characterForm.description),
+                    age: prune(characterForm.age),
+                    gender: prune(characterForm.gender),
+                    clothing: prune(characterForm.clothing),
+                });
+            } else if (activeType === "scene") {
+                await onCreate("scene", {
+                    name: sceneForm.name.trim(),
+                    description: prune(sceneForm.description),
+                    time_of_day: prune(sceneForm.time_of_day),
+                    lighting_mood: prune(sceneForm.lighting_mood),
+                });
+            } else {
+                await onCreate("prop", {
+                    name: propForm.name.trim(),
+                    description: prune(propForm.description),
+                });
+            }
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const typeLabel = getAssetTypeLabel(type);
+    const typeLabel = getAssetTypeLabel(activeType);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-8">
@@ -1203,14 +1076,49 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="asset-surface-strong border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
             >
-                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
-                    <div className="flex items-center gap-3">
-                        <Plus className="text-primary" size={20} />
-                        <h2 className="text-lg font-bold text-white">新增{typeLabel}</h2>
+                <div className="p-6 border-b border-white/10 bg-black/20">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-3">
+                                <Plus className="text-primary" size={20} />
+                                <h2 className="text-lg font-bold text-white">新增资产</h2>
+                            </div>
+                            <p className="mt-1 text-[11px] text-gray-500">按类型填写关键属性，后续生成会更稳定。</p>
+                        </div>
+                        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                            <X size={20} className="text-gray-400" />
+                        </button>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-                        <X size={20} className="text-gray-400" />
-                    </button>
+
+                    <div className="mt-5 flex items-center gap-1 rounded-2xl border border-white/10 bg-black/30 p-1">
+                        <button
+                            onClick={() => setActiveType("character")}
+                            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                                activeType === "character" ? "bg-indigo-500/25 text-indigo-200 border border-indigo-400/30" : "text-gray-300 hover:bg-white/5"
+                            }`}
+                        >
+                            <User size={14} />
+                            角色
+                        </button>
+                        <button
+                            onClick={() => setActiveType("scene")}
+                            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                                activeType === "scene" ? "bg-emerald-500/20 text-emerald-200 border border-emerald-400/25" : "text-gray-300 hover:bg-white/5"
+                            }`}
+                        >
+                            <MapPin size={14} />
+                            场景
+                        </button>
+                        <button
+                            onClick={() => setActiveType("prop")}
+                            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                                activeType === "prop" ? "bg-amber-500/20 text-amber-200 border border-amber-400/25" : "text-gray-300 hover:bg-white/5"
+                            }`}
+                        >
+                            <Box size={14} />
+                            道具
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-6 space-y-4">
@@ -1218,8 +1126,19 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
                         <label className="block text-sm font-medium text-gray-400 mb-2">名称 *</label>
                         <input
                             type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            value={
+                                activeType === "character"
+                                    ? characterForm.name
+                                    : activeType === "scene"
+                                        ? sceneForm.name
+                                        : propForm.name
+                            }
+                            onChange={(e) => {
+                                const next = e.target.value;
+                                if (activeType === "character") setCharacterForm((prev) => ({ ...prev, name: next }));
+                                else if (activeType === "scene") setSceneForm((prev) => ({ ...prev, name: next }));
+                                else setPropForm((prev) => ({ ...prev, name: next }));
+                            }}
                             placeholder={`请输入${typeLabel}名称`}
                             className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none"
                         />
@@ -1227,13 +1146,77 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
                     <div>
                         <label className="block text-sm font-medium text-gray-400 mb-2">描述</label>
                         <textarea
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
+                            value={
+                                activeType === "character"
+                                    ? characterForm.description
+                                    : activeType === "scene"
+                                        ? sceneForm.description
+                                        : propForm.description
+                            }
+                            onChange={(e) => {
+                                const next = e.target.value;
+                                if (activeType === "character") setCharacterForm((prev) => ({ ...prev, description: next }));
+                                else if (activeType === "scene") setSceneForm((prev) => ({ ...prev, description: next }));
+                                else setPropForm((prev) => ({ ...prev, description: next }));
+                            }}
                             placeholder={`请输入${typeLabel}描述`}
                             rows={4}
                             className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
                         />
                     </div>
+
+                    {activeType === "character" ? (
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-2">年龄</label>
+                                <input
+                                    value={characterForm.age}
+                                    onChange={(e) => setCharacterForm((prev) => ({ ...prev, age: e.target.value }))}
+                                    placeholder="例如：18"
+                                    className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-2">性别</label>
+                                <input
+                                    value={characterForm.gender}
+                                    onChange={(e) => setCharacterForm((prev) => ({ ...prev, gender: e.target.value }))}
+                                    placeholder="例如：女"
+                                    className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none"
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-xs text-gray-500 mb-2">服装</label>
+                                <input
+                                    value={characterForm.clothing}
+                                    onChange={(e) => setCharacterForm((prev) => ({ ...prev, clothing: e.target.value }))}
+                                    placeholder="例如：黑色风衣、白衬衫"
+                                    className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none"
+                                />
+                            </div>
+                        </div>
+                    ) : activeType === "scene" ? (
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-2">时间</label>
+                                <input
+                                    value={sceneForm.time_of_day}
+                                    onChange={(e) => setSceneForm((prev) => ({ ...prev, time_of_day: e.target.value }))}
+                                    placeholder="例如：清晨 / 夜晚"
+                                    className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-2">光照氛围</label>
+                                <input
+                                    value={sceneForm.lighting_mood}
+                                    onChange={(e) => setSceneForm((prev) => ({ ...prev, lighting_mood: e.target.value }))}
+                                    placeholder="例如：霓虹、逆光"
+                                    className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none"
+                                />
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
 
                 <div className="p-6 border-t border-white/10 flex justify-end gap-3">
@@ -1245,7 +1228,14 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
                     </button>
                     <button
                         onClick={handleSubmit}
-                        disabled={isSubmitting || !name.trim()}
+                        disabled={
+                            isSubmitting ||
+                            !(activeType === "character"
+                                ? characterForm.name.trim()
+                                : activeType === "scene"
+                                    ? sceneForm.name.trim()
+                                    : propForm.name.trim())
+                        }
                         className="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                         {isSubmitting && <RefreshCw size={16} className="animate-spin" />}

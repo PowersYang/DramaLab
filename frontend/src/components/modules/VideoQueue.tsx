@@ -125,7 +125,6 @@ function JobCard({ job, priceCredits, onCancel, onRetry }: { job: TaskJob; price
                     <p className="video-helper-text mt-1">
                         {sourceVideoTaskId ? `video_task=${sourceVideoTaskId.slice(0, 8)}` : formatJobType(job.task_type)}
                     </p>
-                    {job.error_message && <p className="mt-2 line-clamp-2 text-xs text-rose-600 dark:text-rose-200">{job.error_message}</p>}
                 </div>
                 <div className="flex gap-2">
                     {isActive && (

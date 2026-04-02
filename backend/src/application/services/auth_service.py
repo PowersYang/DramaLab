@@ -56,6 +56,7 @@ from ...schemas.models import (
 )
 from ...settings.env_settings import get_env, get_env_bool
 from ...utils.datetime import utc_now
+from ...providers.sms import get_sms_provider
 from .task_concurrency_service import TaskConcurrencyService
 
 
@@ -275,7 +276,13 @@ class AuthService:
             target_value=normalized_identifier,
             purpose=purpose,
             code_hash=_hash_text(code),
-            expires_at=now + timedelta(minutes=_minutes_from_env("AUTH_EMAIL_CODE_TTL_MINUTES", 10)),
+            expires_at=now
+            + timedelta(
+                minutes=_minutes_from_env(
+                    "AUTH_VERIFICATION_CODE_TTL_MINUTES",
+                    _minutes_from_env("AUTH_EMAIL_CODE_TTL_MINUTES", 10),
+                )
+            ),
             attempt_count=0,
             max_attempts=5,
             created_at=now,
@@ -283,15 +290,21 @@ class AuthService:
         )
         self.verification_code_repository.create(verification)
         self._record_send_code_rate_limit(normalized_identifier, ip_address)
-        logger.info("AUTH_SERVICE: verification code generated target_type=%s target=%s purpose=%s code=%s", target_type, normalized_identifier, purpose, code)
+        logger.info("AUTH_SERVICE: verification code generated target_type=%s target=%s purpose=%s", target_type, normalized_identifier, purpose)
         payload = {"status": "sent", "target": normalized_identifier, "channel": target_type, "purpose": purpose}
         if target_type == "email" and self._email_delivery_is_configured():
             self._send_email_code_via_smtp(normalized_identifier, code, purpose)
+        elif target_type == "phone":
+            sms_provider = get_sms_provider()
+            if sms_provider is not None:
+                sms_provider.send_verification_code(phone=normalized_identifier, code=code, purpose=purpose)
+            elif get_env_bool("AUTH_EXPOSE_TEST_CODE", False):
+                payload["debug_code"] = code
+            else:
+                raise ValueError("SMS delivery is not configured. Set AUTH_SMS_PROVIDER or enable AUTH_EXPOSE_TEST_CODE for testing.")
         elif get_env_bool("AUTH_EXPOSE_TEST_CODE", False):
             payload["debug_code"] = code
         else:
-            if target_type == "phone":
-                raise ValueError("SMS delivery is not configured. Enable AUTH_EXPOSE_TEST_CODE for testing.")
             raise ValueError("Email delivery is not configured. Set SMTP config or enable AUTH_EXPOSE_TEST_CODE for testing.")
         return payload
 
@@ -314,7 +327,7 @@ class AuthService:
         password: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
+    ) -> tuple[AuthSessionPayload, AuthMeResponse, str, int]:
         normalized_identifier = self._normalize_identifier(target_type, identifier)
         user = self._get_user_by_identifier(target_type, normalized_identifier)
         if user is None:
@@ -329,14 +342,14 @@ class AuthService:
             },
         )
         current_workspace = self._pick_default_workspace(user)
-        auth_payload, refresh_token = self.issue_session(
+        auth_payload, refresh_token, refresh_cookie_max_age = self.issue_session(
             user=user,
             current_workspace_id=current_workspace.workspace_id if current_workspace else None,
             ip_address=ip_address,
             user_agent=user_agent,
         )
         me = self.build_auth_me(user, current_workspace.workspace_id if current_workspace else None)
-        return auth_payload, me, refresh_token
+        return auth_payload, me, refresh_token, refresh_cookie_max_age
 
     def sign_up_with_password(
         self,
@@ -348,7 +361,7 @@ class AuthService:
         organization_name: str | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
+    ) -> tuple[AuthSessionPayload, AuthMeResponse, str, int]:
         normalized_identifier = self._normalize_identifier(target_type, identifier)
         if self._get_user_by_identifier(target_type, normalized_identifier) is not None:
             raise ValueError("Account already exists, please sign in")
@@ -379,14 +392,14 @@ class AuthService:
             )
 
         current_workspace = self._pick_default_workspace(user)
-        auth_payload, refresh_token = self.issue_session(
+        auth_payload, refresh_token, refresh_cookie_max_age = self.issue_session(
             user=user,
             current_workspace_id=current_workspace.workspace_id if current_workspace else None,
             ip_address=ip_address,
             user_agent=user_agent,
         )
         me = self.build_auth_me(user, current_workspace.workspace_id if current_workspace else None)
-        return auth_payload, me, refresh_token
+        return auth_payload, me, refresh_token, refresh_cookie_max_age
 
     def reset_password_with_code(
         self,
@@ -396,7 +409,7 @@ class AuthService:
         new_password: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
+    ) -> tuple[AuthSessionPayload, AuthMeResponse, str, int]:
         normalized_identifier = self._normalize_identifier(target_type, identifier)
         self._validate_password(new_password)
         self._consume_verification_code(target_type, normalized_identifier, code, "reset_password")
@@ -413,14 +426,14 @@ class AuthService:
         )
         self.user_session_repository.revoke_all_for_user(user.id)
         current_workspace = self._pick_default_workspace(user)
-        auth_payload, refresh_token = self.issue_session(
+        auth_payload, refresh_token, refresh_cookie_max_age = self.issue_session(
             user=user,
             current_workspace_id=current_workspace.workspace_id if current_workspace else None,
             ip_address=ip_address,
             user_agent=user_agent,
         )
         me = self.build_auth_me(user, current_workspace.workspace_id if current_workspace else None)
-        return auth_payload, me, refresh_token
+        return auth_payload, me, refresh_token, refresh_cookie_max_age
 
     def change_password(
         self,
@@ -457,7 +470,7 @@ class AuthService:
         invitation_id: str | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
+    ) -> tuple[AuthSessionPayload, AuthMeResponse, str, int]:
         normalized_email = self._normalize_identifier("email", email)
         return self.verify_identifier_code(
             identifier=normalized_email,
@@ -484,7 +497,7 @@ class AuthService:
         invitation_id: str | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[AuthSessionPayload, AuthMeResponse, str]:
+    ) -> tuple[AuthSessionPayload, AuthMeResponse, str, int]:
         normalized_identifier = self._normalize_identifier(target_type, identifier)
         # 中文注释：登录和注册现在是两条明确路径，避免老用户误走注册或新用户误走登录。
         if purpose not in SUPPORTED_AUTH_PURPOSES:
@@ -526,14 +539,14 @@ class AuthService:
 
         self._accept_pending_invitations(user)
         current_workspace = self._pick_default_workspace(user)
-        auth_payload, refresh_token = self.issue_session(
+        auth_payload, refresh_token, refresh_cookie_max_age = self.issue_session(
             user=user,
             current_workspace_id=current_workspace.workspace_id if current_workspace else None,
             ip_address=ip_address,
             user_agent=user_agent,
         )
         me = self.build_auth_me(user, current_workspace.workspace_id if current_workspace else None)
-        return auth_payload, me, refresh_token
+        return auth_payload, me, refresh_token, refresh_cookie_max_age
 
     def ensure_existing_users_have_initial_password(self) -> int:
         updated_count = 0
@@ -557,7 +570,8 @@ class AuthService:
         current_workspace_id: str | None,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[AuthSessionPayload, str]:
+    ) -> tuple[AuthSessionPayload, str, int]:
+        # 中文注释：登录/注册时创建新会话时，同时计算 refresh cookie 的浏览器存活时间，避免前后端各自硬编码时长。
         refresh_token = secrets.token_urlsafe(48)
         now = utc_now()
         refresh_ttl_days = _days_from_env("AUTH_REFRESH_TOKEN_TTL_DAYS", 30)
@@ -574,18 +588,34 @@ class AuthService:
             updated_at=now,
         )
         self.user_session_repository.create(session_model)
-        return self._build_access_payload(user.id, session_model.id, current_workspace_id), refresh_token
+        return (
+            self._build_access_payload(user.id, session_model.id, current_workspace_id),
+            refresh_token,
+            self._build_refresh_cookie_max_age_seconds(session_model),
+        )
 
-    def refresh_session(self, refresh_token: str) -> tuple[AuthSessionPayload, AuthMeResponse]:
+    def refresh_session(self, refresh_token: str) -> tuple[AuthSessionPayload, AuthMeResponse, str, int]:
+        # 中文注释：refresh 续签必须同时校验绝对过期和空闲过期，并轮换 refresh token，缩短泄露后的可利用窗口。
         token_hash = _hash_text(refresh_token)
         session_model = self.user_session_repository.get_by_token_hash(token_hash)
-        if session_model is None or session_model.revoked_at is not None or _coerce_utc(session_model.expires_at) < utc_now():
-            raise ValueError("Session is invalid or expired")
+        self._ensure_refresh_session_is_active(session_model)
         user = self.user_repository.get(session_model.user_id)
         if user is None or user.status != "active":
             raise ValueError("User is unavailable")
+        rotated_refresh_token = secrets.token_urlsafe(48)
+        session_model = self.user_session_repository.update(
+            session_model.id,
+            {
+                "session_token_hash": _hash_text(rotated_refresh_token),
+            },
+        )
         payload = self._build_access_payload(user.id, session_model.id, session_model.current_workspace_id)
-        return payload, self.build_auth_me(user, session_model.current_workspace_id)
+        return (
+            payload,
+            self.build_auth_me(user, session_model.current_workspace_id),
+            rotated_refresh_token,
+            self._build_refresh_cookie_max_age_seconds(session_model),
+        )
 
     def logout(self, refresh_token: str) -> None:
         if not refresh_token:
@@ -1003,6 +1033,10 @@ class AuthService:
         normalized = _normalize_email(identifier) if target_type == "email" else _normalize_phone(identifier)
         if not normalized:
             raise ValueError("Identifier is required")
+        if target_type == "phone":
+            digits = normalized[1:] if normalized.startswith("+") else normalized
+            if not digits.isdigit() or len(digits) < 8 or len(digits) > 15:
+                raise ValueError("Phone number is invalid")
         return normalized
 
     def _normalize_ip(self, ip_address: str | None) -> str | None:
@@ -1122,6 +1156,20 @@ class AuthService:
             token_type="bearer",
             expires_in=expires_in_minutes * 60,
         )
+
+    def _ensure_refresh_session_is_active(self, session_model: UserSession | None) -> None:
+        # 中文注释：refresh session 除了绝对过期，还要检查最近一次活跃时间，避免长期闲置会话无限复活。
+        if session_model is None or session_model.revoked_at is not None or _coerce_utc(session_model.expires_at) < utc_now():
+            raise ValueError("Session is invalid or expired")
+        last_active_at = _coerce_utc(session_model.updated_at or session_model.created_at)
+        if last_active_at < utc_now() - timedelta(days=_days_from_env("AUTH_REFRESH_TOKEN_IDLE_TTL_DAYS", 7)):
+            raise ValueError("Session is invalid or expired")
+
+    def _build_refresh_cookie_max_age_seconds(self, session_model: UserSession) -> int:
+        # 中文注释：cookie 存活时间取绝对过期和空闲过期的较小值，让浏览器侧行为尽量与服务端会话策略保持一致。
+        idle_window_seconds = _days_from_env("AUTH_REFRESH_TOKEN_IDLE_TTL_DAYS", 7) * 24 * 60 * 60
+        absolute_window_seconds = max(1, int((_coerce_utc(session_model.expires_at) - utc_now()).total_seconds()))
+        return max(1, min(idle_window_seconds, absolute_window_seconds))
 
     def _platform_super_admin_emails(self) -> set[str]:
         raw = get_env("AUTH_PLATFORM_SUPER_ADMIN_EMAILS", "") or ""

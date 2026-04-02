@@ -95,6 +95,18 @@ class PostgresStorageConfigurationTest(unittest.TestCase):
         _configure_postgres_connection(_FakeConnection(), schema=None)
         self.assertEqual(statements, ["SET TIME ZONE 'Asia/Shanghai'"])
 
+    def test_alembic_scaffold_is_present_and_points_to_sqlalchemy_metadata(self):
+        backend_dir = Path(__file__).resolve().parent.parent
+        alembic_ini = backend_dir / "alembic.ini"
+        alembic_env = backend_dir / "alembic" / "env.py"
+        versions_readme = backend_dir / "alembic" / "versions" / "README.md"
+
+        self.assertTrue(alembic_ini.exists())
+        self.assertTrue(alembic_env.exists())
+        self.assertTrue(versions_readme.exists())
+        self.assertIn("script_location = alembic", alembic_ini.read_text(encoding="utf-8"))
+        self.assertIn("target_metadata = Base.metadata", alembic_env.read_text(encoding="utf-8"))
+
 
 class PostgresSchemaSqlTest(unittest.TestCase):
     def test_schema_sql_uses_varchar_primary_keys_and_jsonb(self):

@@ -32,6 +32,7 @@ class StoryboardGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxImageModel(self.config.get("model", {}))
+        self.last_generation_metrics = None
 
     def generate_storyboard(self, script: Any) -> Any:
         """为剧本中所有未完成分镜帧批量生成图片。"""
@@ -144,6 +145,15 @@ class StoryboardGenerator:
                 logger.info("[Storyboard] Calling model.generate with %s reference images using model %s", len(asset_ref_paths), model_name or "default")
                 try:
                     self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
+                    if self.model.last_generation_metrics:
+                        self.last_generation_metrics = {
+                            **self.model.last_generation_metrics,
+                            "resource": {"frame_id": frame.id, "scene_id": frame.scene_id},
+                            "artifacts": {
+                                **(self.model.last_generation_metrics.get("artifacts") or {}),
+                                "variant_kind": "storyboard_frame",
+                            },
+                        }
                     # 分镜图现在必须以 OSS 对象键持久化，避免前端继续依赖本地静态目录。
                     uploader = OSSImageUploader()
                     object_key = uploader.upload_file(output_path, sub_path="storyboard") if uploader.is_configured else None

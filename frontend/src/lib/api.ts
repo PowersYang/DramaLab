@@ -656,6 +656,58 @@ export interface BillingRechargeBonusRuleSummary {
     updated_at: string;
 }
 
+export interface PaymentOrderSummary {
+    id: string;
+    billing_account_id?: string | null;
+    organization_id?: string | null;
+    workspace_id?: string | null;
+    user_id?: string | null;
+    channel: string;
+    status: string;
+    amount_cents: number;
+    currency: string;
+    subject: string;
+    description?: string | null;
+    provider_mode: string;
+    provider_order_id?: string | null;
+    provider_trade_no?: string | null;
+    provider_buyer_id?: string | null;
+    provider_response_json: Record<string, any>;
+    exchange_snapshot_json: Record<string, any>;
+    bonus_rule_snapshot_json: Record<string, any>;
+    base_credits: number;
+    bonus_credits: number;
+    total_credits: number;
+    qr_payload?: string | null;
+    qr_code_svg?: string | null;
+    qr_expires_at?: string | null;
+    paid_at?: string | null;
+    expired_at?: string | null;
+    cancelled_at?: string | null;
+    failure_reason?: string | null;
+    client_token?: string | null;
+    idempotency_key?: string | null;
+    created_by?: string | null;
+    updated_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface PaymentEventSummary {
+    id: string;
+    payment_order_id: string;
+    organization_id?: string | null;
+    workspace_id?: string | null;
+    event_type: string;
+    from_status?: string | null;
+    to_status?: string | null;
+    event_payload_json: Record<string, any>;
+    created_by?: string | null;
+    updated_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface FinalMixClipDraft {
     frame_id: string;
     video_id: string;
@@ -1649,6 +1701,51 @@ export const api = {
 
     listCurrentBillingPricingRules: async (): Promise<BillingPricingRuleSummary[]> => {
         const res = await axios.get(`${API_URL}/billing/pricing-rules`);
+        return res.data;
+    },
+
+    listPaymentOrders: async (params?: {
+        limit?: number;
+        offset?: number;
+    }): Promise<PaymentOrderSummary[]> => {
+        const res = await axios.get(`${API_URL}/billing/payment-orders`, { params });
+        return res.data;
+    },
+
+    getPaymentOrder: async (orderId: string): Promise<PaymentOrderSummary> => {
+        const res = await axios.get(`${API_URL}/billing/payment-orders/${orderId}`);
+        return res.data;
+    },
+
+    listPaymentOrderEvents: async (orderId: string): Promise<PaymentEventSummary[]> => {
+        const res = await axios.get(`${API_URL}/billing/payment-orders/${orderId}/events`);
+        return res.data;
+    },
+
+    createPaymentOrder: async (payload: {
+        channel: string;
+        amount_cents: number;
+        subject?: string;
+        description?: string;
+        idempotency_key?: string;
+    }): Promise<PaymentOrderSummary> => {
+        const res = await axios.post(`${API_URL}/billing/payment-orders`, payload);
+        return res.data;
+    },
+
+    cancelPaymentOrder: async (orderId: string): Promise<PaymentOrderSummary> => {
+        const res = await axios.post(`${API_URL}/billing/payment-orders/${orderId}/cancel`);
+        return res.data;
+    },
+
+    simulatePaymentOrderPaid: async (
+        orderId: string,
+        payload?: {
+            provider_trade_no?: string;
+            provider_buyer_id?: string;
+        },
+    ): Promise<PaymentOrderSummary> => {
+        const res = await axios.post(`${API_URL}/billing/payment-orders/${orderId}/simulate-paid`, payload || {});
         return res.data;
     },
 

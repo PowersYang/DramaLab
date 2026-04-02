@@ -117,12 +117,40 @@ class TaskWorker:
         heartbeat_thread = self._start_heartbeat_loop(job_id, heartbeat_stop)
         try:
             result = self.registry.get(running_job.task_type).execute(running_job)
+            extracted_metrics = None
+            if isinstance(result, dict) and "__metrics__" in result:
+                extracted_metrics = result.pop("__metrics__")
+            if isinstance(extracted_metrics, dict):
+                self.task_service.task_attempt_repository.patch(
+                    attempt.id,
+                    {"metrics_json": extracted_metrics},
+                )
+                with suppress(Exception):
+                    self.task_service.billing_service.record_task_attempt_metrics(
+                        job_id=running_job.id,
+                        attempt_no=attempt.attempt_no,
+                        metrics_json=extracted_metrics,
+                        actor_id=running_job.updated_by,
+                    )
             completed_job = self.task_service.mark_job_succeeded(job_id, result_json=result)
             self.task_service.task_attempt_repository.patch(
                 attempt.id,
                 {"outcome": "succeeded", "ended_at": completed_job.finished_at or utc_now()},
             )
         except Exception as exc:
+            if "extracted_metrics" in locals() and isinstance(extracted_metrics, dict):
+                with suppress(Exception):
+                    self.task_service.task_attempt_repository.patch(
+                        attempt.id,
+                        {"metrics_json": extracted_metrics},
+                    )
+                with suppress(Exception):
+                    self.task_service.billing_service.record_task_attempt_metrics(
+                        job_id=running_job.id,
+                        attempt_no=attempt.attempt_no,
+                        metrics_json=extracted_metrics,
+                        actor_id=running_job.updated_by,
+                    )
             self.task_service.mark_job_failed(job_id, str(exc))
             self.task_service.task_attempt_repository.patch(
                 attempt.id,

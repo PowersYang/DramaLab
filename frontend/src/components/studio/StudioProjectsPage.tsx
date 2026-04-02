@@ -146,27 +146,91 @@ function SeriesLedgerRow({
 
       {expanded ? (
         <tr className="admin-subledger-row">
-          <td colSpan={6}>
-            <div className="p-4 pl-12 bg-slate-50/50">
-              <div className="admin-subledger-header">
-                <span>分集台账</span>
-                <span>{sortedEpisodes.length || series.episode_count || 0} 集</span>
+          <td colSpan={8}>
+            <div className="border-t border-slate-200 bg-slate-50/60 px-5 py-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm">
+                    <FileText size={16} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Episode Ledger</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-slate-800">分集台账</p>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500 shadow-sm">
+                        {sortedEpisodes.length} / {series.episode_count || 0} 集
+                      </span>
+                      {!episodesLoading && episodes && episodes.length === 0 && (series.episode_count || 0) > 0 ? (
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                          检测到台账未同步
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">从这里快速进入单集编辑器，或在列表内补齐集数标题。</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                  <button
+                    onClick={() => onEpisodesChange(series.id)}
+                    className="studio-button studio-button-secondary !h-8 !px-3 text-[12px]"
+                    disabled={episodesLoading}
+                  >
+                    {episodesLoading ? "刷新中..." : "刷新"}
+                  </button>
+                  <button
+                    onClick={() => setShowInlineInput(true)}
+                    className="studio-button studio-button-primary !h-8 !px-3 text-[12px]"
+                  >
+                    + 添加集数
+                  </button>
+                </div>
               </div>
-              <div className="admin-episode-grid">
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                 {episodesLoading ? (
-                  [1, 2, 3].map((item) => <div key={item} className="h-24 rounded-[1.25rem] bg-slate-100 animate-pulse" />)
-                ) : (
-                  <>
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((item) => (
+                      <div key={item} className="h-12 rounded-xl bg-slate-100 animate-pulse" />
+                    ))}
+                  </div>
+                ) : sortedEpisodes.length > 0 ? (
+                  <div className="space-y-2">
                     {sortedEpisodes.map((episode) => (
-                      <Link key={episode.id} href={`/studio/projects/${episode.id}?seriesId=${series.id}`} className="admin-episode-card">
-                        <p className="admin-episode-kicker">第 {episode.episode_number || "?"} 集</p>
-                        <p className="mt-2 line-clamp-1 text-sm font-semibold studio-strong">{episode.title}</p>
-                        <p className="mt-2 text-xs studio-muted">{episode.frame_count || 0} 分镜 · 进入单集编辑</p>
+                      <Link
+                        key={episode.id}
+                        href={`/studio/projects/${episode.id}?seriesId=${series.id}`}
+                        className="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2 transition-all hover:border-slate-200 hover:bg-slate-50"
+                      >
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-[11px] font-bold text-slate-600">
+                          {episode.episode_number || "?"}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800">{episode.title}</p>
+                          <p className="mt-0.5 text-xs text-slate-400">{episode.frame_count || 0} 分镜 · 进入单集编辑</p>
+                        </div>
+                        <ChevronRight size={16} className="text-slate-300 transition-transform group-hover:translate-x-0.5" />
                       </Link>
                     ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                      <FileText size={18} />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-700">暂无分集</p>
+                    <p className="text-xs text-slate-400">先创建一个集数标题，后续再进入单集编辑器推进制作。</p>
+                  </div>
+                )}
 
-                    {showInlineInput ? (
-                      <div className="admin-episode-card admin-episode-card-create">
+                {showInlineInput ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm">
+                        <Plus size={16} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Create Episode</p>
                         <input
                           value={inlineTitle}
                           onChange={(event) => setInlineTitle(event.target.value)}
@@ -177,15 +241,15 @@ function SeriesLedgerRow({
                               setInlineTitle("");
                             }
                           }}
-                          placeholder="输入集数标题"
-                          className="w-full border-none bg-transparent text-sm font-medium studio-strong outline-none placeholder:text-slate-400"
+                          placeholder="例如：第一集·开场冲突"
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition-colors focus:border-slate-300"
+                          autoFocus
                         />
-                        <div className="mt-3 flex gap-3 text-xs">
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
                           <button
                             onClick={handleInlineAddEpisode}
                             disabled={!inlineTitle.trim() || isAdding}
-                            className="font-semibold disabled:opacity-50"
-                            style={{ color: "var(--studio-shell-accent-strong)" }}
+                            className="studio-button studio-button-primary !h-8 !px-3 text-[12px] disabled:opacity-50"
                           >
                             {isAdding ? "创建中..." : "确认创建"}
                           </button>
@@ -194,19 +258,15 @@ function SeriesLedgerRow({
                               setShowInlineInput(false);
                               setInlineTitle("");
                             }}
-                            className="studio-muted"
+                            className="studio-button studio-button-secondary !h-8 !px-3 text-[12px]"
                           >
                             取消
                           </button>
                         </div>
                       </div>
-                    ) : (
-                      <button onClick={() => setShowInlineInput(true)} className="admin-episode-card admin-episode-card-add">
-                        + 添加分集
-                      </button>
-                    )}
-                  </>
-                )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </td>

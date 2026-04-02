@@ -32,18 +32,18 @@ class TaskJobRepository(BaseRepository[TaskJob]):
     def save(self, job: TaskJob, session=None) -> TaskJob:
         return self.create(job, session=session)
 
-    def get(self, job_id: str) -> TaskJob | None:
-        with self._with_session() as session:
+    def get(self, job_id: str, session=None) -> TaskJob | None:
+        with self._with_session(session) as session:
             row = session.get(TaskJobRecord, job_id)
             return _task_job_from_record(row) if row else None
 
-    def get_by_idempotency_key(self, idempotency_key: str) -> TaskJob | None:
-        with self._with_session() as session:
+    def get_by_idempotency_key(self, idempotency_key: str, session=None) -> TaskJob | None:
+        with self._with_session(session) as session:
             row = session.query(TaskJobRecord).filter(TaskJobRecord.idempotency_key == idempotency_key).one_or_none()
             return _task_job_from_record(row) if row else None
 
-    def get_active_by_dedupe_key(self, dedupe_key: str) -> TaskJob | None:
-        with self._with_session() as session:
+    def get_active_by_dedupe_key(self, dedupe_key: str, session=None) -> TaskJob | None:
+        with self._with_session(session) as session:
             row = (
                 session.query(TaskJobRecord)
                 .filter(
@@ -143,6 +143,7 @@ class TaskJobRepository(BaseRepository[TaskJob]):
                     TaskJobRecord.queue_name.in_(queue_names),
                     or_(TaskJobRecord.status == "queued", TaskJobRecord.status == "retry_waiting"),
                     TaskJobRecord.scheduled_at <= utc_now(),
+                    TaskJobRecord.attempt_count < TaskJobRecord.max_attempts,
                 )
                 .order_by(TaskJobRecord.priority.asc(), TaskJobRecord.created_at.asc())
             )
@@ -177,8 +178,8 @@ class TaskJobRepository(BaseRepository[TaskJob]):
                 claimed.append(_task_job_from_record(row))
         return claimed
 
-    def patch(self, job_id: str, patch: dict) -> TaskJob:
-        with self._with_session() as session:
+    def patch(self, job_id: str, patch: dict, session=None) -> TaskJob:
+        with self._with_session(session) as session:
             record = session.get(TaskJobRecord, job_id)
             if record is None:
                 raise ValueError(f"Task job {job_id} not found")

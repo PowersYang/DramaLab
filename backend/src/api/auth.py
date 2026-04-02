@@ -17,6 +17,7 @@ from ..auth.constants import (
 from ..auth.dependencies import RequestContext, get_request_context
 from ..common import signed_response
 from ..common.log import get_logger
+from ..settings.env_settings import get_env_bool
 from ..schemas.requests import (
     ChangePasswordRequest,
     InviteWorkspaceMemberRequest,
@@ -47,25 +48,27 @@ def _resolve_identifier_and_channel(*, email: str | None = None, phone: str | No
     return resolved_identifier, resolved_channel
 
 
-def _set_refresh_cookie(response, refresh_token: str) -> None:
+def _set_refresh_cookie(response, refresh_token: str, max_age: int) -> None:
+    # 中文注释：refresh cookie 统一按后端会话策略下发，避免浏览器把闲置会话额外保留太久。
     response.set_cookie(
         key=REFRESH_TOKEN_COOKIE,
         value=refresh_token,
         httponly=True,
         samesite="lax",
-        secure=False,
-        max_age=30 * 24 * 60 * 60,
+        secure=get_env_bool("AUTH_COOKIE_SECURE", False),
+        max_age=max_age,
         path="/",
     )
 
 
 def _set_access_cookie(response, access_token: str, expires_in: int) -> None:
+    # 中文注释：access token 走短期 cookie，生产环境下是否强制 secure 由统一环境变量控制。
     response.set_cookie(
         key=ACCESS_TOKEN_COOKIE,
         value=access_token,
         httponly=False,
         samesite="lax",
-        secure=False,
+        secure=get_env_bool("AUTH_COOKIE_SECURE", False),
         max_age=expires_in,
         path="/",
     )
@@ -101,7 +104,7 @@ async def get_auth_captcha():
 async def verify_email_code(request: VerifyEmailCodeRequest, response: Response, http_request: Request):
     try:
         identifier, channel = _resolve_identifier_and_channel(email=request.email, target=request.target, channel=request.channel)
-        auth_payload, me, refresh_token = auth_service.verify_identifier_code(
+        auth_payload, me, refresh_token, refresh_cookie_max_age = auth_service.verify_identifier_code(
             identifier=identifier,
             target_type=channel,
             code=request.code,
@@ -118,7 +121,7 @@ async def verify_email_code(request: VerifyEmailCodeRequest, response: Response,
             "me": me.model_dump(),
         }
         http_response = signed_response(payload)
-        _set_refresh_cookie(http_response, refresh_token)
+        _set_refresh_cookie(http_response, refresh_token, refresh_cookie_max_age)
         _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
         return http_response
     except ValueError as exc:
@@ -130,7 +133,7 @@ async def sign_in_with_password(request: PasswordSignInRequest, http_request: Re
     try:
         auth_service.verify_captcha(request.captcha_id, request.captcha_code)
         identifier, channel = _resolve_identifier_and_channel(email=request.email, phone=request.phone, identifier=request.identifier, channel=request.channel)
-        auth_payload, me, refresh_token = auth_service.sign_in_with_password(
+        auth_payload, me, refresh_token, refresh_cookie_max_age = auth_service.sign_in_with_password(
             identifier=identifier,
             target_type=channel,
             password=request.password,
@@ -138,7 +141,7 @@ async def sign_in_with_password(request: PasswordSignInRequest, http_request: Re
             user_agent=http_request.headers.get("user-agent"),
         )
         http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
-        _set_refresh_cookie(http_response, refresh_token)
+        _set_refresh_cookie(http_response, refresh_token, refresh_cookie_max_age)
         _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
         return http_response
     except ValueError as exc:
@@ -150,7 +153,7 @@ async def sign_up_with_password(request: PasswordSignUpRequest, http_request: Re
     try:
         auth_service.verify_captcha(request.captcha_id, request.captcha_code)
         identifier, channel = _resolve_identifier_and_channel(email=request.email, phone=request.phone, identifier=request.identifier, channel=request.channel)
-        auth_payload, me, refresh_token = auth_service.sign_up_with_password(
+        auth_payload, me, refresh_token, refresh_cookie_max_age = auth_service.sign_up_with_password(
             identifier=identifier,
             target_type=channel,
             password=request.password,
@@ -161,7 +164,7 @@ async def sign_up_with_password(request: PasswordSignUpRequest, http_request: Re
             user_agent=http_request.headers.get("user-agent"),
         )
         http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
-        _set_refresh_cookie(http_response, refresh_token)
+        _set_refresh_cookie(http_response, refresh_token, refresh_cookie_max_age)
         _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
         return http_response
     except ValueError as exc:
@@ -173,7 +176,7 @@ async def reset_password_with_code(request: ResetPasswordRequest, http_request: 
     try:
         auth_service.verify_captcha(request.captcha_id, request.captcha_code)
         identifier, channel = _resolve_identifier_and_channel(email=request.email, phone=request.phone, identifier=request.identifier, channel=request.channel)
-        auth_payload, me, refresh_token = auth_service.reset_password_with_code(
+        auth_payload, me, refresh_token, refresh_cookie_max_age = auth_service.reset_password_with_code(
             identifier=identifier,
             target_type=channel,
             code=request.code,
@@ -182,7 +185,7 @@ async def reset_password_with_code(request: ResetPasswordRequest, http_request: 
             user_agent=http_request.headers.get("user-agent"),
         )
         http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
-        _set_refresh_cookie(http_response, refresh_token)
+        _set_refresh_cookie(http_response, refresh_token, refresh_cookie_max_age)
         _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
         return http_response
     except ValueError as exc:
@@ -211,8 +214,9 @@ async def refresh_auth_session(
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token is missing")
     try:
-        auth_payload, me = auth_service.refresh_session(refresh_token)
+        auth_payload, me, rotated_refresh_token, refresh_cookie_max_age = auth_service.refresh_session(refresh_token)
         http_response = signed_response({"session": auth_payload.model_dump(), "me": me.model_dump()})
+        _set_refresh_cookie(http_response, rotated_refresh_token, refresh_cookie_max_age)
         _set_access_cookie(http_response, auth_payload.access_token, auth_payload.expires_in)
         return http_response
     except ValueError as exc:

@@ -7,8 +7,6 @@ import { AlertCircle, CheckCircle2, Loader2, Tag } from "lucide-react";
 import { TaskJob } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
-import { useBillingGuard } from "@/hooks/useBillingGuard";
-import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 type QueueFilter = "all" | "processing" | "completed" | "failed";
 type QueueStep = "script" | "assets" | "storyboard" | "audio";
@@ -64,7 +62,6 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
     const fetchProjectJobs = useTaskStore((state) => state.fetchProjectJobs);
     const jobsById = useTaskStore((state) => state.jobsById);
     const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
-    const { getTaskPrice } = useBillingGuard();
     const [filter, setFilter] = useState<QueueFilter>("all");
     const previousActiveJobIdsRef = useRef<string[]>([]);
 
@@ -181,21 +178,11 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
         return FAILED_STATUSES.includes(job.status as typeof FAILED_STATUSES[number]);
     });
 
-    const processingCount = activeJobIds.length;
-
     return (
-        <div className="studio-inspector h-full flex flex-col text-slate-900 dark:text-slate-100">
-            <div className="border-b border-slate-200/80 dark:border-white/10">
-                <div className={PANEL_HEADER_CLASS}>
-                    <h3 className={PANEL_TITLE_CLASS}>任务队列</h3>
-                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        <div className={`h-2 w-2 rounded-full ${processingCount > 0 ? "bg-emerald-500 animate-pulse" : "bg-slate-300 dark:bg-slate-600"}`} />
-                        {processingCount > 0 ? `${processingCount} 个进行中` : "空闲"}
-                    </div>
-                </div>
-
-                <div className="p-4 pt-3">
-                    <div className="flex gap-1 rounded-xl border border-slate-200/80 bg-white/80 p-1 shadow-sm dark:border-white/10 dark:bg-white/5">
+        <div className="studio-inspector h-full flex flex-col text-[color:var(--studio-text-soft)]">
+            <div className="border-b border-white/10">
+                <div className="p-4">
+                    <div className="studio-panel-chip-rail flex gap-1 rounded-xl p-1">
                         {[
                             { id: "all", label: "全部" },
                             { id: "processing", label: "进行中" },
@@ -205,9 +192,9 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
                             <button
                                 key={tab.id}
                                 onClick={() => setFilter(tab.id as QueueFilter)}
-                                className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${filter === tab.id
-                                    ? "bg-slate-900 text-white font-medium shadow-sm dark:bg-white dark:text-slate-950"
-                                    : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                                className={`flex-1 py-1.5 text-xs rounded-lg transition-colors font-semibold ${filter === tab.id
+                                    ? "bg-[color:var(--studio-surface-20)] text-[color:var(--studio-shell-accent-strong)] shadow-sm ring-1 ring-[color:var(--studio-shell-accent-soft)]"
+                                    : "text-[color:var(--studio-text-muted)] hover:bg-[color:var(--studio-surface-10)] hover:text-[color:var(--studio-text-strong)]"
                                     }`}
                             >
                                 {tab.label}
@@ -220,12 +207,12 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <AnimatePresence mode="popLayout">
                     {visibleJobs.map((job) => (
-                        <QueueJobCard key={job.id} job={job} step={step} project={currentProject} priceCredits={getTaskPrice(job.task_type)} />
+                        <QueueJobCard key={job.id} job={job} step={step} project={currentProject} />
                     ))}
                 </AnimatePresence>
 
                 {visibleJobs.length === 0 && (
-                    <div className="py-10 text-center text-sm text-slate-500 dark:text-slate-500">
+                    <div className="py-10 text-center text-sm text-gray-500">
                         暂无任务
                     </div>
                 )}
@@ -234,7 +221,7 @@ export default function ProjectTaskQueuePanel({ step }: ProjectTaskQueuePanelPro
     );
 }
 
-function QueueJobCard({ job, step, project, priceCredits }: { job: TaskJob; step: QueueStep; project: any; priceCredits: number | null }) {
+function QueueJobCard({ job, step, project }: { job: TaskJob; step: QueueStep; project: any }) {
     const cancelJob = useTaskStore((state) => state.cancelJob);
     const retryJob = useTaskStore((state) => state.retryJob);
     const isActive = ACTIVE_STATUSES.includes(job.status as typeof ACTIVE_STATUSES[number]);
@@ -249,45 +236,40 @@ function QueueJobCard({ job, step, project, priceCredits }: { job: TaskJob; step
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96 }}
-            className={`rounded-2xl border p-3.5 shadow-[0_12px_36px_rgba(15,23,42,0.08)] transition-colors dark:shadow-[0_12px_36px_rgba(0,0,0,0.22)] ${isFailed
-                ? "border-rose-200 bg-rose-50/90 dark:border-rose-500/25 dark:bg-rose-500/10"
-                : "border-slate-200/80 bg-white/90 backdrop-blur-sm dark:border-white/10 dark:bg-white/5"
+            className={`rounded-2xl border p-3.5 shadow-[0_12px_36px_rgba(15,23,42,0.08)] transition-colors backdrop-blur-sm ${isFailed
+                ? "border-white/20 bg-[color:var(--studio-shell-danger-soft)] ring-1 ring-[color:var(--studio-shell-danger-soft)]"
+                : "border-white/10 bg-white/10"
                 }`}
         >
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-2">
                         {isActive && <Loader2 size={14} className="animate-spin text-primary" />}
-                        {isFailed && <AlertCircle size={14} className="text-rose-500 dark:text-rose-300" />}
-                        {isCompleted && <CheckCircle2 size={14} className="text-emerald-500 dark:text-emerald-300" />}
-                        <span className="text-xs font-mono text-slate-400 dark:text-slate-500">#{job.id.slice(0, 8)}</span>
+                        {isFailed && <AlertCircle size={14} className="text-rose-600" />}
+                        {isCompleted && <CheckCircle2 size={14} className="text-emerald-600" />}
+                        <span className="text-xs font-mono text-[color:var(--studio-text-muted)]">#{job.id.slice(0, 8)}</span>
                         <span className={`h-2 w-2 rounded-full ${displayInfo.accentClassName}`} />
                     </div>
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                            <p className="text-sm font-semibold leading-5 text-slate-900 dark:text-slate-100">{displayInfo.title}</p>
+                            <p className="text-sm font-semibold leading-5 text-[color:var(--studio-text-strong)]">{displayInfo.title}</p>
                             {displayInfo.subtitle && (
-                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{displayInfo.subtitle}</p>
+                                <p className="mt-1 text-xs text-[color:var(--studio-text-muted)]">{displayInfo.subtitle}</p>
                             )}
                         </div>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${getStatusClassName(job.status)}`}>
+                        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${getStatusClassName(job.status)}`}>
                             {statusLabel}
                         </span>
                     </div>
 
-                    {(displayInfo.badges.length > 0 || priceCredits != null) && (
+                    {displayInfo.badges.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">
-                            {priceCredits != null && (
-                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
-                                    消耗 {priceCredits} 算力豆
-                                </span>
-                            )}
                             {displayInfo.badges.map((badge) => (
                                 <span
                                     key={`${job.id}-${badge}`}
-                                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-slate-100/80 px-2 py-1 text-[10px] text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-slate-300"
+                                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] text-[color:var(--studio-text-muted)]"
                                 >
-                                    <Tag size={10} className="text-slate-400 dark:text-slate-500" />
+                                    <Tag size={10} className="text-[color:var(--studio-text-faint)]" />
                                     {badge}
                                 </span>
                             ))}
@@ -295,36 +277,28 @@ function QueueJobCard({ job, step, project, priceCredits }: { job: TaskJob; step
                     )}
 
                     {displayInfo.detail && (
-                        <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        <p className="mt-3 text-xs leading-5 text-[color:var(--studio-text-muted)]">
                             {displayInfo.detail}
                         </p>
                     )}
 
-                    <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+                    <p className="mt-3 text-[11px] text-[color:var(--studio-text-faint)]">
                         创建于 {formatTimestamp(job.created_at)}
                     </p>
-                    {job.error_message && (
-                        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2 dark:border-rose-500/20 dark:bg-rose-500/8">
-                            <p className="mb-1 text-[11px] font-medium text-rose-700 dark:text-rose-300">失败原因</p>
-                            <p className="line-clamp-3 text-xs text-rose-600/90 dark:text-rose-100/90">
-                            {job.error_message}
-                            </p>
-                        </div>
-                    )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                     {isActive && (
                         <button
                             onClick={() => void cancelJob(job.id)}
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                            className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-[color:var(--studio-text-soft)] transition-colors hover:bg-white/20 hover:text-[color:var(--studio-text-strong)]"
                         >
                             取消
                         </button>
                     )}
-                    {isFailed && (
+                    {isFailed && job.attempt_count < job.max_attempts && (
                         <button
                             onClick={() => void retryJob(job.id)}
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                            className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-[color:var(--studio-text-soft)] transition-colors hover:bg-white/20 hover:text-[color:var(--studio-text-strong)]"
                         >
                             重试
                         </button>
@@ -350,15 +324,15 @@ function getStatusLabel(status: TaskJob["status"]): string {
 
 function getStatusClassName(status: TaskJob["status"]): string {
     if (ACTIVE_STATUSES.includes(status as typeof ACTIVE_STATUSES[number])) {
-        return "bg-primary/10 text-primary dark:bg-primary/15 dark:text-primary";
+        return "bg-[color:var(--studio-shell-accent-soft)] text-[color:var(--studio-shell-accent-strong)]";
     }
     if (FAILED_STATUSES.includes(status as typeof FAILED_STATUSES[number])) {
-        return "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300";
+        return "bg-[color:var(--studio-shell-danger-soft)] text-[color:var(--studio-text-strong)]";
     }
     if (status === "succeeded") {
-        return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300";
+        return "bg-[color:var(--video-workspace-success-soft)] text-[color:var(--studio-text-strong)]";
     }
-    return "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300";
+    return "bg-white/10 text-[color:var(--studio-text-muted)]";
 }
 
 function formatTimestamp(value: string | number): string {
@@ -395,9 +369,7 @@ function buildScriptJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayI
         typeof result.scene_count === "number" ? `场景 ${result.scene_count}` : null,
         typeof result.prop_count === "number" ? `道具 ${result.prop_count}` : null,
     ].filter(Boolean) as string[];
-    const detailParts = [
-        job.attempt_count > 0 ? `已尝试 ${job.attempt_count}/${job.max_attempts} 次` : null,
-    ].filter(Boolean);
+    const detailParts = [formatAttemptDetail(job)].filter(Boolean);
     const scriptLength = typeof job.payload_json?.text === "string"
         ? job.payload_json.text.trim().length
         : 0;
@@ -420,10 +392,7 @@ function buildAssetJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayIn
     const generationLabel = getAssetGenerationLabel(job);
     const taskLabel = TASK_TYPE_LABELS[job.task_type] || "资产任务";
     const badges = [assetTypeLabel, generationLabel].filter(Boolean);
-    const detailParts = [
-        asset?.description || null,
-        job.attempt_count > 0 ? `已尝试 ${job.attempt_count}/${job.max_attempts} 次` : null,
-    ].filter(Boolean);
+    const detailParts = [asset?.description || null, formatAttemptDetail(job)].filter(Boolean);
 
     return {
         title: `${assetName} · ${generationLabel}`,
@@ -468,11 +437,21 @@ function buildStoryboardJobDisplayInfo(job: TaskJob, project: any): QueueJobDisp
 
     return {
         title: `${frameLabel} · ${getStoryboardTaskLabel(job.task_type)}`,
-        subtitle: subtitleParts.join(" · "),
+        subtitle: "",
         badges,
         detail,
         accentClassName: "bg-fuchsia-400",
     };
+}
+
+function formatAttemptDetail(job: TaskJob): string | null {
+    if (job.attempt_count <= 0) {
+        return null;
+    }
+    if (job.attempt_count > job.max_attempts) {
+        return `已尝试 ${job.attempt_count} 次（上限 ${job.max_attempts}）`;
+    }
+    return `已尝试 ${job.attempt_count}/${job.max_attempts} 次`;
 }
 
 function buildAudioJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayInfo {

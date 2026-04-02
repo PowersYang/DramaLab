@@ -358,7 +358,7 @@ export default function ArtDirection() {
                 </div>
 
                 {/* Right Panel: Editor */}
-                <div className="w-1/3 flex flex-col p-8 overflow-y-auto bg-black/10">
+                <div className="w-1/3 flex flex-col p-8 overflow-y-auto">
                     <StyleEditor
                         name={editingName}
                         description={editingDescription}

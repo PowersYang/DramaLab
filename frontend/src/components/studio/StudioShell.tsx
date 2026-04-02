@@ -48,7 +48,7 @@ const NAV_ITEMS: StudioNavItem[] = [
   { href: "/studio/billing", label: "算力与成本", shortLabel: "成本", hint: "算力消耗、扣费和预算感知", icon: CreditCard, capability: "workspace.view", section: "operations" },
   { href: "/studio/settings", label: "工作台设置", shortLabel: "设置", hint: "账号、工作区与系统偏好", icon: Settings2, capability: "workspace.view", section: "operations" },
   { href: "/studio/billing-admin", label: "平台计费规则", shortLabel: "计费", hint: "扣费规则、赠送策略与手工充值", icon: WalletCards, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
-  { href: "/studio/model-config", label: "模型资源编排", shortLabel: "模型", hint: "模型目录、供应商与可见范围", icon: Boxes, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
+  { href: "/studio/model-config", label: "模型配置", shortLabel: "模型", hint: "模型目录、供应商与可见范围", icon: Boxes, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
   { href: "/studio/task-concurrency", label: "并发与执行位", shortLabel: "并发", hint: "组织级执行配额与任务上限", icon: SlidersHorizontal, capability: "workspace.view", section: "governance", requiresPlatformSuperAdmin: true },
 ];
 

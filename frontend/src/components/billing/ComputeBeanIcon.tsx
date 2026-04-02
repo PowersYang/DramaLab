@@ -21,7 +21,7 @@ export default function ComputeBeanIcon({ className }: ComputeBeanIconProps) {
         ry="8.1"
         transform="rotate(-24 10.5 13)"
         fill="currentColor"
-        opacity="0.82"
+        opacity="0.9"
       />
       <ellipse
         cx="20.5"
@@ -33,18 +33,18 @@ export default function ComputeBeanIcon({ className }: ComputeBeanIconProps) {
       />
       <path
         d="M18.4 5.3c2.7 0 5.1 1.1 6.3 3.1"
-        stroke="rgba(255,255,255,0.78)"
+        stroke="rgba(255,255,255,0.74)"
         strokeWidth="1.8"
         strokeLinecap="round"
       />
       <path
         d="M8.5 9.8c1.5-1.8 3.3-2.8 5.1-3"
-        stroke="rgba(255,255,255,0.58)"
+        stroke="rgba(255,255,255,0.52)"
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-      <circle cx="25.6" cy="5.6" r="1.15" fill="rgba(255,255,255,0.92)" />
-      <circle cx="26.8" cy="3.9" r="0.55" fill="rgba(255,255,255,0.68)" />
+      <circle cx="25.6" cy="5.6" r="1.15" fill="rgba(255,255,255,0.88)" />
+      <circle cx="26.8" cy="3.9" r="0.55" fill="rgba(255,255,255,0.64)" />
     </svg>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, ChevronRight, User, Check, Sliders } from "lucide-react";
 import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
@@ -609,7 +609,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
     const activePanelConfig = panelConfigs.find((panel) => panel.key === activePanel);
 
     return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 md:p-8">
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -624,7 +624,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                             </div>
                             <div>
                                 <h2 className="text-xl font-bold text-white tracking-tight">{asset.name}</h2>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-0.5">Character Studio</p>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mt-0.5">Character Studio</p>
                             </div>
                         </div>
                         
@@ -632,23 +632,23 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                         
                         <div className="flex items-center gap-3">
                             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase">制作进度</span>
+                                <span className="text-[10px] font-bold text-gray-500 uppercase">制作进度</span>
                                 <div className="flex gap-1">
                                     {panelConfigs.map((p, i) => (
-                                        <div key={i} className={`h-1.5 w-4 rounded-full ${i < completedPanels ? 'bg-indigo-500' : 'bg-slate-800'}`} />
+                                        <div key={i} className={`h-1.5 w-4 rounded-full ${i < completedPanels ? 'bg-indigo-500' : 'bg-white/10'}`} />
                                     ))}
                                 </div>
                             </div>
-                            <span className="text-xs font-bold text-slate-400">{completedPanels} / {panelConfigs.length} 已就绪</span>
+                            <span className="text-xs font-bold text-gray-400">{completedPanels} / {panelConfigs.length} 已就绪</span>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
+                    <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full text-gray-500 hover:text-white transition-all">
                         <X size={24} />
                     </button>
                 </div>
 
                 <div className="flex-1 grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] overflow-hidden">
-                    <aside className="bg-slate-900/40 border-r border-white/5 flex flex-col overflow-hidden">
+                    <aside className="bg-black/20 border-r border-white/5 flex flex-col overflow-hidden">
                         {/* Tab Navigation */}
                         <div className="p-4 grid grid-cols-3 gap-2 border-b border-white/5 bg-black/20">
                             {panelConfigs.map((panel, index) => {
@@ -665,12 +665,12 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                                 ? "bg-indigo-600 text-white shadow-xl shadow-indigo-600/20 ring-1 ring-white/20" 
                                                 : isLocked
                                                     ? "opacity-30 cursor-not-allowed grayscale"
-                                                    : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                                                : "text-gray-500 hover:bg-white/5 hover:text-gray-300"
                                         }`}
                                     >
                                         <div className="relative">
                                             <panel.icon size={20} />
-                                            {isLocked && <Lock size={10} className="absolute -top-1 -right-1 text-slate-400" />}
+                                            {isLocked && <Lock size={10} className="absolute -top-1 -right-1 text-gray-500" />}
                                         </div>
                                         <span className="text-[10px] font-bold uppercase tracking-widest">{panel.title}</span>
                                     </button>
@@ -683,7 +683,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                             <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-2">
                                     <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Active Preview</span>
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Active Preview</span>
                                 </div>
                                 <h3 className="text-sm font-bold text-white mt-1">{activePanelConfig?.title}</h3>
                             </div>
@@ -708,7 +708,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                         </button>
                                     </>
                                 ) : (
-                                    <div className="h-full flex flex-col items-center justify-center gap-4 text-slate-700">
+                                    <div className="h-full flex flex-col items-center justify-center gap-4 text-gray-500">
                                         <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/[0.05]">
                                             <PhotoIcon size={40} strokeWidth={1} />
                                         </div>
@@ -718,14 +718,14 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                             </div>
 
                             <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
-                                <p className="text-[11px] leading-relaxed text-slate-500 italic">
+                                <p className="text-[11px] leading-relaxed text-gray-500 italic">
                                     {activePanelConfig?.hint}
                                 </p>
                             </div>
                         </div>
                     </aside>
 
-                    <main className="flex flex-col overflow-hidden bg-slate-950/40">
+                    <main className="flex flex-col overflow-hidden bg-black/20">
                         {/* ── Top Control Bar ── */}
                         <div className="h-20 flex items-center justify-between px-8 border-b border-white/5 bg-black/20">
                             <div className="flex items-center gap-4">
@@ -736,7 +736,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
                                             activeMode === "static" 
                                                 ? "bg-white/10 text-white shadow-lg" 
-                                                : "text-slate-500 hover:text-slate-300"
+                                                : "text-gray-500 hover:text-gray-300"
                                         }`}
                                     >
                                         <PhotoIcon size={14} />
@@ -751,7 +751,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                                 ? "bg-indigo-600 text-white shadow-lg" 
                                                 : !supportsActiveMotion 
                                                     ? "opacity-30 grayscale cursor-not-allowed" 
-                                                    : "text-slate-500 hover:text-slate-300"
+                                                : "text-gray-500 hover:text-gray-300"
                                         }`}
                                     >
                                         <Video size={14} />
@@ -763,7 +763,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                             {activeMode === "static" && (
                                 <div className="flex items-center gap-6">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mr-2">批量</span>
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mr-2">批量</span>
                                         <div className="flex p-1 bg-black/40 rounded-xl border border-white/5">
                                             {[1, 2, 3, 4].map((size) => (
                                                 <button
@@ -773,7 +773,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                                     className={`w-10 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${
                                                         activeBatchSize === size 
                                                             ? "bg-white/10 text-white" 
-                                                            : "text-slate-500 hover:text-slate-300"
+                                                            : "text-gray-500 hover:text-gray-300"
                                                     }`}
                                                 >
                                                     {size}
@@ -788,7 +788,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                         disabled={getGeneratingInfo(activePanel).isGenerating || !assetGenerateAffordable}
                                         className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${
                                             getGeneratingInfo(activePanel).isGenerating || !assetGenerateAffordable
-                                                ? "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed"
+                                                ? "bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed"
                                                 : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
                                         }`}
                                         priceCredits={assetGeneratePrice}
@@ -980,8 +980,8 @@ function WorkbenchPanel({
     return (
         <div className="h-full flex flex-col overflow-hidden relative">
             {isLocked && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-6 text-center">
-                    <div className="flex flex-col items-center gap-4 text-slate-500 max-w-sm">
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-md p-6 text-center">
+                    <div className="flex flex-col items-center gap-4 text-gray-500 max-w-sm">
                         <div className="p-6 rounded-full bg-white/5 border border-white/10">
                             <Lock size={40} strokeWidth={1.5} />
                         </div>
@@ -997,9 +997,9 @@ function WorkbenchPanel({
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-3">
                             <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+                            <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
                                 {mode === 'static' ? '生成结果' : '动态参考'}
-                                <span className="ml-3 px-2 py-0.5 rounded-full bg-white/5 text-[9px] text-slate-600 font-bold border border-white/5">
+                                <span className="ml-3 px-2 py-0.5 rounded-full bg-white/5 text-[9px] text-gray-500 font-bold border border-white/5">
                                     {mode === 'static' ? latestVariants.length : motionRefVideos.length} RECORDS
                                 </span>
                             </h3>
@@ -1033,12 +1033,12 @@ function WorkbenchPanel({
                             {isGenerating && Array.from({ length: generatingBatchSize }).map((_, i) => (
                                 <div key={`gen-${i}`} className="aspect-[3/4] rounded-2xl bg-white/[0.02] border border-dashed border-white/10 flex flex-col items-center justify-center gap-4 animate-pulse">
                                     <RefreshCw size={24} className="text-indigo-500/50 animate-spin" />
-                                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">Generating</span>
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Generating</span>
                                 </div>
                             ))}
 
                             {latestVariants.length === 0 && !isGenerating && (
-                                <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-600 border border-dashed border-white/5 rounded-3xl">
+                                <div className="col-span-full py-20 flex flex-col items-center justify-center text-gray-500 border border-dashed border-white/5 rounded-3xl">
                                     <Sparkles size={40} strokeWidth={1} className="mb-4 opacity-20" />
                                     <p className="text-xs font-bold uppercase tracking-widest">No Variants Generated Yet</p>
                                 </div>
@@ -1057,7 +1057,7 @@ function WorkbenchPanel({
                             {isGeneratingMotion && (
                                 <div className="aspect-[3/4] rounded-2xl bg-white/[0.02] border border-dashed border-white/10 flex flex-col items-center justify-center gap-4 animate-pulse">
                                     <RefreshCw size={24} className="text-indigo-500/50 animate-spin" />
-                                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">Rendering</span>
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Rendering</span>
                                 </div>
                             )}
                         </div>
@@ -1070,7 +1070,7 @@ function WorkbenchPanel({
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
                                     {mode === 'static' ? '提示词' : '动态描述'}
                                 </h3>
                             </div>
@@ -1080,7 +1080,7 @@ function WorkbenchPanel({
                             <textarea
                                 value={mode === 'static' ? prompt : motionPrompt}
                                 onChange={(e) => mode === 'static' ? setPrompt(e.target.value) : setMotionPrompt?.(e.target.value)}
-                                className="w-full h-48 bg-black/40 border border-white/10 rounded-[24px] p-6 text-[13px] leading-relaxed text-slate-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all custom-scrollbar"
+                                className="w-full h-48 bg-black/40 border border-white/10 rounded-[24px] p-6 text-[13px] leading-relaxed text-gray-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all custom-scrollbar"
                                 placeholder={mode === 'static' ? "描述角色外貌、服饰、姿态..." : "描述动作幅度、运镜方式..."}
                             />
                         </div>
@@ -1089,8 +1089,8 @@ function WorkbenchPanel({
                     <div className="space-y-6">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="h-1.5 w-1.5 rounded-full bg-slate-700" />
-                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">控制与设置</h3>
+                                <div className="h-1.5 w-1.5 rounded-full bg-white/10" />
+                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">控制与设置</h3>
                             </div>
                         </div>
 
@@ -1099,8 +1099,8 @@ function WorkbenchPanel({
                                 <>
                                     <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between">
                                         <div className="flex flex-col gap-1">
-                                            <span className="text-xs font-bold text-slate-300">艺术指导风格</span>
-                                            <span className="text-[10px] text-slate-500">自动应用全局项目视觉定调</span>
+                                            <span className="text-xs font-bold text-gray-300">艺术指导风格</span>
+                                            <span className="text-[10px] text-gray-500">自动应用全局项目视觉定调</span>
                                         </div>
                                         <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
                                     </div>
@@ -1110,11 +1110,11 @@ function WorkbenchPanel({
                                             onClick={() => setShowAdvanced(!showAdvanced)}
                                             className="flex items-center justify-between w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-all"
                                         >
-                                            <div className="flex items-center gap-2 text-slate-400">
+                                            <div className="flex items-center gap-2 text-gray-400">
                                                 <Sliders size={14} />
                                                 <span className="text-xs font-bold uppercase tracking-widest">负向提示词</span>
                                             </div>
-                                            <ChevronRight size={16} className={`text-slate-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
+                                            <ChevronRight size={16} className={`text-gray-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
                                         </button>
 
                                         <AnimatePresence>
@@ -1128,7 +1128,7 @@ function WorkbenchPanel({
                                                     <textarea
                                                         value={negativePrompt}
                                                         onChange={(e) => setNegativePrompt(e.target.value)}
-                                                        className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-slate-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all custom-scrollbar"
+                                                        className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-gray-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all custom-scrollbar"
                                                         placeholder="排除不想要的特征..."
                                                     />
                                                 </motion.div>
@@ -1141,7 +1141,7 @@ function WorkbenchPanel({
                                     <div className="p-6 rounded-3xl bg-indigo-600/10 border border-indigo-500/20">
                                         <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-[0.2em] mb-4">动态生成设置</h4>
                                         <div className="flex items-center justify-between text-sm">
-                                            <span className="text-slate-400 font-medium">生成时长</span>
+                                            <span className="text-gray-400 font-medium">生成时长</span>
                                             <span className="font-bold text-white">5.0s</span>
                                         </div>
                                     </div>
@@ -1151,7 +1151,7 @@ function WorkbenchPanel({
                                         disabled={isGeneratingMotion || !motionRefAffordable}
                                         className={`w-full py-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${
                                             isGeneratingMotion || !motionRefAffordable
-                                                ? "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed"
+                                                ? "bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed"
                                                 : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
                                         }`}
                                         priceCredits={motionRefPrice}
@@ -1188,14 +1188,14 @@ function PromptField({
     return (
         <div className="bg-black/40 border border-white/10 rounded-[24px] p-6 space-y-4">
             <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</span>
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{label}</span>
                 {action}
             </div>
             <textarea
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
                 disabled={disabled}
-                className="w-full h-32 bg-transparent border-none text-[13px] leading-relaxed text-slate-200 resize-none focus:outline-none custom-scrollbar"
+                className="w-full h-32 bg-transparent border-none text-[13px] leading-relaxed text-gray-200 resize-none focus:outline-none custom-scrollbar"
                 placeholder={placeholder}
             />
         </div>

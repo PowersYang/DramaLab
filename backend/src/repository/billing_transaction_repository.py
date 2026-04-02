@@ -26,6 +26,9 @@ def _to_domain(record: BillingTransactionRecord) -> BillingTransaction:
         remark=record.remark,
         operator_user_id=record.operator_user_id,
         operator_source=record.operator_source,
+        charge_id=record.charge_id,
+        source_event=record.source_event,
+        external_ref=record.external_ref,
         idempotency_key=record.idempotency_key,
         created_by=record.created_by,
         updated_by=record.updated_by,
@@ -58,6 +61,9 @@ class BillingTransactionRepository(BaseRepository[BillingTransaction]):
                     remark=item.remark,
                     operator_user_id=item.operator_user_id,
                     operator_source=item.operator_source,
+                    charge_id=item.charge_id,
+                    source_event=item.source_event,
+                    external_ref=item.external_ref,
                     idempotency_key=item.idempotency_key,
                     created_by=item.created_by,
                     updated_by=item.updated_by,
@@ -67,8 +73,8 @@ class BillingTransactionRepository(BaseRepository[BillingTransaction]):
             )
         return item
 
-    def get_by_idempotency_key(self, idempotency_key: str) -> BillingTransaction | None:
-        with self._with_session() as session:
+    def get_by_idempotency_key(self, idempotency_key: str, session=None) -> BillingTransaction | None:
+        with self._with_session(session) as session:
             record = (
                 session.query(BillingTransactionRecord)
                 .filter(BillingTransactionRecord.idempotency_key == idempotency_key)

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -18,6 +19,7 @@ class AuthApiTest(unittest.TestCase):
                     "AUTH_JWT_SECRET=test-secret",
                     "AUTH_EXPOSE_TEST_CODE=true",
                     "AUTH_PLATFORM_SUPER_ADMIN_EMAILS=admin@example.com",
+                    "AUTH_REFRESH_TOKEN_IDLE_TTL_DAYS=7",
                 ]
             )
             + "\n",
@@ -195,6 +197,44 @@ class AuthApiTest(unittest.TestCase):
         refreshed = refresh_result.json()
         self.assertEqual(refreshed["me"]["user"]["email"], "refresh@example.com")
         self.assertIn("access_token", refreshed["session"])
+
+    def test_auth_refresh_rotates_refresh_token_and_invalidates_old_cookie(self):
+        self._login("rotate-refresh@example.com", "Rotate Refresh User")
+        original_refresh_token = self.client.cookies.get("dramalab_refresh_token")
+        self.assertIsNotNone(original_refresh_token)
+
+        refresh_result = self.client.post("/auth/refresh")
+        self.assertEqual(refresh_result.status_code, 200)
+        rotated_refresh_token = self.client.cookies.get("dramalab_refresh_token")
+
+        self.assertIsNotNone(rotated_refresh_token)
+        self.assertNotEqual(rotated_refresh_token, original_refresh_token)
+
+        stale_client = TestClient(self.app)
+        stale_client.cookies.set("dramalab_refresh_token", original_refresh_token)
+        stale_refresh_result = stale_client.post("/auth/refresh")
+        self.assertEqual(stale_refresh_result.status_code, 401)
+        self.assertEqual(stale_refresh_result.json()["detail"], "Session is invalid or expired")
+
+    def test_auth_refresh_rejects_session_after_idle_timeout(self):
+        payload = self._login("idle-refresh@example.com", "Idle Refresh User")
+
+        from src.application.services import AuthService
+        from src.db.models import UserSessionRecord
+        from src.db.session import get_session_factory
+        from src.utils.datetime import utc_now
+
+        claims = AuthService().decode_access_token(payload["session"]["access_token"])
+        with get_session_factory()() as session:
+            session_record = session.get(UserSessionRecord, claims.session_id)
+            self.assertIsNotNone(session_record)
+            # 中文注释：直接把数据库中的最后活跃时间拨老，验证 refresh 会按空闲超时拒绝续签。
+            session_record.updated_at = utc_now() - timedelta(days=8)
+            session.commit()
+
+        refresh_result = self.client.post("/auth/refresh")
+        self.assertEqual(refresh_result.status_code, 401)
+        self.assertEqual(refresh_result.json()["detail"], "Session is invalid or expired")
 
     def test_signin_requires_existing_account(self):
         send_result = self.client.post("/auth/email-code/send", json={"email": "missing@example.com", "purpose": "signin", **self._captcha_payload()})

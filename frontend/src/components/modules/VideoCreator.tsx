@@ -1139,8 +1139,8 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                         )}
                     </BillingActionButton>
                     <div className="flex justify-center mt-3">
-                        <label className="video-muted-note flex cursor-pointer items-center gap-2 text-xs transition-colors hover:text-slate-700 dark:hover:text-slate-200">
-                            <input type="checkbox" className="rounded border-slate-300 bg-white" />
+                        <label className="video-muted-note flex cursor-pointer items-center gap-2 text-xs transition-colors hover:text-white">
+                            <input type="checkbox" className="rounded border-white/20 bg-white" />
                             提交后清空内容
                         </label>
                     </div>

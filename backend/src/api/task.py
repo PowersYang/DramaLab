@@ -10,6 +10,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..application.tasks import TaskService
+from ..application.tasks.service import TaskRetryLimitReached
 from ..auth.constants import CAP_TASK_RUN
 from ..auth.dependencies import RequestContext, get_request_context, require_capability
 from ..common import signed_response
@@ -80,6 +81,9 @@ async def retry_task(job_id: str, context: RequestContext = Depends(require_capa
             raise ValueError(f"Task job {job_id} not found")
         job = task_service.retry_job(job_id)
         return signed_response(job)
+    except TaskRetryLimitReached as exc:
+        logger.warning("TASK_API: retry_task rejected job_id=%s detail=%s", job_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         logger.warning("TASK_API: retry_task failed job_id=%s detail=%s", job_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

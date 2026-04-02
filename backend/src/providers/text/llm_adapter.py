@@ -24,6 +24,7 @@ class LLMAdapter:
         self.provider_service = ModelProviderService()
         self._client = None
         self._client_binding = None
+        self._last_response_metrics = None
 
     @property
     def is_configured(self) -> bool:
@@ -37,6 +38,12 @@ class LLMAdapter:
     def _resolve_text_binding(self, model: str | None = None) -> dict[str, str]:
         """按模型 ID 或平台默认配置解析当前文本模型绑定。"""
         return self.provider_service.resolve_text_binding(model)
+
+    def get_last_response_metrics(self) -> dict[str, Any] | None:
+        """返回最近一次成功调用上游文本模型时采集到的 usage metrics。"""
+        if self._last_response_metrics is None:
+            return None
+        return dict(self._last_response_metrics)
 
     def _get_client(self, binding: dict[str, str]):
         """按需延迟创建当前 provider 对应的 OpenAI 兼容客户端。"""
@@ -133,6 +140,49 @@ class LLMAdapter:
         binding = binding or self._resolve_text_binding()
         return binding["model_id"]
 
+    def _extract_response_metrics(
+        self,
+        *,
+        binding: dict[str, str],
+        model: str,
+        messages: List[Dict[str, str]],
+        response: Any,
+        request_duration_ms: float,
+    ) -> dict[str, Any]:
+        """把 OpenAI 兼容响应统一映射成 billing 可消费的 metrics 契约。"""
+        usage_payload: dict[str, Any] = {
+            "request_count": 1,
+            "message_count": len(messages),
+        }
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            # 中文注释：OpenAI 兼容接口与部分供应商 SDK 的 usage 字段命名不完全一致，这里统一折叠成 input/output/total tokens。
+            input_tokens = getattr(usage, "prompt_tokens", None)
+            if input_tokens is None:
+                input_tokens = getattr(usage, "input_tokens", None)
+            output_tokens = getattr(usage, "completion_tokens", None)
+            if output_tokens is None:
+                output_tokens = getattr(usage, "output_tokens", None)
+            total_tokens = getattr(usage, "total_tokens", None)
+            if input_tokens is not None:
+                usage_payload["input_tokens"] = int(input_tokens)
+            if output_tokens is not None:
+                usage_payload["output_tokens"] = int(output_tokens)
+            if total_tokens is not None:
+                usage_payload["total_tokens"] = int(total_tokens)
+
+        return {
+            "version": "v1",
+            "provider": {"name": binding["provider_key"], "model": model},
+            "usage": usage_payload,
+            "cost": {"amount": None, "currency": "UNKNOWN", "pricing_basis": "provider_usage"},
+            "timing": {"request_duration_ms": request_duration_ms},
+            "supplier_reference": {
+                "task_id": None,
+                "request_id": getattr(response, "id", None),
+            },
+        }
+
     def chat(
         self,
         messages: List[Dict[str, str]],
@@ -166,6 +216,13 @@ class LLMAdapter:
                 )
                 response = client.chat.completions.create(**kwargs)
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+                self._last_response_metrics = self._extract_response_metrics(
+                    binding=binding,
+                    model=model,
+                    messages=messages,
+                    response=response,
+                    request_duration_ms=duration_ms,
+                )
                 logger.info(
                     "LLM_ADAPTER: chat completed provider=%s model=%s duration_ms=%s attempt=%s/%s",
                     provider_name,

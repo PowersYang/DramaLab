@@ -39,19 +39,21 @@ export default function BillingActionButton({
         {priceCredits != null ? (
           <span
             className={clsx(
-              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]",
+              "billing-cost-badge inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]",
+              insufficient ? "billing-cost-badge--insufficient" : "billing-cost-badge--ok",
               insufficient
-                ? "border-rose-300/80 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/12 dark:text-rose-200"
-                : "border-amber-300/80 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-300/12 dark:text-amber-200",
+                ? "border-rose-300 bg-rose-100/80 text-rose-800"
+                : "border-amber-300 bg-amber-100/80 text-amber-900",
               costClassName,
             )}
           >
             <ComputeBeanIcon
               className={clsx(
-                insufficient ? "text-rose-500 dark:text-rose-300" : "text-amber-500 dark:text-amber-300",
+                "billing-bean",
+                insufficient ? "text-rose-600" : "text-amber-600",
               )}
             />
-            <span>{priceCredits}</span>
+            <span className="billing-cost-value">{priceCredits}</span>
           </span>
         ) : null}
       </button>
@@ -59,7 +61,8 @@ export default function BillingActionButton({
       {resolvedTooltipText ? (
         <div
           className={clsx(
-            "pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 opacity-0 shadow-[0_16px_32px_-18px_rgba(15,23,42,0.45)] backdrop-blur-md transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 dark:border-white/10 dark:bg-slate-950/92 dark:text-slate-100",
+            "billing-tooltip pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-slate-200 bg-white/98 px-3 py-2 text-xs font-semibold text-slate-900 opacity-0 shadow-[0_16px_32px_-18px_rgba(15,23,42,0.45)] backdrop-blur-md transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100",
+            insufficient ? "billing-tooltip--insufficient" : "billing-tooltip--ok",
             tooltipClassName,
           )}
         >
