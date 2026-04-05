@@ -118,6 +118,7 @@ export default function AuthEntryPage({ mode, onClose }: AuthEntryPageProps) {
   const shouldSubmitVerifyCode = authMethod === "email_code";
   const primaryActionText = isSignUp ? "注册" : passwordStage === "forgot" ? "重置密码" : "登录";
   const primaryActionLabel = isSignUp ? "主注册按钮" : "主登录按钮";
+  const runPrimaryAction = () => void (shouldSubmitVerifyCode ? handleVerify() : handlePasswordSubmit());
 
   const refreshCaptcha = useCallback(async () => {
     setCaptchaLoading(true);
@@ -305,116 +306,126 @@ export default function AuthEntryPage({ mode, onClose }: AuthEntryPageProps) {
             </div>
           </div>
 
-          <div className="mt-3 flex-1 space-y-2.5">
-            <input
-              type="text"
-              value={identifier}
-              onChange={(event) => setIdentifier(event.target.value)}
-              placeholder="请输入邮箱 / 手机号"
-              className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
-            />
+          <form
+            className="mt-3 flex-1 flex flex-col"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (submitting) {
+                return;
+              }
+              runPrimaryAction();
+            }}
+          >
+            <div className="flex-1 space-y-2.5">
+              <input
+                type="text"
+                value={identifier}
+                onChange={(event) => setIdentifier(event.target.value)}
+                placeholder="请输入邮箱 / 手机号"
+                className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+              />
 
-            {authMethod === "password" && passwordStage === "signin" ? (
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="请输入密码"
-                  className="h-10 min-w-0 rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
-                />
-                {!isSignUp ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPasswordStage("forgot");
-                      setStep("input");
-                      setCode("");
-                      setNewPassword("");
-                      setError(null);
-                    }}
-                    className="px-1 text-[12px] font-semibold text-[#f1d8ab] transition-colors hover:text-[#ffe7ba]"
-                  >
-                    忘记密码?
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
-            {usingVerificationFlow ? (
-              <>
-                {step === "verify" || passwordStage === "forgot" ? (
+              {authMethod === "password" && passwordStage === "signin" ? (
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                   <input
-                    type="text"
-                    inputMode="numeric"
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    placeholder="请输入验证码"
-                    className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] tracking-[0.12em] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:tracking-normal placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="请输入密码"
+                    className="h-10 min-w-0 rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
                   />
-                ) : (
-                  <div className="grid grid-cols-[minmax(0,1fr)_124px] gap-2">
+                  {!isSignUp ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordStage("forgot");
+                        setStep("input");
+                        setCode("");
+                        setNewPassword("");
+                        setError(null);
+                      }}
+                      className="px-1 text-[12px] font-semibold text-[#f1d8ab] transition-colors hover:text-[#ffe7ba]"
+                    >
+                      忘记密码?
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {usingVerificationFlow ? (
+                <>
+                  {step === "verify" || passwordStage === "forgot" ? (
                     <input
                       type="text"
                       inputMode="numeric"
                       value={code}
                       onChange={(event) => setCode(event.target.value)}
                       placeholder="请输入验证码"
-                      className="h-10 min-w-0 rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] tracking-[0.12em] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:tracking-normal placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+                      className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] tracking-[0.12em] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:tracking-normal placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
                     />
-                    <button
-                      type="button"
-                      onClick={() => void handleSendCode()}
-                      disabled={submitting || sendCooldown > 0}
-                      className="h-10 rounded-[14px] border border-[#365273] bg-[linear-gradient(180deg,#132235_0%,#0d1826_100%)] text-[13px] font-semibold text-[#d9e3f2] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,color,box-shadow,background-color] hover:border-[#5f83ad] hover:bg-[linear-gradient(180deg,#182b40_0%,#102032_100%)] hover:text-[#f1d8ab] hover:shadow-[0_12px_24px_rgba(10,22,38,0.28)] disabled:cursor-not-allowed disabled:border-[#223246] disabled:bg-[linear-gradient(180deg,#111926_0%,#0d1520_100%)] disabled:text-[#5d7188]"
-                    >
-                      {sendCooldown > 0 ? `${sendCooldown}s 后重试` : passwordStage === "forgot" ? "发送重置码" : "获取验证码"}
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : null}
+                  ) : (
+                    <div className="grid grid-cols-[minmax(0,1fr)_124px] gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={code}
+                        onChange={(event) => setCode(event.target.value)}
+                        placeholder="请输入验证码"
+                        className="h-10 min-w-0 rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] tracking-[0.12em] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:tracking-normal placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleSendCode()}
+                        disabled={submitting || sendCooldown > 0}
+                        className="h-10 rounded-[14px] border border-[#365273] bg-[linear-gradient(180deg,#132235_0%,#0d1826_100%)] text-[13px] font-semibold text-[#d9e3f2] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,color,box-shadow,background-color] hover:border-[#5f83ad] hover:bg-[linear-gradient(180deg,#182b40_0%,#102032_100%)] hover:text-[#f1d8ab] hover:shadow-[0_12px_24px_rgba(10,22,38,0.28)] disabled:cursor-not-allowed disabled:border-[#223246] disabled:bg-[linear-gradient(180deg,#111926_0%,#0d1520_100%)] disabled:text-[#5d7188]"
+                      >
+                        {sendCooldown > 0 ? `${sendCooldown}s 后重试` : passwordStage === "forgot" ? "发送重置码" : "获取验证码"}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : null}
 
-            {passwordStage === "forgot" ? (
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                placeholder="设置新密码"
-                className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+              {passwordStage === "forgot" ? (
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="设置新密码"
+                  className="h-10 w-full rounded-[14px] border border-[#243349] bg-[#0f1724] px-3 text-[13px] text-[#f8f4ea] outline-none transition-[border-color,box-shadow,background-color,color] placeholder:text-[#63758d] focus:border-[#47b6ff] focus:bg-[#111b2a] focus:text-[#fffaf0] focus:shadow-[0_0_0_3px_rgba(71,182,255,0.14)]"
+                />
+              ) : null}
+
+              <AuthCaptchaField
+                captchaSvg={captchaSvg}
+                captchaCode={captchaCode}
+                onChange={setCaptchaCode}
+                onRefresh={() => void refreshCaptcha()}
+                disabled={submitting}
+                loading={captchaLoading}
+                variant="compact"
               />
-            ) : null}
 
-            <AuthCaptchaField
-              captchaSvg={captchaSvg}
-              captchaCode={captchaCode}
-              onChange={setCaptchaCode}
-              onRefresh={() => void refreshCaptcha()}
-              disabled={submitting}
-              loading={captchaLoading}
-              variant="compact"
-            />
+              {error ? (
+                <div className="rounded-[12px] border border-[#6a2a32] bg-[rgba(84,22,26,0.42)] px-3 py-2 text-[12px] text-[#ffb8a0]">{error}</div>
+              ) : null}
 
-            {error ? (
-              <div className="rounded-[12px] border border-[#6a2a32] bg-[rgba(84,22,26,0.42)] px-3 py-2 text-[12px] text-[#ffb8a0]">{error}</div>
-            ) : null}
+              {debugCode ? (
+                <div className="text-[11px] text-[#5f7188]">测试验证码：{debugCode}</div>
+              ) : null}
+            </div>
 
-            {debugCode ? (
-              <div className="text-[11px] text-[#5f7188]">测试验证码：{debugCode}</div>
-            ) : null}
-          </div>
-
-          <div className="mt-3">
-            <button
-              type="button"
-              aria-label={primaryActionLabel}
-              onClick={() => void (shouldSubmitVerifyCode ? handleVerify() : handlePasswordSubmit())}
-              disabled={submitting}
-              className="h-11 w-full rounded-[14px] border border-[#72ccff]/45 bg-[linear-gradient(135deg,#47b6ff_0%,#1e84f2_45%,#0f58be_100%)] text-[14px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_20px_40px_rgba(18,93,196,0.36)] transition-[transform,box-shadow,filter,border-color] hover:-translate-y-[1px] hover:border-[#9fdcff]/60 hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_24px_46px_rgba(31,112,232,0.42)] disabled:cursor-not-allowed disabled:border-[#2a3b50] disabled:bg-[linear-gradient(135deg,#22344a_0%,#1b2b3f_100%)] disabled:text-[#7f94ac] disabled:shadow-none"
-            >
-              {submitting ? "提交中..." : primaryActionText}
-            </button>
-          </div>
+            <div className="mt-3">
+              <button
+                type="submit"
+                aria-label={primaryActionLabel}
+                disabled={submitting}
+                className="h-11 w-full rounded-[14px] border border-[#72ccff]/45 bg-[linear-gradient(135deg,#47b6ff_0%,#1e84f2_45%,#0f58be_100%)] text-[14px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_20px_40px_rgba(18,93,196,0.36)] transition-[transform,box-shadow,filter,border-color] hover:-translate-y-[1px] hover:border-[#9fdcff]/60 hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_24px_46px_rgba(31,112,232,0.42)] disabled:cursor-not-allowed disabled:border-[#2a3b50] disabled:bg-[linear-gradient(135deg,#22344a_0%,#1b2b3f_100%)] disabled:text-[#7f94ac] disabled:shadow-none"
+              >
+                {submitting ? "提交中..." : primaryActionText}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

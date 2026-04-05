@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, Sun, Moon } from "lucide-react";
+import clsx from "clsx";
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
 import type { BreadcrumbSegment } from "@/components/layout/BreadcrumbBar";
@@ -170,16 +171,33 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
                         steps={steps}
                         breadcrumbSegments={segments}
                         headerActions={
-                            <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
+                            <div
+                                className={clsx(
+                                    "relative grid grid-cols-2 rounded-2xl p-1",
+                                    theme === "light"
+                                        ? "border border-slate-200/70 bg-white/75 shadow-[0_10px_26px_rgba(15,23,42,0.08)]"
+                                        : "border border-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                                )}
+                            >
+                                <span
+                                    aria-hidden
+                                    className={clsx(
+                                        "absolute inset-y-1 w-[calc(50%-0.25rem)] rounded-xl transition-all duration-200",
+                                        theme === "light"
+                                            ? "left-1 bg-white shadow-[0_10px_22px_rgba(15,23,42,0.12)]"
+                                            : "left-[calc(50%+0.25rem)] bg-gradient-to-br from-primary to-[#c96a44] shadow-[0_14px_28px_rgba(166,75,42,0.28)]"
+                                    )}
+                                />
                                 <button
                                     type="button"
                                     onClick={() => setTheme("light")}
                                     aria-pressed={theme === "light"}
-                                    className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    className={clsx(
+                                        "relative z-10 flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                                         theme === "light"
-                                            ? "bg-white text-slate-950 shadow-sm"
-                                            : "text-gray-400 hover:text-white"
-                                    }`}
+                                            ? "text-slate-950"
+                                            : "text-slate-300/80 hover:text-white"
+                                    )}
                                 >
                                     <Sun size={14} />
                                     浅色
@@ -188,11 +206,14 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
                                     type="button"
                                     onClick={() => setTheme("dark")}
                                     aria-pressed={theme === "dark"}
-                                    className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    className={clsx(
+                                        "relative z-10 flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                                         theme === "dark"
-                                            ? "bg-primary text-white shadow-sm"
-                                            : "text-gray-400 hover:text-white"
-                                    }`}
+                                            ? "text-white"
+                                            : theme === "light"
+                                                ? "text-slate-600 hover:text-slate-950"
+                                                : "text-slate-300/80 hover:text-white"
+                                    )}
                                 >
                                     <Moon size={14} />
                                     深色
@@ -215,7 +236,7 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
                         {activeStep === "export" && <ExportStudio />}
                     </div>
 
-                    {activeStep !== "assembly" && activeStep !== "art_direction" && <ProjectRightSidebar activeStep={activeStep} />}
+                    {activeStep !== "assembly" && activeStep !== "art_direction" && activeStep !== "mix" && <ProjectRightSidebar activeStep={activeStep} />}
                 </div>
             </main>
         </StudioOverlaysProvider>

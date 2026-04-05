@@ -503,6 +503,9 @@ class BillingService:
                     )
                     return existing
             raise
+        # 中文注释：计费单会通过 hold_transaction_id 外键关联这条预扣流水，
+        # 所以要先把 billing_transactions flush 到数据库，再创建 billing_charges。
+        session.flush()
         self._ensure_task_charge(
             job=job,
             billing_account_id=account_record.id,
@@ -622,6 +625,9 @@ class BillingService:
                         refund_txn = existing
                     else:
                         raise
+                # 中文注释：结算成功后会把 refund_txn.id 回填到 charge.settle_transaction_id，
+                # 这里先 flush 流水，避免同事务 update charge 时触发外键不可见。
+                session.flush()
                 patch["settle_transaction_id"] = refund_txn.id
                 patch["refunded_credits"] = refund_amount
 
@@ -687,6 +693,9 @@ class BillingService:
                     refund_txn = existing
                 else:
                     raise
+            # 中文注释：失败退款也会把 settle_transaction_id 指向新流水，
+            # 先 flush refund_txn，确保随后更新 charge 时外键可见。
+            session.flush()
             return self.charge_repository.patch(
                 charge.id,
                 {
@@ -842,6 +851,9 @@ class BillingService:
                 hold_txn = existing
             else:
                 raise
+        # 中文注释：重试重扣会把新预扣流水重新挂回 hold_transaction_id，
+        # 先 flush 这条流水，再更新计费单，避免 PostgreSQL 外键校验失败。
+        session.flush()
         return self.charge_repository.patch(
             charge.id,
             {

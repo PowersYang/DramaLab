@@ -139,20 +139,12 @@ class SystemService:
         return self.project_repository.get(script_id)
 
     def list_user_art_styles(self, user_id: str) -> list[dict[str, Any]]:
-        """返回当前用户保存过的自定义美术风格。"""
-        user = self.user_repository.get(user_id)
-        if not user:
-            raise ValueError("User not found")
         return [
             style.model_dump(mode="json", exclude={"user_id"})
             for style in self.user_art_style_repository.list_by_user_id(user_id)
         ]
 
     def save_user_art_styles(self, user_id: str, styles: list[UserArtStyleWriteRequest] | None = None) -> list[dict[str, Any]]:
-        """整体覆盖保存用户级风格库，便于前端做统一新增、编辑与删除。"""
-        user = self.user_repository.get(user_id)
-        if not user:
-            raise ValueError("User not found")
         style_models = [
             UserArtStyle(
                 id=style.id,
@@ -169,8 +161,6 @@ class SystemService:
             for index, style in enumerate(styles or [])
         ]
         updated = self.user_art_style_repository.replace_for_user(user_id, style_models)
-        # 中文注释：风格明细独立建表后，用户表只保留身份信息，但仍更新 users.updated_at 方便后台筛选最近活跃设置用户。
-        self.user_repository.update(user_id, {"updated_at": utc_now()})
         return [style.model_dump(mode="json", exclude={"user_id"}) for style in updated]
 
     def get_effective_prompt(self, script_id: str, field: str) -> str:

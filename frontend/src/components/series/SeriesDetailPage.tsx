@@ -3,16 +3,17 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { Image as ImageIcon, Play, ChevronRight, Film, Sparkles, Sun, Moon, Plus } from "lucide-react";
+import { Image as ImageIcon, Play, ChevronRight, Film, Sparkles, FolderKanban, Package, Check, X, PencilLine, Users, MapPin } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, type EpisodeBrief } from "@/lib/api";
 import type { Series, Character, Scene, Prop, Project } from "@/store/projectStore";
 import AssetCard from "@/components/common/AssetCard";
+import AssetTypeTabs from "@/components/common/AssetTypeTabs";
 import SeriesSidebar, { type SidebarItem } from "./SeriesSidebar";
 import { persistStudioTheme, readStoredStudioTheme, type StudioTheme } from "@/components/studio/studioTheme";
-import CreativeCanvas from "@/components/canvas/CreativeCanvas";
 import CreateEpisodeDialog from "@/components/series/CreateEpisodeDialog";
 
+const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 const ImportAssetsDialog = dynamic(() => import("./ImportAssetsDialog"), { ssr: false });
 
 interface SeriesDetailPageProps {
@@ -31,25 +32,30 @@ const ASSET_LABELS: Record<AssetTab, string> = {
 export default function SeriesDetailPage({ seriesId, homeHref = "/studio/projects" }: SeriesDetailPageProps) {
   const router = useRouter();
   const [series, setSeries] = useState<Series | null>(null);
-  const [episodes, setEpisodes] = useState<Project[]>([]);
+  const [episodes, setEpisodes] = useState<EpisodeBrief[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeItem, setActiveItem] = useState<SidebarItem>({ kind: "asset", tab: "characters" });
+  const [activeItem, setActiveItem] = useState<SidebarItem>({ kind: "shared_assets" });
+  const [assetTab, setAssetTab] = useState<AssetTab>("characters");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [showImportAssets, setShowImportAssets] = useState(false);
   const [isCreateEpisodeOpen, setIsCreateEpisodeOpen] = useState(false);
   const [theme, setTheme] = useState<StudioTheme>("light");
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [selectedEpisode, setSelectedEpisode] = useState<Project | null>(null);
+  const [selectedEpisodeLoading, setSelectedEpisodeLoading] = useState(false);
+  const [showCanvas, setShowCanvas] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [seriesData, episodesData] = await Promise.all([
-          api.getSeries(seriesId),
-          api.getSeriesEpisodes(seriesId),
+        const [seriesData, episodesBriefs] = await Promise.all([
+          api.getSeriesLight(seriesId),
+          api.getSeriesEpisodeBriefs(seriesId),
         ]);
         setSeries(seriesData);
-        setEpisodes(episodesData);
+        setEpisodes(episodesBriefs);
         setEditTitle(seriesData.title);
       } catch (error) {
         console.error("Failed to fetch series data:", error);
@@ -61,12 +67,46 @@ export default function SeriesDetailPage({ seriesId, homeHref = "/studio/project
   }, [seriesId]);
 
   useEffect(() => {
+    if (activeItem.kind === "episode") {
+      setSelectedEpisodeLoading(true);
+      api.getProject(activeItem.episodeId)
+        .then((project) => setSelectedEpisode(project))
+        .catch((error) => {
+          console.error("Failed to load episode details:", error);
+          setSelectedEpisode(null);
+        })
+        .finally(() => setSelectedEpisodeLoading(false));
+    } else {
+      setSelectedEpisode(null);
+      setSelectedEpisodeLoading(false);
+    }
+  }, [activeItem]);
+
+  useEffect(() => {
+    setIsDescriptionExpanded(false);
+  }, [seriesId]);
+
+  useEffect(() => {
     setTheme(readStoredStudioTheme());
   }, []);
 
   useEffect(() => {
     persistStudioTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    setShowCanvas(false);
+    const w = window as unknown as {
+      requestIdleCallback?: (cb: () => void, options?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(() => setShowCanvas(true), { timeout: 1200 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const timeoutId = window.setTimeout(() => setShowCanvas(true), 200);
+    return () => window.clearTimeout(timeoutId);
+  }, [seriesId]);
 
   const handleBackToHome = () => {
     router.push(homeHref);
@@ -98,12 +138,12 @@ export default function SeriesDetailPage({ seriesId, homeHref = "/studio/project
 
   const refreshSeriesData = async () => {
     try {
-      const [seriesData, episodesData] = await Promise.all([
-        api.getSeries(seriesId),
-        api.getSeriesEpisodes(seriesId),
+      const [seriesData, episodesBriefs] = await Promise.all([
+        api.getSeriesLight(seriesId),
+        api.getSeriesEpisodeBriefs(seriesId),
       ]);
       setSeries(seriesData);
-      setEpisodes(episodesData);
+      setEpisodes(episodesBriefs);
     } catch (error) {
       console.error("Failed to refresh series data:", error);
     }
@@ -111,8 +151,8 @@ export default function SeriesDetailPage({ seriesId, homeHref = "/studio/project
 
   const handleEpisodeCreated = async (episodeId: string) => {
     try {
-      const episodesData = await api.getSeriesEpisodes(seriesId);
-      setEpisodes(episodesData);
+      const episodesBriefs = await api.getSeriesEpisodeBriefs(seriesId);
+      setEpisodes(episodesBriefs);
       setActiveItem({ kind: "episode", episodeId });
     } catch (error) {
       console.error("Failed to refresh episodes after create:", error);
@@ -133,7 +173,7 @@ export default function SeriesDetailPage({ seriesId, homeHref = "/studio/project
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <p className="text-gray-400 mb-4">系列未找到</p>
+          <p className="text-gray-400 mb-4">剧集未找到</p>
           <a href={homeHref} className="text-primary hover:underline">返回首页</a>
         </div>
       </div>
@@ -147,145 +187,223 @@ export default function SeriesDetailPage({ seriesId, homeHref = "/studio/project
     return series.props || [];
   };
 
-  const selectedEpisode =
-    activeItem.kind === "episode"
-      ? episodes.find((ep) => ep.id === activeItem.episodeId)
-      : null;
-  const summaryItems = [
-    {
-      label: "共享角色",
-      value: series.characters?.length ?? 0,
-      note: "系列级角色资产可在各集间复用",
-      icon: Sparkles,
-    },
-    {
-      label: "共享场景",
-      value: series.scenes?.length ?? 0,
-      note: "场景资产沉淀在系列主账本中",
-      icon: FolderKanban,
-    },
-    {
-      label: "共享道具",
-      value: series.props?.length ?? 0,
-      note: "道具与风格配置统一归档管理",
-      icon: Package,
-    },
-    {
-      label: "剧集数量",
-      value: episodes.length,
-      note: "系列下可直接进入单集创作编辑器",
-      icon: Film,
-    },
-  ];
+  const isEpisodeSelected = activeItem.kind === "episode";
+  const isSharedAssetsSelected = activeItem.kind === "shared_assets";
+  const backgroundColor = theme === "light" ? "#f4f5f7" : "#0f172a";
 
   return (
     <main data-studio-theme={theme} className="studio-theme-root pipeline-theme-root flex h-screen w-screen overflow-hidden relative bg-background">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <CreativeCanvas theme={theme} />
+        {showCanvas ? (
+          <CreativeCanvas theme={theme} />
+        ) : (
+          <div className="absolute inset-0 z-0 h-full w-full" style={{ backgroundColor }} aria-hidden="true" />
+        )}
       </div>
 
       {/* ── Sidebar ── */}
-      <div className="relative z-10 h-full flex">
+      <div className="relative z-10 h-full flex w-full">
         <SeriesSidebar
           series={series}
           episodes={episodes}
           activeItem={activeItem}
           onItemChange={setActiveItem}
           onBack={handleBackToHome}
-          isEditingTitle={isEditingTitle}
-          editTitle={editTitle}
-          onEditTitleChange={setEditTitle}
-          onTitleDoubleClick={() => setIsEditingTitle(true)}
-          onTitleSave={handleTitleSave}
-          onTitleKeyDown={handleTitleKeyDown}
           onOpenCreateEpisode={() => setIsCreateEpisodeOpen(true)}
           onOpenImportAssets={() => setShowImportAssets(true)}
+          theme={theme}
+          onThemeChange={setTheme}
         />
 
         {/* ── Content Area ── */}
         <div className="flex-1 overflow-hidden px-5 py-5 lg:px-8">
           <div className="flex h-full flex-col gap-6 overflow-hidden">
-            <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between px-1">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="h-1 w-8 rounded-full bg-primary/80" />
-                  <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Series Console</span>
-                </div>
-                <h1 className="text-3xl font-bold tracking-tight text-gray-200">{series.title}</h1>
-                <p className="mt-2 text-sm text-gray-400 max-w-2xl">管理系列共享资产、分集推进和复用规则。</p>
-              </div>
+            {isSharedAssetsSelected ? (
+              <div className="grid h-full grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_18px_42px_rgba(2,6,23,0.16)] transition-all duration-300">
+                  <SeriesSharedAssetsPanel
+                    tab={assetTab}
+                    onTabChange={setAssetTab}
+                    characters={getAssets("characters") as Character[]}
+                    scenes={getAssets("scenes") as Scene[]}
+                    props={getAssets("props") as Prop[]}
+                  />
+                </section>
 
-              <div className="flex flex-wrap items-center gap-3 md:justify-end">
-                <div className="flex items-center gap-6 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 shadow-[0_18px_42px_rgba(2,6,23,0.14)]">
-                  {summaryItems.slice(0, 3).map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <div key={item.label} className="flex flex-col items-center gap-1 px-4 first:pl-0 last:pr-0 border-r border-white/10 last:border-0">
-                        <div className="flex items-center gap-1.5 text-gray-400">
-                          <Icon size={12} />
-                          <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
-                        </div>
-                        <span className="text-xl font-bold text-gray-200">{item.value}</span>
+                <aside className="order-last lg:order-none overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_18px_42px_rgba(2,6,23,0.16)]">
+                  <div className="flex h-full flex-col overflow-hidden">
+                    <div className="px-5 pt-5">
+                      <div className="flex items-center gap-2">
+                        <span className="h-1 w-7 rounded-full bg-white/10" />
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-gray-500">剧集</span>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="mt-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          {isEditingTitle ? (
+                            <div className="flex items-center gap-2 w-full">
+                              <input
+                                type="text"
+                                value={editTitle}
+                                onChange={(e) => setEditTitle(e.target.value)}
+                                onKeyDown={handleTitleKeyDown}
+                                onBlur={handleTitleSave}
+                                className="w-full bg-transparent text-2xl font-bold tracking-tight text-gray-200 outline-none border-b-2 border-primary/60 focus:border-primary"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={handleTitleSave}
+                                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+                                title="保存"
+                              >
+                                <Check size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setEditTitle(series.title);
+                                  setIsEditingTitle(false);
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+                                title="取消"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onDoubleClick={() => setIsEditingTitle(true)}
+                              className="group min-w-0 text-left"
+                              title="双击编辑标题"
+                            >
+                              <div className="flex items-center gap-2">
+                                <h1 className="truncate text-2xl font-bold tracking-tight text-gray-200 group-hover:text-white">
+                                  {series.title}
+                                </h1>
+                                <PencilLine size={16} className="text-gray-500 opacity-0 transition-opacity group-hover:opacity-100" />
+                              </div>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-                <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setTheme("light")}
-                    aria-pressed={theme === "light"}
-                    className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
-                      theme === "light" ? "bg-white text-slate-950 shadow-sm" : "text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    <Sun size={14} />
-                    浅色
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTheme("dark")}
-                    aria-pressed={theme === "dark"}
-                    className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
-                      theme === "dark" ? "bg-primary text-white shadow-sm" : "text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    <Moon size={14} />
-                    深色
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsCreateEpisodeOpen(true)}
-                  className="studio-button studio-button-primary !h-10 !rounded-2xl !px-5 text-[13px]"
-                >
-                  <Plus size={16} />
-                  添加集数
-                </button>
+                    <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4 scrollbar-hide">
+                      {series.description ? (
+                        <SeriesDescriptionCard
+                          description={series.description}
+                          expanded={isDescriptionExpanded}
+                          onToggle={() => setIsDescriptionExpanded((v) => !v)}
+                        />
+                      ) : (
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[0_10px_28px_rgba(2,6,23,0.14)]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-mono uppercase tracking-wider text-gray-500">简介</span>
+                            <span className="h-px flex-1 bg-white/10" />
+                          </div>
+                          <div className="mt-2 text-sm text-gray-500">暂无简介</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </aside>
               </div>
-            </section>
+            ) : (
+              <>
+                <section className="px-1">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {isEditingTitle ? (
+                            <div className="flex items-center gap-2 w-full">
+                              <input
+                                type="text"
+                                value={editTitle}
+                                onChange={(e) => setEditTitle(e.target.value)}
+                                onKeyDown={handleTitleKeyDown}
+                                onBlur={handleTitleSave}
+                                className="w-full bg-transparent text-3xl font-bold tracking-tight text-gray-200 outline-none border-b-2 border-primary/60 focus:border-primary"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={handleTitleSave}
+                                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+                                title="保存"
+                              >
+                                <Check size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setEditTitle(series.title);
+                                  setIsEditingTitle(false);
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+                                title="取消"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onDoubleClick={() => setIsEditingTitle(true)}
+                              className="group min-w-0 text-left"
+                              title="双击编辑标题"
+                            >
+                              <div className="flex items-center gap-2">
+                                <h1 className="truncate text-3xl font-bold tracking-tight text-gray-200 group-hover:text-white">
+                                  {series.title}
+                                </h1>
+                                <PencilLine size={16} className="text-gray-500 opacity-0 transition-opacity group-hover:opacity-100" />
+                              </div>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-          {/* ── Main Content Area ── */}
-            <section className="flex-1 overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_18px_42px_rgba(2,6,23,0.16)] transition-all duration-300">
-              <AnimatePresence mode="wait">
-                {activeItem.kind === "asset" ? (
-                  <AssetContentPanel
-                    key={`asset-${activeItem.tab}`}
-                    tab={activeItem.tab}
-                    assets={getAssets(activeItem.tab)}
-                    label={ASSET_LABELS[activeItem.tab]}
-                  />
-                ) : selectedEpisode ? (
-                  <EpisodeContentPanel
-                    key={`episode-${selectedEpisode.id}`}
-                    episode={selectedEpisode}
-                    onOpenEditor={() => handleOpenEpisode(selectedEpisode.id)}
-                  />
-                ) : null}
-              </AnimatePresence>
-            </section>
+                    {series.description ? (
+                      <SeriesDescriptionCard
+                        description={series.description}
+                        expanded={isDescriptionExpanded}
+                        onToggle={() => setIsDescriptionExpanded((v) => !v)}
+                      />
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="flex-1 overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_18px_42px_rgba(2,6,23,0.16)] transition-all duration-300">
+                  <AnimatePresence mode="wait">
+                    {activeItem.kind === "shared_assets" ? (
+                      <SeriesSharedAssetsPanel
+                        key="shared-assets"
+                        tab={assetTab}
+                        onTabChange={setAssetTab}
+                        characters={getAssets("characters") as Character[]}
+                        scenes={getAssets("scenes") as Scene[]}
+                        props={getAssets("props") as Prop[]}
+                      />
+                    ) : isEpisodeSelected && selectedEpisode ? (
+                      <EpisodeContentPanel
+                        key={`episode-${selectedEpisode.id}`}
+                        episode={selectedEpisode}
+                        onOpenEditor={() => handleOpenEpisode(selectedEpisode.id)}
+                      />
+                    ) : isEpisodeSelected && selectedEpisodeLoading ? (
+                      <div className="flex items-center justify-center h-full text-gray-400">分集详情加载中...</div>
+                    ) : null}
+                  </AnimatePresence>
+                </section>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -315,48 +433,109 @@ const contentTransition = {
   ease: [0.25, 1, 0.5, 1] as const, // ease-out-quart
 };
 
-// ── Asset Content Panel ──
+function SeriesDescriptionCard({
+  description,
+  expanded,
+  onToggle,
+}: {
+  description: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const shouldShowToggle = description.trim().length > 80;
 
-function AssetContentPanel({
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[0_10px_28px_rgba(2,6,23,0.14)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-gray-500">简介</span>
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
+          <div
+            className={`mt-2 text-sm text-gray-300 whitespace-pre-wrap ${
+              expanded ? "" : "max-h-[44px] overflow-hidden"
+            }`}
+          >
+            {description}
+          </div>
+        </div>
+        {shouldShowToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-white/10"
+          >
+            {expanded ? "收起" : "展开"}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SeriesSharedAssetsPanel({
   tab,
-  assets,
-  label,
+  onTabChange,
+  characters,
+  scenes,
+  props,
 }: {
   tab: AssetTab;
-  assets: (Character | Scene | Prop)[];
-  label: string;
+  onTabChange: (tab: AssetTab) => void;
+  characters: Character[];
+  scenes: Scene[];
+  props: Prop[];
 }) {
+  const assets = tab === "characters" ? characters : tab === "scenes" ? scenes : props;
+  const label = ASSET_LABELS[tab];
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
+      exit={{ opacity: 0, y: -16 }}
       transition={contentTransition}
       className="flex-1 flex flex-col overflow-hidden"
     >
-      {/* Header */}
-      <div className="px-8 pt-8 pb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-gray-200 flex items-center gap-3">
-            {label}资产
-            <span className="px-2 py-0.5 rounded-full bg-white/10 text-[11px] font-bold text-gray-300">
-              {assets.length}
-            </span>
-          </h2>
-          <p className="mt-1 text-xs text-gray-400">
-            系列级共享资源，可在所有剧集中复用
-          </p>
+      <div className="px-8 pt-7 pb-5 border-b border-white/10">
+        <div className="flex items-start justify-between gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="h-1 w-7 rounded-full bg-primary/80" />
+              <h2 className="text-xl font-bold text-gray-200">共享资产</h2>
+              <span className="px-2 py-0.5 rounded-full bg-white/10 text-[11px] font-bold text-gray-300">
+                {characters.length + scenes.length + props.length}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              统一沉淀剧集级角色 / 场景 / 道具，供整部作品复用
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <AssetTypeTabs
+            layoutIdPrefix="series-shared-assets"
+            value={tab}
+            onChange={onTabChange}
+            items={[
+              { id: "characters", label: "角色", icon: <Users size={14} />, count: characters.length },
+              { id: "scenes", label: "场景", icon: <MapPin size={14} />, count: scenes.length },
+              { id: "props", label: "道具", icon: <Package size={14} />, count: props.length },
+            ]}
+          />
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-y-auto px-8 pb-10 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto px-8 pb-10 pt-7 scrollbar-hide">
         {assets.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-gray-400">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
               <ImageIcon size={28} className="text-gray-500" />
             </div>
             <p className="text-sm font-medium text-gray-300">暂无{label}资产</p>
+            <p className="mt-1 text-xs text-gray-500">可从左侧“导入资产”快速沉淀到剧集共享池</p>
           </div>
         ) : (
           <motion.div

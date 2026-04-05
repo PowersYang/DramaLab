@@ -6,7 +6,12 @@
 
 import uuid
 
+from sqlalchemy import func
+
 from ...common.log import get_logger
+from ...db.models import ProjectRecord, SeriesRecord
+from ...db.session import session_scope
+from ...providers import ScriptProcessor
 from ...repository import CharacterRepository, ProjectRepository, PropRepository, SceneRepository, SeriesRepository
 from ...schemas.models import PromptConfig, Series
 from ...utils.datetime import utc_now
@@ -26,6 +31,7 @@ class SeriesService:
         self.scene_repository = SceneRepository()
         self.prop_repository = PropRepository()
         self.model_provider_service = ModelProviderService()
+        self.text_provider = ScriptProcessor()
 
     def create_series(
         self,
@@ -137,6 +143,69 @@ class SeriesService:
         logger.info("SERIES_SERVICE: add_episode completed series_id=%s script_id=%s assigned_episode_number=%s", series_id, script_id, project.episode_number)
         return self.series_repository.get(series_id)
 
+    def create_episode_draft(
+        self,
+        series_id: str,
+        title: str,
+        text: str = "",
+        episode_number: int | None = None,
+        organization_id: str | None = None,
+        workspace_id: str | None = None,
+        created_by: str | None = None,
+    ):
+        logger.info(
+            "SERIES_SERVICE: create_episode_draft series_id=%s title=%s has_text=%s episode_number=%s",
+            series_id,
+            title,
+            bool(text),
+            episode_number,
+        )
+        with session_scope() as session:
+            series_record = (
+                session.query(SeriesRecord)
+                .filter(SeriesRecord.id == series_id, SeriesRecord.is_deleted.is_(False))
+                .one_or_none()
+            )
+            if not series_record:
+                logger.warning("SERIES_SERVICE: create_episode_draft series_missing series_id=%s", series_id)
+                raise ValueError("Series not found")
+            if workspace_id is not None and series_record.workspace_id != workspace_id:
+                logger.warning("SERIES_SERVICE: create_episode_draft workspace_mismatch series_id=%s", series_id)
+                raise ValueError("Series not found")
+
+            self.series_repository.touch(series_id, expected_version=series_record.version, session=session)
+
+            resolved_episode_number = episode_number
+            if resolved_episode_number is None:
+                max_episode_number = (
+                    session.query(func.max(ProjectRecord.episode_number))
+                    .filter(
+                        ProjectRecord.is_deleted.is_(False),
+                        ProjectRecord.series_id == series_id,
+                        ProjectRecord.workspace_id == series_record.workspace_id,
+                    )
+                    .scalar()
+                )
+                resolved_episode_number = int(max_episode_number or 0) + 1
+
+            project = self.text_provider.create_draft_script(title, text)
+            project.series_id = series_id
+            project.episode_number = resolved_episode_number
+            project.organization_id = organization_id
+            project.workspace_id = series_record.workspace_id
+            project.created_by = created_by
+            project.updated_by = created_by
+            project.updated_at = utc_now()
+            self.project_repository.create(project, session=session)
+
+        logger.info(
+            "SERIES_SERVICE: create_episode_draft completed series_id=%s project_id=%s episode_number=%s",
+            series_id,
+            project.id,
+            project.episode_number,
+        )
+        return project
+
     def remove_episode(self, series_id: str, script_id: str):
         """把一个分集从系列中移除。"""
         logger.info("SERIES_SERVICE: remove_episode series_id=%s script_id=%s", series_id, script_id)
@@ -160,7 +229,7 @@ class SeriesService:
         if not series:
             logger.warning("SERIES_SERVICE: get_episodes series_missing series_id=%s", series_id)
             raise ValueError("Series not found")
-        episodes = [project for project in self.project_repository.list(workspace_id=series.workspace_id) if project.series_id == series_id]
+        episodes = self.project_repository.list_by_series(series_id, workspace_id=series.workspace_id)
         logger.info("SERIES_SERVICE: get_episodes series_id=%s count=%s", series_id, len(episodes))
         return episodes
 

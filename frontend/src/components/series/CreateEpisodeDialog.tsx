@@ -71,8 +71,8 @@ export default function CreateEpisodeDialog({ isOpen, onClose, seriesId, nextEpi
                     EP{nextEpisodeNumber}
                   </span>
                 </div>
-                <h2 className="mt-3 text-xl font-semibold text-gray-200">添加集数</h2>
-                <p className="mt-1 text-sm text-gray-400">先创建一个集数标题，后续在单集编辑器里推进制作。</p>
+                <h2 className="mt-3 text-xl font-semibold text-gray-200">添加项目</h2>
+                <p className="mt-1 text-sm text-gray-400">先创建一个单集标题，后续在单集编辑器里推进制作。</p>
               </div>
               <button onClick={onClose} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-white/5 hover:text-gray-200">
                 <X size={18} />
@@ -112,4 +112,3 @@ export default function CreateEpisodeDialog({ isOpen, onClose, seriesId, nextEpi
     </AnimatePresence>
   );
 }
-

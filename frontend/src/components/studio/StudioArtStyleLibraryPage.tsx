@@ -6,26 +6,16 @@ import {
   Loader2, 
   Palette, 
   Plus, 
+  Pencil,
   Save, 
   Search, 
   Trash2,
-  ChevronRight,
-  Info,
-  Sparkles,
+  X,
   AlertCircle
 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import type { StyleConfig } from "@/store/projectStore";
-
-/**
- * 🎨 StudioArtStyleLibraryPage - 美术风格策略中心 (Refined Professional Edition)
- * 
- * 视觉风格：
- * - 遵循 DramaLab 全局浅色专业主题 (globals.css: brand-panel, admin-primary)
- * - 清晰的双栏布局：左侧“风格资源台账”，右侧“风格编辑器”
- * - 高对比度文字，严谨的表单分组，细腻的悬停反馈
- */
 
 function createDraftStyle(): StyleConfig {
   return {
@@ -44,15 +34,155 @@ function upsertStyle(styles: StyleConfig[], nextStyle: StyleConfig): StyleConfig
     : [nextStyle, ...styles];
 }
 
+function StyleEditorModal({
+  open,
+  mode,
+  draft,
+  isSaving,
+  error,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  mode: "create" | "edit";
+  draft: StyleConfig;
+  isSaving: boolean;
+  error: string | null;
+  onChange: (next: StyleConfig) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!open) return null;
+  const title = mode === "create" ? "新建美术风格" : "编辑美术风格";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-4xl rounded-[1.75rem] bg-white shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5 bg-slate-50/40">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+              <Palette size={18} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">{title}</h3>
+              <p className="text-xs text-slate-500 mt-0.5">风格名称、描述与提示词会同步到风格库台账</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="rounded-full p-2 text-slate-400 hover:bg-white hover:text-slate-900 transition-all disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="max-h-[75vh] overflow-y-auto p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            <section className="lg:col-span-5 flex">
+              <div className="studio-panel p-4 flex flex-col w-full">
+                <div className="text-[11px] font-extrabold tracking-widest text-slate-400 mb-3">基本信息</div>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5">风格名称</label>
+                <input
+                  value={draft.name}
+                  onChange={(e) => onChange({ ...draft, name: e.target.value })}
+                  placeholder="例如：浮世绘 / 赛博朋克 / 国风水墨"
+                  className="studio-input h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all"
+                />
+
+                <label className="block text-xs font-bold text-slate-600 mt-4 mb-1.5">风格描述</label>
+                <textarea
+                  value={draft.description || ""}
+                  onChange={(e) => onChange({ ...draft, description: e.target.value })}
+                  rows={4}
+                  placeholder="写清视觉特征、适用场景、构图和光影偏好等"
+                  className="studio-textarea px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm leading-relaxed resize-none"
+                />
+              </div>
+            </section>
+
+            <section className="lg:col-span-7 flex">
+              <div className="studio-panel p-4 flex flex-col w-full">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-extrabold tracking-widest text-slate-400">提示词</div>
+                  <div className="text-[11px] font-bold text-slate-400 tracking-widest">提示词实验室</div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-600">正向提示词</label>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full tracking-wider">
+                      必填
+                    </span>
+                  </div>
+                  <textarea
+                    value={draft.positive_prompt}
+                    onChange={(e) => onChange({ ...draft, positive_prompt: e.target.value })}
+                    rows={7}
+                    placeholder="例如：电影感光影、强细节、清晰线条、统一风格词…"
+                    className="studio-textarea px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm leading-relaxed"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-600">负向提示词</label>
+                    <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full tracking-wider">可选</span>
+                  </div>
+                  <textarea
+                    value={draft.negative_prompt}
+                    onChange={(e) => onChange({ ...draft, negative_prompt: e.target.value })}
+                    rows={5}
+                    placeholder="例如：低质量、模糊、水印、文字、畸形手…"
+                    className="studio-textarea px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm leading-relaxed"
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {error && (
+            <div className="mt-5 flex items-center gap-2 p-3 bg-red-50 text-red-700 border border-red-100 rounded-lg animate-in slide-in-from-top-2 duration-200">
+              <AlertCircle size={16} strokeWidth={3} />
+              <p className="text-xs font-bold uppercase tracking-tight">{error}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 px-6 py-4 bg-white flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end">
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="studio-button studio-button-ghost h-11 px-5 border-slate-200 hover:bg-slate-50 transition-all disabled:opacity-40"
+          >
+            取消
+          </button>
+          <button
+            onClick={onSubmit}
+            disabled={isSaving}
+            className="studio-button studio-button-primary h-11 px-5 font-bold shadow-md shadow-blue-500/20 active:scale-95 transition-transform disabled:opacity-60"
+          >
+            {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            <span>保存</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StudioArtStyleLibraryPage() {
   const [styles, setStyles] = useState<StyleConfig[]>([]);
-  const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
-  const [editingStyle, setEditingStyle] = useState<StyleConfig>(createDraftStyle());
   const [keyword, setKeyword] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [modalDraft, setModalDraft] = useState<StyleConfig>(createDraftStyle());
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<StyleConfig | null>(null);
 
   useEffect(() => {
     const loadStyles = async () => {
@@ -61,13 +191,6 @@ export default function StudioArtStyleLibraryPage() {
         const payload = await api.getUserArtStyles();
         const nextStyles = payload.styles || [];
         setStyles(nextStyles);
-        if (nextStyles.length > 0) {
-          setSelectedStyleId(nextStyles[0].id);
-          setEditingStyle(nextStyles[0]);
-        } else {
-          setSelectedStyleId(null);
-          setEditingStyle(createDraftStyle());
-        }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "风格库加载失败");
       } finally {
@@ -89,22 +212,7 @@ export default function StudioArtStyleLibraryPage() {
     );
   }, [keyword, styles]);
 
-  const handleSelectStyle = (style: StyleConfig) => {
-    setSelectedStyleId(style.id);
-    setEditingStyle(style);
-    setMessage(null);
-    setError(null);
-  };
-
-  const handleCreate = () => {
-    const draft = createDraftStyle();
-    setSelectedStyleId(draft.id);
-    setEditingStyle(draft);
-    setMessage(null);
-    setError(null);
-  };
-
-  const handlePersistStyles = async (nextStyles: StyleConfig[], successMessage: string, nextSelectedId?: string | null) => {
+  const handlePersistStyles = async (nextStyles: StyleConfig[], successMessage: string): Promise<boolean> => {
     try {
       setIsSaving(true);
       setError(null);
@@ -112,55 +220,67 @@ export default function StudioArtStyleLibraryPage() {
       const payload = await api.saveUserArtStyles(nextStyles);
       const persistedStyles = payload.styles || [];
       setStyles(persistedStyles);
-      if (nextSelectedId) {
-        const selected = persistedStyles.find((style) => style.id === nextSelectedId) || null;
-        setSelectedStyleId(selected?.id || null);
-        setEditingStyle(selected || createDraftStyle());
-      } else if (persistedStyles.length > 0) {
-        setSelectedStyleId(persistedStyles[0].id);
-        setEditingStyle(persistedStyles[0]);
-      } else {
-        setSelectedStyleId(null);
-        setEditingStyle(createDraftStyle());
-      }
       setMessage(successMessage);
       setTimeout(() => setMessage(null), 3000);
+      return true;
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "风格库保存失败");
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleSave = async () => {
-    if (!editingStyle.name.trim() || !editingStyle.positive_prompt.trim()) {
+  const openCreateModal = () => {
+    setModalMode("create");
+    setModalDraft(createDraftStyle());
+    setModalOpen(true);
+    setMessage(null);
+    setError(null);
+  };
+
+  const openEditModal = (style: StyleConfig) => {
+    setModalMode("edit");
+    setModalDraft({ ...style });
+    setModalOpen(true);
+    setMessage(null);
+    setError(null);
+  };
+
+  const closeModal = () => {
+    if (isSaving) return;
+    setModalOpen(false);
+    setError(null);
+  };
+
+  const handleSubmitModal = async () => {
+    if (!modalDraft.name.trim() || !modalDraft.positive_prompt.trim()) {
       setError("请至少填写风格名称和正向提示词");
       return;
     }
-
     const styleToSave: StyleConfig = {
-      ...editingStyle,
-      name: editingStyle.name.trim(),
-      description: editingStyle.description?.trim() || "",
-      positive_prompt: editingStyle.positive_prompt.trim(),
-      negative_prompt: editingStyle.negative_prompt.trim(),
+      ...modalDraft,
+      name: modalDraft.name.trim(),
+      description: modalDraft.description?.trim() || "",
+      positive_prompt: modalDraft.positive_prompt.trim(),
+      negative_prompt: modalDraft.negative_prompt.trim(),
       is_custom: true,
     };
     const nextStyles = upsertStyle(styles, styleToSave);
-    await handlePersistStyles(nextStyles, "风格配置保存成功", styleToSave.id);
+    const ok = await handlePersistStyles(nextStyles, modalMode === "create" ? "风格已创建" : "风格已更新");
+    if (ok) setModalOpen(false);
   };
 
-  const handleDelete = async () => {
-    if (!selectedStyleId || !confirm("确定要删除此风格吗？")) {
-      return;
-    }
-    const nextStyles = styles.filter((style) => style.id !== selectedStyleId);
-    await handlePersistStyles(nextStyles, "风格已成功删除", nextStyles[0]?.id || null);
+  const handleDeleteStyle = async (style: StyleConfig) => {
+    if (isSaving) return;
+    setDeleteTarget(style);
+    setDeleteModalOpen(true);
+    setMessage(null);
+    setError(null);
   };
 
   return (
     <div className="space-y-6">
-      {/* 🛠 顶部工具栏 - 搜索与操作 */}
       <section className="studio-panel p-4 flex items-center justify-between shadow-sm">
         <div className="admin-filter-bar flex-1 max-w-lg">
           <label className="admin-filter-search w-full relative group">
@@ -174,202 +294,213 @@ export default function StudioArtStyleLibraryPage() {
           </label>
         </div>
 
-        <button onClick={handleCreate} className="studio-button studio-button-primary shadow-sm active:scale-95 transition-transform">
+        <button onClick={openCreateModal} className="studio-button studio-button-primary shadow-sm active:scale-95 transition-transform">
           <Plus size={16} />
           <span>新建美术风格</span>
         </button>
       </section>
 
-      {/* 🗄 双栏主体 */}
-      <section className="admin-workbench-grid grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* 📚 风格台账列表 */}
-        <section className="lg:col-span-7 xl:col-span-8 studio-panel overflow-hidden shadow-sm flex flex-col min-h-[500px]">
-          <div className="admin-ledger-head flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-slate-800 tracking-tight">风格资源台账</h3>
-              <span className="admin-status-badge admin-status-badge-neutral text-[11px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                {filteredStyles.length} 款可用
-              </span>
+      {(message || error) && (
+        <section className="space-y-3">
+          {message && (
+            <div className="studio-panel p-3 flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-100 animate-in fade-in zoom-in-95 duration-200">
+              <Check size={16} strokeWidth={3} />
+              <p className="text-xs font-bold uppercase tracking-tight">{message}</p>
             </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto max-h-[70vh] custom-scrollbar">
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                <Loader2 size={24} className="animate-spin mb-3" />
-                <p className="text-sm font-medium">正在同步美术风格库...</p>
-              </div>
-            ) : filteredStyles.length > 0 ? (
-              <div className="divide-y divide-slate-100">
-                {filteredStyles.map((style) => {
-                  const isSelected = style.id === selectedStyleId;
-                  return (
-                    <button
-                      key={style.id}
-                      onClick={() => handleSelectStyle(style)}
-                      className={`w-full group flex items-center justify-between p-5 text-left transition-all hover:bg-slate-50/80 ${
-                        isSelected ? "bg-blue-50/40 border-l-4 border-l-blue-600" : "border-l-4 border-l-transparent"
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0 mr-4">
-                        <div className="flex items-center gap-3 mb-1">
-                          <p className={`text-base font-bold truncate ${isSelected ? "text-blue-700" : "text-slate-900"}`}>
-                            {style.name || "未命名风格"}
-                          </p>
-                          {isSelected && <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded uppercase">Editing</span>}
-                        </div>
-                        <p className="text-sm text-slate-500 line-clamp-1">
-                          {style.description || "暂无描述，建议添加风格定位说明"}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-6 text-xs font-semibold uppercase tracking-tighter text-slate-400">
-                        <div className="flex flex-col items-end">
-                          <span className="text-[10px] text-slate-400 mb-1 font-bold">Positive</span>
-                          <span className={style.positive_prompt.trim() ? "text-emerald-600" : "text-slate-300"}>
-                            {style.positive_prompt.trim() ? "已填写" : "未填写"}
-                          </span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-[10px] text-slate-400 mb-1 font-bold">Negative</span>
-                          <span className={style.negative_prompt.trim() ? "text-blue-500" : "text-slate-300"}>
-                            {style.negative_prompt.trim() ? "已填写" : "未填写"}
-                          </span>
-                        </div>
-                        <ChevronRight size={16} className={`ml-2 transition-transform group-hover:translate-x-1 ${isSelected ? "text-blue-600" : "text-slate-300"}`} />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-24 px-10 text-center">
-                <Palette className="text-slate-200 mb-4" size={48} />
-                <h4 className="text-slate-900 font-bold text-lg mb-1">未找到美术风格</h4>
-                <p className="text-slate-500 text-sm max-w-xs mx-auto">
-                  库中暂时没有匹配的风格资源。点击右上角按钮创建您的第一个自定义美术风格。
-                </p>
-              </div>
-            )}
-          </div>
+          )}
+          {error && (
+            <div className="studio-panel p-3 flex items-center gap-2 bg-red-50 text-red-700 border border-red-100 animate-in slide-in-from-top-2 duration-200">
+              <AlertCircle size={16} strokeWidth={3} />
+              <p className="text-xs font-bold uppercase tracking-tight">{error}</p>
+            </div>
+          )}
         </section>
+      )}
 
-        {/* 🖌 风格编辑器面板 */}
-        <aside className="lg:col-span-5 xl:col-span-4 sticky top-6">
-          <section className="studio-panel shadow-md border border-slate-200">
-            <div className="admin-inspector-head border-b border-slate-100 bg-slate-50/30 px-5 py-4">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
-                  <Palette size={18} />
-                </div>
-                <h3 className="text-lg font-bold text-slate-800">风格编辑器</h3>
-              </div>
+      <section className="studio-panel overflow-hidden shadow-sm flex flex-col min-h-[520px]">
+        <div className="admin-ledger-head flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-5 py-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <h3 className="text-lg font-extrabold text-slate-800 tracking-tight truncate">风格资源台账</h3>
+            <span className="admin-status-badge admin-status-badge-neutral text-[11px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+              {filteredStyles.length} 条
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-400 font-bold tracking-widest hidden sm:block">台账</div>
+        </div>
+
+        <div className="flex-1 overflow-auto max-h-[72vh] custom-scrollbar">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-72 text-slate-400">
+              <Loader2 size={24} className="animate-spin mb-3" />
+              <p className="text-sm font-medium">正在同步美术风格库...</p>
             </div>
+          ) : filteredStyles.length > 0 ? (
+            <div className="min-w-[980px]">
+              <table className="w-full table-fixed">
+                <thead className="sticky top-0 z-10 bg-white border-b border-slate-100">
+                  <tr className="text-left">
+                    <th className="px-5 py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-500 w-52">风格名称</th>
+                    <th className="px-5 py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-500 w-60">风格描述</th>
+                    <th className="px-5 py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-500 w-[22rem]">正向提示词</th>
+                    <th className="px-5 py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-500 w-[22rem]">负向提示词</th>
+                    <th className="px-5 py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-500 w-48 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredStyles.map((style) => (
+                    <tr key={style.id} className="group hover:bg-slate-50/60 transition-colors">
+                      <td className="px-5 py-4 align-middle">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="h-8 w-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 group-hover:bg-blue-100 group-hover:text-blue-700 transition-colors">
+                            <Palette size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-extrabold text-slate-900 truncate" title={style.name || ""}>
+                                {style.name || "未命名风格"}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
 
-            <div className="admin-inspector-body p-5 space-y-6">
-              {/* 核心识别 */}
-              <div className="admin-form-section border border-slate-100 bg-white rounded-xl p-4 space-y-4">
-                <div className="flex items-center gap-2 text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1">
-                  <Info size={14} />
-                  <span>核心识别</span>
-                </div>
-                
-                <div className="admin-form-field">
-                  <label className="text-xs font-bold text-slate-500 mb-1.5 block">风格名称</label>
-                  <input
-                    value={editingStyle.name}
-                    onChange={(e) => setEditingStyle((prev) => ({ ...prev, name: e.target.value }))}
-                    placeholder="例如：浮世绘 / 赛博朋克"
-                    className="studio-input h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all"
-                  />
-                </div>
+                      <td className="px-5 py-4 align-middle">
+                        <div className="text-sm text-slate-600 line-clamp-2 leading-relaxed" title={style.description || ""}>
+                          {style.description?.trim() ? style.description : "—"}
+                        </div>
+                      </td>
 
-                <div className="admin-form-field">
-                  <label className="text-xs font-bold text-slate-500 mb-1.5 block">风格描述</label>
-                  <textarea
-                    value={editingStyle.description || ""}
-                    onChange={(e) => setEditingStyle((prev) => ({ ...prev, description: e.target.value }))}
-                    rows={2}
-                    placeholder="简述此风格的视觉特征、适用场景等"
-                    className="studio-textarea px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm resize-none"
-                  />
-                </div>
-              </div>
+                      <td className="px-5 py-4 align-middle">
+                        <div className="text-sm text-slate-700 line-clamp-2 leading-relaxed" title={style.positive_prompt || ""}>
+                          {style.positive_prompt?.trim() ? style.positive_prompt : "—"}
+                        </div>
+                      </td>
 
-              {/* 提示词工程 */}
-              <div className="admin-form-section border border-slate-100 bg-white rounded-xl p-4 space-y-4">
-                <div className="flex items-center gap-2 text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1">
-                  <Sparkles size={14} />
-                  <span>Prompt 实验室</span>
-                </div>
+                      <td className="px-5 py-4 align-middle">
+                        <div className="text-sm text-slate-700 line-clamp-2 leading-relaxed" title={style.negative_prompt || ""}>
+                          {style.negative_prompt?.trim() ? style.negative_prompt : "—"}
+                        </div>
+                      </td>
 
-                <div className="admin-form-field">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-500 block">正向提示词 (Positive)</label>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded uppercase tracking-tighter">Reinforce</span>
-                  </div>
-                  <textarea
-                    value={editingStyle.positive_prompt}
-                    onChange={(e) => setEditingStyle((prev) => ({ ...prev, positive_prompt: e.target.value }))}
-                    rows={5}
-                    placeholder="cinematic lighting, ultra-detailed, 8k..."
-                    className="studio-textarea px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm leading-relaxed"
-                  />
-                </div>
-
-                <div className="admin-form-field">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-500 block">负向提示词 (Negative)</label>
-                    <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded uppercase tracking-tighter">Filter</span>
-                  </div>
-                  <textarea
-                    value={editingStyle.negative_prompt}
-                    onChange={(e) => setEditingStyle((prev) => ({ ...prev, negative_prompt: e.target.value }))}
-                    rows={4}
-                    placeholder="low quality, blurry, watermark..."
-                    className="studio-textarea px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm leading-relaxed"
-                  />
-                </div>
-              </div>
-
-              {/* 底部操作 */}
-              <div className="flex flex-col gap-3 pt-4">
-                <button 
-                  onClick={handleSave} 
-                  disabled={isSaving} 
-                  className="studio-button studio-button-primary h-11 w-full font-bold shadow-md shadow-blue-500/20 active:scale-95 transition-transform"
-                >
-                  {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                  <span>保存风格配置</span>
-                </button>
-                <button 
-                  onClick={handleDelete}
-                  disabled={!selectedStyleId || isSaving || !styles.some((s) => s.id === selectedStyleId)}
-                  className="studio-button studio-button-ghost h-11 w-full border-slate-200 hover:border-red-200 hover:text-red-600 hover:bg-red-50/50 transition-all font-semibold"
-                >
-                  <Trash2 size={18} />
-                  <span>删除当前风格</span>
-                </button>
-              </div>
-
-              {/* 状态通知 */}
-              {message && (
-                <div className="flex items-center gap-2 p-3 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg animate-in fade-in zoom-in-95 duration-200">
-                  <Check size={16} strokeWidth={3} />
-                  <p className="text-xs font-bold uppercase tracking-tight">{message}</p>
-                </div>
-              )}
-              {error && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 border border-red-100 rounded-lg animate-in slide-in-from-top-2 duration-200">
-                  <AlertCircle size={16} strokeWidth={3} />
-                  <p className="text-xs font-bold uppercase tracking-tight">{error}</p>
-                </div>
-              )}
+                      <td className="px-5 py-4 align-middle">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditModal(style)}
+                            disabled={isSaving}
+                            className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all text-sm font-extrabold inline-flex items-center gap-2 whitespace-nowrap min-w-[88px] justify-center shadow-sm shadow-slate-900/5 disabled:opacity-50"
+                          >
+                            <Pencil size={16} />
+                            编辑
+                          </button>
+                          <button
+                            onClick={() => void handleDeleteStyle(style)}
+                            disabled={isSaving}
+                            className="h-9 px-3 rounded-xl border border-red-200 bg-red-600 text-white hover:bg-red-700 transition-all text-sm font-extrabold inline-flex items-center gap-2 whitespace-nowrap min-w-[88px] justify-center shadow-sm shadow-red-900/10 disabled:opacity-50"
+                          >
+                            <Trash2 size={16} />
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </section>
-        </aside>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-24 px-10 text-center">
+              <Palette className="text-slate-200 mb-4" size={48} />
+              <h4 className="text-slate-900 font-bold text-lg mb-1">未找到美术风格</h4>
+              <p className="text-slate-500 text-sm max-w-xs mx-auto">
+                库中暂时没有匹配的风格资源。点击右上角按钮创建您的第一个自定义美术风格。
+              </p>
+            </div>
+          )}
+        </div>
       </section>
+
+      <StyleEditorModal
+        open={modalOpen}
+        mode={modalMode}
+        draft={modalDraft}
+        isSaving={isSaving}
+        error={error}
+        onChange={(next) => {
+          setModalDraft(next);
+          if (error) setError(null);
+        }}
+        onClose={closeModal}
+        onSubmit={() => void handleSubmitModal()}
+      />
+
+      {deleteModalOpen && deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-[1.5rem] bg-white shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5 bg-red-50/60">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-red-600 text-white flex items-center justify-center">
+                  <Trash2 size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">确认删除</h3>
+                  <p className="text-xs text-slate-600 mt-0.5">此操作不可撤销，请谨慎操作</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (isSaving) return;
+                  setDeleteModalOpen(false);
+                  setDeleteTarget(null);
+                }}
+                disabled={isSaving}
+                className="rounded-full p-2 text-slate-400 hover:bg-white hover:text-slate-900 transition-all disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                <div className="text-xs font-bold text-slate-500 tracking-widest">将要删除的风格</div>
+                <div className="mt-2 text-base font-extrabold text-slate-900 truncate" title={deleteTarget.name || ""}>
+                  {deleteTarget.name || "未命名风格"}
+                </div>
+                <div className="mt-2 text-sm text-slate-600 line-clamp-2 leading-relaxed" title={deleteTarget.description || ""}>
+                  {deleteTarget.description?.trim() ? deleteTarget.description : "—"}
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-slate-100 px-6 py-4 bg-white flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end">
+              <button
+                onClick={() => {
+                  if (isSaving) return;
+                  setDeleteModalOpen(false);
+                  setDeleteTarget(null);
+                }}
+                disabled={isSaving}
+                className="studio-button studio-button-ghost h-11 px-5 border-slate-200 hover:bg-slate-50 transition-all disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                onClick={async () => {
+                  if (isSaving) return;
+                  const nextStyles = styles.filter((item) => item.id !== deleteTarget.id);
+                  const ok = await handlePersistStyles(nextStyles, "风格已成功删除");
+                  if (ok) {
+                    setDeleteModalOpen(false);
+                    setDeleteTarget(null);
+                  }
+                }}
+                disabled={isSaving}
+                className="h-11 px-5 rounded-xl bg-red-600 text-white font-extrabold inline-flex items-center justify-center gap-2 hover:bg-red-700 transition-all shadow-md shadow-red-900/15 disabled:opacity-60"
+              >
+                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {

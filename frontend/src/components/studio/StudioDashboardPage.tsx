@@ -148,10 +148,10 @@ export default function StudioDashboardPage() {
 
   const stats = useMemo(
     () => [
-      { label: "项目总数", value: projects.length, icon: FolderKanban },
-      { label: "活跃系列", value: seriesList.length, icon: Boxes },
-      { label: "进行中任务", value: runningTasks, icon: Workflow },
+      { label: "剧集总数", value: seriesList.length, icon: Boxes },
+      { label: "制作项目", value: projects.length, icon: FolderKanban },
       { label: "已完结项目", value: projects.filter((item) => item.status === "completed").length, icon: CheckCheck },
+      { label: "进行中任务", value: runningTasks, icon: Workflow },
     ],
     [projects, runningTasks, seriesList.length],
   );
@@ -220,12 +220,21 @@ export default function StudioDashboardPage() {
                   <Plus size={20} />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800">新建项目</h4>
-                  <p className="text-[10px] text-slate-500">立项新的短剧内容</p>
+                  <h4 className="text-sm font-bold text-slate-800">新建剧集</h4>
+                  <p className="text-[10px] text-slate-500">先建立作品主档，再在剧集下推进单集制作</p>
                 </div>
               </Link>
-              <Link href="/studio/tasks" className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/50 p-4 transition-all hover:border-amber-200 hover:bg-white hover:shadow-sm">
+              <Link href="/studio/projects" className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/50 p-4 transition-all hover:border-amber-200 hover:bg-white hover:shadow-sm">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-500">
+                  <Clock3 size={20} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-800">继续最近项目</h4>
+                  <p className="text-[10px] text-slate-500">从最近的单集或制作项目继续创作</p>
+                </div>
+              </Link>
+              <Link href="/studio/tasks" className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/50 p-4 transition-all hover:border-emerald-200 hover:bg-white hover:shadow-sm">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-500">
                   <Workflow size={20} />
                 </div>
                 <div>

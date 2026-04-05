@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 class BillingServiceTest(unittest.TestCase):
@@ -290,6 +291,7 @@ class BillingServiceTest(unittest.TestCase):
 
     def test_task_charge_accepts_zero_priced_rule_and_persists_zero_debit(self):
         from src.application.services import BillingService
+        from src.db.models import BillingTransactionRecord
         from src.schemas.task_models import TaskJob
         from src.utils.datetime import utc_now
 
@@ -298,19 +300,39 @@ class BillingServiceTest(unittest.TestCase):
         service.upsert_pricing_rule(task_type="project.reparse", price_credits=0, actor_id="admin_1")
 
         now = utc_now()
-        transaction = service.charge_task_submission(
-            job=TaskJob(
-                id="job_billing_zero_1",
-                task_type="project.reparse",
-                queue_name="llm",
-                organization_id=org.id,
-                payload_json={},
-                created_at=now,
-                updated_at=now,
-            ),
-            actor_id="user_zero",
-            idempotency_key="task-charge-zero-1",
-        )
+        original_ensure_task_charge = BillingService._ensure_task_charge
+        testcase = self
+
+        def asserting_ensure_task_charge(self, *, job, billing_account_id, transaction, pricing_rule_snapshot, charge_amount, actor_id, idempotency_key, session):
+            testcase.assertFalse(
+                any(isinstance(record, BillingTransactionRecord) and record.id == transaction.id for record in session.new)
+            )
+            return original_ensure_task_charge(
+                self,
+                job=job,
+                billing_account_id=billing_account_id,
+                transaction=transaction,
+                pricing_rule_snapshot=pricing_rule_snapshot,
+                charge_amount=charge_amount,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+                session=session,
+            )
+
+        with patch.object(BillingService, "_ensure_task_charge", autospec=True, side_effect=asserting_ensure_task_charge):
+            transaction = service.charge_task_submission(
+                job=TaskJob(
+                    id="job_billing_zero_1",
+                    task_type="project.reparse",
+                    queue_name="llm",
+                    organization_id=org.id,
+                    payload_json={},
+                    created_at=now,
+                    updated_at=now,
+                ),
+                actor_id="user_zero",
+                idempotency_key="task-charge-zero-1",
+            )
 
         account = service.get_account(org.id)
         transactions = service.list_transactions(org.id, transaction_type="task_debit")
@@ -371,6 +393,68 @@ class BillingServiceTest(unittest.TestCase):
         self.assertIsNotNone(TaskService().get_job(receipt.job_id))
         self.assertEqual(len(TaskEventRepository().list_by_job(receipt.job_id)), 1)
         self.assertEqual(len(billing_service.list_transactions(org.id, transaction_type="task_debit")), 1)
+
+    def test_task_service_create_job_flushes_task_job_before_charging(self):
+        from src.application.services import BillingService
+        from src.application.tasks import TaskService
+        from src.db.models import TaskJobRecord
+        from src.repository import ProjectRepository
+        from src.schemas.models import Script
+        from src.utils.datetime import utc_now
+
+        org = self._create_org("org_billing_order")
+        now = utc_now()
+        ProjectRepository().sync([
+            Script(
+                id="project_billing_order_1",
+                title="Billing Order Project",
+                original_text="text",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                organization_id=org.id,
+                workspace_id="ws_order",
+                created_by="user_1",
+                updated_by="user_1",
+                created_at=now,
+                updated_at=now,
+            )
+        ])
+
+        billing_service = BillingService()
+        billing_service.upsert_pricing_rule(task_type="project.reparse", price_credits=15, actor_id="admin_1")
+        billing_service.manual_recharge(organization_id=org.id, amount_cents=500, actor_id="admin_1", idempotency_key="seed-order")
+
+        original_charge_task_submission = BillingService.charge_task_submission
+        testcase = self
+
+        def asserting_charge_task_submission(self, *, job, actor_id=None, idempotency_key=None, session=None):
+            testcase.assertIsNotNone(session)
+            testcase.assertFalse(
+                any(isinstance(record, TaskJobRecord) and record.id == job.id for record in session.new)
+            )
+            return original_charge_task_submission(
+                self,
+                job=job,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+                session=session,
+            )
+
+        with patch.object(BillingService, "charge_task_submission", autospec=True, side_effect=asserting_charge_task_submission):
+            receipt = TaskService().create_job(
+                task_type="project.reparse",
+                payload={"project_id": "project_billing_order_1", "text": "new text"},
+                project_id="project_billing_order_1",
+                queue_name="llm",
+                resource_type="project",
+                resource_id="project_billing_order_1",
+                idempotency_key="job-idem-order-1",
+            )
+
+        self.assertIsNotNone(TaskService().get_job(receipt.job_id))
 
     def test_task_service_dedupe_reuse_does_not_charge_twice(self):
         from src.application.services import BillingService

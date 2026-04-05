@@ -18,9 +18,11 @@ from ..providers.text.default_prompts import (
     DEFAULT_VIDEO_POLISH_PROMPT,
 )
 from ..schemas.models import PromptConfig
+from ..schemas.models import Script
 from ..common import signed_response
 from ..schemas.requests import (
     AddEpisodeRequest,
+    CreateEpisodeRequest,
     CreateSeriesRequest,
     GenerateAssetRequest,
     ImportAssetsRequest,
@@ -101,7 +103,11 @@ async def list_series_summaries(context: RequestContext = Depends(get_request_co
 
 
 @router.get("/series/{series_id}")
-async def get_series(series_id: str, context: RequestContext = Depends(get_request_context)):
+async def get_series(
+    series_id: str,
+    include_episodes: bool = True,
+    context: RequestContext = Depends(get_request_context),
+):
     """获取系列详情，包括共享素材和分集列表。"""
     logger.info("SERIES_API: get_series series_id=%s", series_id)
     series = series_service.get_series(series_id)
@@ -111,19 +117,22 @@ async def get_series(series_id: str, context: RequestContext = Depends(get_reque
     if series.workspace_id != context.current_workspace_id:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    episodes = series_service.get_episodes(series_id)
     result = series.model_dump()
-    result["episodes"] = [
-        {
-            "id": episode.id,
-            "title": episode.title,
-            "episode_number": episode.episode_number,
-            "created_at": episode.created_at,
-            "updated_at": episode.updated_at,
-        }
-        for episode in episodes
-    ]
-    logger.info("SERIES_API: get_series completed series_id=%s episodes=%s", series_id, len(episodes))
+    if include_episodes:
+        episodes = series_service.get_episodes(series_id)
+        result["episodes"] = [
+            {
+                "id": episode.id,
+                "title": episode.title,
+                "episode_number": episode.episode_number,
+                "created_at": episode.created_at,
+                "updated_at": episode.updated_at,
+            }
+            for episode in episodes
+        ]
+        logger.info("SERIES_API: get_series completed series_id=%s episodes=%s", series_id, len(episodes))
+    else:
+        logger.info("SERIES_API: get_series completed series_id=%s episodes=skipped", series_id)
     return signed_response(result)
 
 
@@ -194,6 +203,38 @@ async def add_episode_to_series(
         return signed_response(series)
     except ValueError as exc:
         logger.warning("SERIES_API: add_episode_to_series failed series_id=%s detail=%s", series_id, exc)
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/series/{series_id}/episodes/create", response_model=Script)
+async def create_episode_in_series(
+    series_id: str,
+    request: CreateEpisodeRequest,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
+    try:
+        logger.info(
+            "SERIES_API: create_episode_in_series series_id=%s title=%s episode_number=%s",
+            series_id,
+            request.title,
+            request.episode_number,
+        )
+        existing = series_service.get_series(series_id)
+        if not existing or existing.workspace_id != context.current_workspace_id:
+            raise ValueError("Series not found")
+        project = series_service.create_episode_draft(
+            series_id=series_id,
+            title=request.title,
+            text=request.text,
+            episode_number=request.episode_number,
+            organization_id=context.current_organization_id,
+            workspace_id=context.current_workspace_id,
+            created_by=context.user.id,
+        )
+        logger.info("SERIES_API: create_episode_in_series completed series_id=%s project_id=%s", series_id, project.id)
+        return signed_response(project)
+    except ValueError as exc:
+        logger.warning("SERIES_API: create_episode_in_series failed series_id=%s detail=%s", series_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
 
 

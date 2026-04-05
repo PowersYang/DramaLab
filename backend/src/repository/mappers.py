@@ -12,6 +12,7 @@ from ..db.models import (
     CharacterRecord,
     ImageVariantRecord,
     ProjectRecord,
+    ProjectCharacterLinkRecord,
     PropRecord,
     SceneRecord,
     SeriesRecord,
@@ -30,6 +31,7 @@ from ..schemas.models import (
     ImageVariant,
     ModelSettings,
     ProjectTimeline,
+    ProjectCharacterLink,
     PromptConfig,
     Prop,
     Scene,
@@ -480,6 +482,16 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     tasks = _scoped(session.query(VideoTaskRecord), include_deleted).filter(
         VideoTaskRecord.project_id.in_(project_ids)
     ).order_by(VideoTaskRecord.project_id.asc(), VideoTaskRecord.created_at.asc(), VideoTaskRecord.id.asc()).all()
+    project_character_links = _scoped(session.query(ProjectCharacterLinkRecord), include_deleted).filter(
+        ProjectCharacterLinkRecord.project_id.in_(project_ids)
+    ).order_by(ProjectCharacterLinkRecord.project_id.asc(), ProjectCharacterLinkRecord.created_at.asc(), ProjectCharacterLinkRecord.id.asc()).all()
+    linked_series_ids = {record.series_id for record in project_character_links if record.series_id}
+    series_map = hydrate_series_map(session, linked_series_ids, include_deleted=include_deleted) if linked_series_ids else {}
+    series_characters_by_id = {
+        character.id: character
+        for series in series_map.values()
+        for character in (series.characters or [])
+    }
 
     character_ids = [record.id for record in characters]
     scene_ids = [record.id for record in scenes]
@@ -573,6 +585,10 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
             id=record.id,
             created_at=record.created_at,
             name=record.name,
+            canonical_name=record.canonical_name,
+            aliases=list(record.aliases_json or []),
+            identity_fingerprint=record.identity_fingerprint,
+            merge_status=record.merge_status,
             description=record.description,
             age=record.age,
             gender=record.gender,
@@ -688,6 +704,30 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
         )
         frames_by_project[record.project_id].append(frame)
 
+    project_character_links_by_project = defaultdict(list)
+    for record in project_character_links:
+        project_character_links_by_project[record.project_id].append(
+            ProjectCharacterLink(
+                id=record.id,
+                project_id=record.project_id,
+                series_id=record.series_id,
+                character_id=record.character_id,
+                source_name=record.source_name,
+                source_alias=record.source_alias,
+                episode_notes=record.episode_notes,
+                override_json=record.override_json or {},
+                match_confidence=record.match_confidence,
+                match_status=record.match_status,
+                character=series_characters_by_id.get(record.character_id),
+                organization_id=record.organization_id,
+                workspace_id=record.workspace_id,
+                created_by=record.created_by,
+                updated_by=record.updated_by,
+                created_at=record.created_at,
+                updated_at=record.updated_at,
+            )
+        )
+
     result = {}
     for record in project_records:
         result[record.id] = Script(
@@ -695,6 +735,7 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
             title=record.title,
             original_text=record.original_text,
             characters=chars_by_project.get(record.id, []),
+            series_character_links=project_character_links_by_project.get(record.id, []),
             scenes=scenes_by_project.get(record.id, []),
             props=props_by_project.get(record.id, []),
             frames=frames_by_project.get(record.id, []),
@@ -828,6 +869,10 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
             Character(
                 id=record.id,
                 name=record.name,
+                canonical_name=record.canonical_name,
+                aliases=list(record.aliases_json or []),
+                identity_fingerprint=record.identity_fingerprint,
+                merge_status=record.merge_status,
                 description=record.description,
                 age=record.age,
                 gender=record.gender,
@@ -1101,6 +1146,10 @@ def _insert_character(session: Session, character: Character, owner_type: str, o
             owner_type=owner_type,
             owner_id=owner_id,
             name=character.name,
+            canonical_name=character.canonical_name,
+            aliases_json=list(character.aliases or []),
+            identity_fingerprint=character.identity_fingerprint,
+            merge_status=character.merge_status,
             description=character.description,
             age=character.age,
             gender=character.gender,

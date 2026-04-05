@@ -144,6 +144,25 @@ class ProjectRepository(BaseRepository[Script]):
     def list(self, workspace_id: str | None = None) -> List[Script]:
         return list(self.list_map(workspace_id=workspace_id).values())
 
+    def list_by_series(self, series_id: str, workspace_id: str | None = None) -> List[Script]:
+        """返回某个系列下的完整项目对象列表，避免全表扫描。"""
+        from .mappers import hydrate_project_map  # 延迟导入以避免循环
+        with self._with_session() as session:
+            query = self._active_filter(session.query(ProjectRecord)).filter(ProjectRecord.series_id == series_id)
+            if workspace_id is not None:
+                query = query.filter(ProjectRecord.workspace_id == workspace_id)
+            rows = (
+                query
+                .order_by(ProjectRecord.episode_number.asc().nullslast(), ProjectRecord.created_at.asc(), ProjectRecord.id.asc())
+                .all()
+            )
+            if not rows:
+                return []
+            project_ids = {row.id for row in rows}
+            hydrated = hydrate_project_map(session, project_ids)
+            # 保持顺序与上面的排序一致
+            return [hydrated[row.id] for row in rows if row.id in hydrated]
+
     def list_all(self, include_deleted: bool = False) -> List[Script]:
         return list(self.list_map(include_deleted=include_deleted).values())
 
@@ -151,9 +170,9 @@ class ProjectRepository(BaseRepository[Script]):
         with self._with_session() as session:
             return hydrate_project_map(session, {project_id}, include_deleted=include_deleted).get(project_id)
 
-    def create(self, project: Script) -> Script:
-        with self._with_session() as session:
-            session.merge(
+    def create(self, project: Script, session=None) -> Script:
+        with self._with_session(session) as active_session:
+            active_session.merge(
                 ProjectRecord(
                     id=project.id,
                     title=project.title,
@@ -176,7 +195,7 @@ class ProjectRepository(BaseRepository[Script]):
                     **_audit_time_kwargs(project),
                 )
             )
-            _insert_project_children(session, project, _tenant_kwargs(project))
+            _insert_project_children(active_session, project, _tenant_kwargs(project))
         return project
 
     def replace_graph(self, project: Script) -> Script:

@@ -2581,3 +2581,95 @@ a {
   opacity: 1;
   transition-delay: 0.25s;
 }
+
+/* Final Mix Studio 需要同时适配浅色和深色，因此这里单独补一层主题外壳，避免组件内继续散落硬编码颜色。 */
+.studio-theme-root .final-mix-shell {
+  color: var(--studio-text-strong);
+  background:
+    radial-gradient(circle at top left, rgba(49, 95, 145, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(36, 69, 103, 0.12), transparent 26%),
+    linear-gradient(160deg, rgba(6, 8, 12, 0.98), rgba(10, 16, 24, 0.98));
+}
+
+.studio-theme-root .final-mix-preview,
+.studio-theme-root .final-mix-sidebar,
+.studio-theme-root .final-mix-timeline {
+  background-color: rgba(6, 10, 16, 0.56);
+}
+
+.studio-theme-root .final-mix-preview video {
+  background:
+    radial-gradient(circle at center, rgba(15, 23, 42, 0.36), rgba(2, 6, 12, 0.92));
+}
+
+[data-studio-theme="light"] .final-mix-shell {
+  color: var(--studio-text-strong);
+  background:
+    radial-gradient(circle at top left, rgba(49, 95, 145, 0.1), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(183, 106, 29, 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(243, 247, 252, 0.98), rgba(233, 240, 247, 0.98));
+}
+
+[data-studio-theme="light"] .final-mix-shell .text-white {
+  color: var(--studio-text-strong) !important;
+}
+
+[data-studio-theme="light"] .final-mix-shell .text-white\/80,
+[data-studio-theme="light"] .final-mix-shell .text-white\/75,
+[data-studio-theme="light"] .final-mix-shell .text-white\/70,
+[data-studio-theme="light"] .final-mix-shell .text-white\/65 {
+  color: var(--studio-text-soft) !important;
+}
+
+[data-studio-theme="light"] .final-mix-shell .text-white\/55,
+[data-studio-theme="light"] .final-mix-shell .text-white\/45,
+[data-studio-theme="light"] .final-mix-shell .text-white\/40,
+[data-studio-theme="light"] .final-mix-shell .text-white\/38,
+[data-studio-theme="light"] .final-mix-shell .text-white\/35 {
+  color: var(--studio-text-faint) !important;
+}
+
+[data-studio-theme="light"] .final-mix-shell .bg-black\/70,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/50,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/45,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/40,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/35,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/30,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/25,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/20,
+[data-studio-theme="light"] .final-mix-shell .bg-black\/15 {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+}
+
+[data-studio-theme="light"] .final-mix-preview,
+[data-studio-theme="light"] .final-mix-sidebar,
+[data-studio-theme="light"] .final-mix-timeline {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(244, 248, 252, 0.86)) !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.08);
+}
+
+[data-studio-theme="light"] .final-mix-preview video {
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.82), rgba(226, 232, 240, 0.98));
+}
+
+[data-studio-theme="light"] .final-mix-shell .shadow-\[0_24px_80px_rgba\(0\,0\,0\,0\.45\)\] {
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-studio-theme="light"] .final-mix-shell .shadow-\[0_18px_45px_rgba\(0\,0\,0\,0\.38\)\],
+[data-studio-theme="light"] .final-mix-shell .shadow-\[0_18px_38px_rgba\(34\,211\,238\,0\.16\)\],
+[data-studio-theme="light"] .final-mix-shell .shadow-\[0_10px_28px_rgba\(0\,0\,0\,0\.28\)\] {
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08) !important;
+}
+
+.studio-theme-root .final-mix-diagnostics-card {
+  min-height: 100%;
+}
+
+[data-studio-theme="light"] .final-mix-diagnostics-card .bg-black\/20 {
+  background-color: rgba(241, 245, 249, 0.9) !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}

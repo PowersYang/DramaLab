@@ -9,6 +9,8 @@ import { api, crudApi, TaskJob } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getCharacterPreviewImage } from "@/lib/characterAssets";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
+import { getEffectiveProjectCharacters, getProjectCharacterSourceHint } from "@/lib/projectAssets";
+import AssetTypeTabs from "@/components/common/AssetTypeTabs";
 import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
@@ -77,11 +79,12 @@ export default function ConsistencyVault() {
     const assetGenerateAffordable = canAffordTask("asset.generate");
     const motionRefGeneratePrice = getTaskPrice("asset.motion_ref.generate");
     const motionRefAffordable = canAffordTask("asset.motion_ref.generate");
+    const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
 
     // Derive selected asset from currentProject
     const selectedAsset = currentProject ? (() => {
         if (!selectedAssetId || !selectedAssetType) return null;
-        const list = selectedAssetType === "character" ? currentProject.characters :
+        const list = selectedAssetType === "character" ? effectiveCharacters :
             selectedAssetType === "scene" ? currentProject.scenes :
                 selectedAssetType === "prop" ? currentProject.props : [];
         return list?.find((a: any) => a.id === selectedAssetId) || null;
@@ -278,7 +281,7 @@ export default function ConsistencyVault() {
         }
     };
 
-    const assets = activeTab === "character" ? currentProject?.characters :
+    const assets = activeTab === "character" ? effectiveCharacters :
         activeTab === "scene" ? currentProject?.scenes :
             activeTab === "prop" ? currentProject?.props : [];
 
@@ -288,7 +291,7 @@ export default function ConsistencyVault() {
         }
 
         const projectAssetIds = [
-            ...(currentProject.characters || []).map((asset: any) => asset.id),
+            ...effectiveCharacters.map((asset: any) => asset.id),
             ...(currentProject.scenes || []).map((asset: any) => asset.id),
             ...(currentProject.props || []).map((asset: any) => asset.id),
         ];
@@ -325,7 +328,7 @@ export default function ConsistencyVault() {
             isCancelled = true;
             window.clearInterval(timer);
         };
-    }, [currentProject, fetchProjectJobs, reconcileGeneratingTasks]);
+    }, [currentProject, effectiveCharacters, fetchProjectJobs, reconcileGeneratingTasks]);
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -337,31 +340,33 @@ export default function ConsistencyVault() {
                 </h2>
             </div>
 
-            <div className="studio-panel-subheader px-4 py-3">
+            <div className="px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
-                    <div className="studio-panel-chip-rail flex items-center gap-1 rounded-xl p-1">
-                        <TabButton
-                            active={activeTab === "character"}
-                            onClick={() => setActiveTab("character")}
-                            icon={<User size={14} />}
-                            label="角色"
-                            count={currentProject?.characters?.length || 0}
-                        />
-                        <TabButton
-                            active={activeTab === "scene"}
-                            onClick={() => setActiveTab("scene")}
-                            icon={<MapPin size={14} />}
-                            label="场景"
-                            count={currentProject?.scenes?.length || 0}
-                        />
-                        <TabButton
-                            active={activeTab === "prop"}
-                            onClick={() => setActiveTab("prop")}
-                            icon={<Box size={14} />}
-                            label="道具"
-                            count={currentProject?.props?.length || 0}
-                        />
-                    </div>
+                    <AssetTypeTabs
+                        layoutIdPrefix="consistency-vault-asset-type"
+                        value={activeTab}
+                        onChange={setActiveTab}
+                        items={[
+                            {
+                                id: "character",
+                                label: "角色",
+                                icon: <User size={14} />,
+                                count: effectiveCharacters.length,
+                            },
+                            {
+                                id: "scene",
+                                label: "场景",
+                                icon: <MapPin size={14} />,
+                                count: currentProject?.scenes?.length || 0,
+                            },
+                            {
+                                id: "prop",
+                                label: "道具",
+                                icon: <Box size={14} />,
+                                count: currentProject?.props?.length || 0,
+                            },
+                        ]}
+                    />
 
                     <button
                         type="button"
@@ -373,6 +378,11 @@ export default function ConsistencyVault() {
                         新增{getAssetTypeLabel(activeTab)}
                     </button>
                 </div>
+                {activeTab === "character" && currentProject?.series_id && (
+                    <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
+                        {getProjectCharacterSourceHint(currentProject)}
+                    </div>
+                )}
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -798,40 +808,6 @@ function CharacterDetailModal({
     );
 }
 
-function TabButton({ active, onClick, icon, label, count }: any) {
-    return (
-        <button
-            onClick={onClick}
-            type="button"
-            aria-pressed={active}
-            className={`group relative inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${active
-                ? "bg-[color:var(--studio-surface-20)] text-[color:var(--studio-shell-accent-strong)] shadow-sm ring-1 ring-[color:var(--studio-shell-accent-soft)]"
-                : "text-[color:var(--studio-text-muted)] hover:bg-[color:var(--studio-surface-10)] hover:text-[color:var(--studio-text-strong)]"
-                }`}
-        >
-            <div className={`transition-colors ${active ? "text-[color:var(--studio-shell-accent)]" : "text-[color:var(--studio-text-faint)] group-hover:text-[color:var(--studio-text-muted)]"}`}>
-                {icon}
-            </div>
-            <span className="font-semibold tracking-tight">{label}</span>
-            <span className={`ml-0.5 inline-flex min-w-[18px] items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${active
-                ? "bg-[color:var(--studio-shell-accent-soft)] text-[color:var(--studio-shell-accent-strong)]"
-                : "bg-[color:var(--studio-surface-10)] text-[color:var(--studio-text-faint)] group-hover:text-[color:var(--studio-text-muted)]"
-                }`}>
-                {count}
-            </span>
-            
-            {active && (
-                <motion.div
-                    layoutId="activeTabGlow"
-                    className="absolute inset-0 rounded-lg bg-[color:var(--studio-shell-accent-subtle)] -z-10"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                />
-            )}
-        </button>
-    );
-}
-
 function ImageWithRetry({ src, alt, className }: { src: string, alt: string, className?: string }) {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -963,8 +939,8 @@ function AssetCard({
             )}
 
             {/* ── Info Area ── */}
-            <div className="flex flex-1 flex-col p-4">
-                <div className="mb-3 flex-1">
+            <div className="flex flex-1 flex-col px-4 pt-3 pb-3">
+                <div>
                     <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-[13px] font-bold text-white truncate group-hover:text-indigo-400 transition-colors">
                             {asset.name}

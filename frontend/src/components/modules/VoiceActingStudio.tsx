@@ -9,6 +9,7 @@ import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl } from "@/lib/utils";
+import { getEffectiveProjectCharacters, getProjectCharacterSourceHint } from "@/lib/projectAssets";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 const AUDIO_SLIDER_CLASS = "w-full h-1.5 appearance-none bg-transparent cursor-pointer [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-white/20 [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-white/20 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:mt-[-3px] [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-0 [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary";
@@ -34,26 +35,29 @@ export default function VoiceActingStudio() {
     const lineAudioPrice = getTaskPrice("audio.generate.line");
     const projectAudioAffordable = canAffordTask("audio.generate.project");
     const lineAudioAffordable = canAffordTask("audio.generate.line");
+    const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
 
     // Per-character voice params (defaults)
     const [charParams, setCharParams] = useState<Record<string, { speed: number; pitch: number; volume: number }>>({});
 
     useEffect(() => {
-        if (currentProject?.characters) {
-            const params: Record<string, { speed: number; pitch: number; volume: number }> = {};
-            currentProject.characters.forEach((char: any) => {
-                params[char.id] = {
-                    speed: char.voice_speed ?? 1.0,
-                    pitch: char.voice_pitch ?? 1.0,
-                    volume: char.voice_volume ?? 50,
-                };
-            });
-            setCharParams(params);
+        if (effectiveCharacters.length === 0) {
+            setCharParams({});
+            return;
         }
-    }, [currentProject?.characters]);
+        const params: Record<string, { speed: number; pitch: number; volume: number }> = {};
+        effectiveCharacters.forEach((char: any) => {
+            params[char.id] = {
+                speed: char.voice_speed ?? 1.0,
+                pitch: char.voice_pitch ?? 1.0,
+                volume: char.voice_volume ?? 50,
+            };
+        });
+        setCharParams(params);
+    }, [effectiveCharacters]);
 
     useEffect(() => {
-        const characters = currentProject?.characters || [];
+        const characters = effectiveCharacters;
         if (characters.length === 0) {
             if (selectedAudioCharacterId) {
                 setSelectedAudioCharacterId(null);
@@ -63,7 +67,7 @@ export default function VoiceActingStudio() {
         if (!selectedAudioCharacterId || !characters.some((char: any) => char.id === selectedAudioCharacterId)) {
             setSelectedAudioCharacterId(characters[0].id);
         }
-    }, [currentProject?.characters, selectedAudioCharacterId, setSelectedAudioCharacterId]);
+    }, [effectiveCharacters, selectedAudioCharacterId, setSelectedAudioCharacterId]);
 
     const getDefaultLineSettings = (speakerId?: string | null) => {
         if (!speakerId) {
@@ -90,24 +94,6 @@ export default function VoiceActingStudio() {
                 audioRef.current.play();
                 setPlayingAudio(url);
             }
-        }
-    };
-
-    const handleCharParamChange = (charId: string, param: string, value: number) => {
-        setCharParams(prev => ({
-            ...prev,
-            [charId]: { ...prev[charId], [param]: value }
-        }));
-    };
-
-    const saveCharParams = async (charId: string) => {
-        const params = charParams[charId];
-        if (!currentProject || !params) return;
-        try {
-            const updated = await api.updateVoiceParams(currentProject.id, charId, params.speed, params.pitch, params.volume);
-            updateProject(currentProject.id, updated);
-        } catch (error) {
-            console.error("Failed to save voice params:", error);
         }
     };
 
@@ -169,8 +155,13 @@ export default function VoiceActingStudio() {
                         <Headphones size={16} className="text-primary" /> 角色声线
                     </h3>
                 </div>
+                {currentProject?.series_id && (
+                    <div className="px-4 pt-3 text-[11px] leading-5 text-amber-200">
+                        {getProjectCharacterSourceHint(currentProject)}
+                    </div>
+                )}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {currentProject?.characters?.map((char: any) => (
+                    {effectiveCharacters.map((char: any) => (
                         <button
                             key={char.id}
                             type="button"
@@ -233,7 +224,7 @@ export default function VoiceActingStudio() {
                         if (!frame.dialogue) return null;
 
                         const speakerId = frame.character_ids?.[0];
-                        const speaker = currentProject.characters.find((c: any) => c.id === speakerId);
+                        const speaker = effectiveCharacters.find((c: any) => c.id === speakerId);
                         const isSettingsOpen = activeSettingsId === frame.id;
                         const settings = lineSettings[frame.id] || getDefaultLineSettings(speakerId);
 

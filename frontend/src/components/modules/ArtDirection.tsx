@@ -39,21 +39,6 @@ function upsertStyle(styles: StyleConfig[], targetStyle: StyleConfig): StyleConf
         : [...styles, targetStyle];
 }
 
-function mergeStyles(primaryStyles: StyleConfig[], secondaryStyles: StyleConfig[]): StyleConfig[] {
-    const merged: StyleConfig[] = [];
-    const seen = new Set<string>();
-
-    [...primaryStyles, ...secondaryStyles].forEach((style) => {
-        if (!style?.id || seen.has(style.id)) {
-            return;
-        }
-        seen.add(style.id);
-        merged.push(style);
-    });
-
-    return merged;
-}
-
 export default function ArtDirection() {
     const {
         currentProject,
@@ -72,12 +57,13 @@ export default function ArtDirection() {
     const [editingNegative, setEditingNegative] = useState("");
     const [isSaving, setIsSaving] = useState(false);
 
-    const customStyles = mergeStyles(userStyles, currentProject?.art_direction?.custom_styles || []);
+    // 中文注释：美术设定页中的“自定义风格”列表只认后端用户风格库，避免把项目里历史残留 custom_styles 混进来。
+    const customStyles = userStyles;
 
     // Load presets and user style library once on mount.
     useEffect(() => {
         loadPresets();
-        loadUserStyles();
+        void reloadUserStyles();
     }, []);
 
     // Load art direction from project when it changes
@@ -118,12 +104,15 @@ export default function ArtDirection() {
         }
     };
 
-    const loadUserStyles = async () => {
+    const reloadUserStyles = async (): Promise<StyleConfig[]> => {
         try {
             const data = await api.getUserArtStyles();
-            setUserStyles(data.styles || []);
+            const nextStyles = data.styles || [];
+            setUserStyles(nextStyles);
+            return nextStyles;
         } catch (error) {
             console.error("Failed to load user art styles:", error);
+            return [];
         }
     };
 
@@ -161,20 +150,20 @@ export default function ArtDirection() {
         };
 
         const nextUserStyles = upsertStyle(userStyles, newCustomStyle);
-        const updatedCustomStyles = mergeStyles(nextUserStyles, currentProject?.art_direction?.custom_styles || []);
-
-        setUserStyles(nextUserStyles);
         setSelectedStyle(newCustomStyle);
 
-        // 新建/编辑自定义风格都立即持久化，避免刷新后丢失。
+        // 中文注释：保存后立即重新从后端读取风格库，以数据库结果为准，避免页面保留本地草稿或项目残留数据。
         try {
             await api.saveUserArtStyles(nextUserStyles);
+            const persistedUserStyles = await reloadUserStyles();
+            const persistedSelectedStyle = persistedUserStyles.find((style) => style.id === newCustomStyle.id) || newCustomStyle;
+            setSelectedStyle(persistedSelectedStyle);
             if (currentProject) {
                 const updated = await api.saveArtDirection(
                     currentProject.id,
-                    newCustomStyle.id,
-                    newCustomStyle,
-                    updatedCustomStyles,
+                    persistedSelectedStyle.id,
+                    persistedSelectedStyle,
+                    persistedUserStyles,
                     aiRecommendations
                 );
                 updateProject(currentProject.id, updated);
@@ -201,23 +190,26 @@ export default function ArtDirection() {
             negative_prompt: editingNegative,
         };
 
-        const nextUserStyles = finalConfig.is_custom ? upsertStyle(userStyles, finalConfig) : userStyles;
-        const nextCustomStyles = mergeStyles(nextUserStyles, currentProject.art_direction?.custom_styles || []);
-
         setIsSaving(true);
         try {
+            let nextCustomStyles = userStyles;
+            let finalSelectedStyle = finalConfig;
+
             if (finalConfig.is_custom) {
+                const nextUserStyles = upsertStyle(userStyles, finalConfig);
                 await api.saveUserArtStyles(nextUserStyles);
-                setUserStyles(nextUserStyles);
+                const persistedUserStyles = await reloadUserStyles();
+                nextCustomStyles = persistedUserStyles;
+                finalSelectedStyle = persistedUserStyles.find((style) => style.id === finalConfig.id) || finalConfig;
             }
             const updated = await api.saveArtDirection(
                 currentProject.id,
-                finalConfig.id,
-                finalConfig,
+                finalSelectedStyle.id,
+                finalSelectedStyle,
                 nextCustomStyles,
                 aiRecommendations
             );
-            setSelectedStyle(finalConfig);
+            setSelectedStyle(finalSelectedStyle);
             updateProject(currentProject.id, updated);
             alert("风格配置已应用！");
         } catch (error) {

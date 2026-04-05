@@ -10,6 +10,7 @@ from ...common.log import get_logger
 from ...providers import ScriptProcessor
 from .model_provider_service import ModelProviderService
 from .project_command_service import ProjectCommandService
+from .project_series_casting_service import ProjectSeriesCastingService
 from ...schemas.models import ModelSettings, PromptConfig
 from ...utils.datetime import utc_now
 
@@ -26,6 +27,7 @@ class ProjectService:
         self.text_provider = ScriptProcessor()
         self.model_provider_service = ModelProviderService()
         self.project_command_service = ProjectCommandService()
+        self.project_series_casting_service = ProjectSeriesCastingService()
 
     def create_project(
         self,
@@ -98,6 +100,16 @@ class ProjectService:
             {"original_text": text, "updated_at": utc_now()},
             expected_version=existing.version,
         )
+        # 中文注释：系列项目的角色真源已经切到 series.characters + project_character_links，
+        # 因此这里不再把重解析结果直接写回 project.characters，避免同系列角色重复创建。
+        if existing.series_id:
+            self.project_series_casting_service.sync_project_characters(
+                project_id=script_id,
+                series_id=existing.series_id,
+                incoming_characters=reparsed.characters,
+            )
+            logger.info("PROJECT_SERVICE: reparse_project synced_series_characters script_id=%s series_id=%s", script_id, existing.series_id)
+            return self.project_repository.get(script_id)
         updated_project = self.project_command_service.sync_entities(
             script_id,
             patched_project.version,

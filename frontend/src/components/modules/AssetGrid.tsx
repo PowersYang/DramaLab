@@ -6,10 +6,11 @@ import { RefreshCw, Download, Plus } from "lucide-react";
 
 import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
-import { api, API_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl } from "@/lib/utils";
+import { getEffectiveProjectCharacters } from "@/lib/projectAssets";
 
 interface Asset {
     id: string;
@@ -32,12 +33,13 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
     const { account, getTaskPrice, canAffordTask } = useBillingGuard();
     const assetBatchPrice = getTaskPrice("asset.generate_batch");
     const assetBatchAffordable = canAffordTask("asset.generate_batch");
+    const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
 
     // Initialize assets from current project
     const [assets, setAssets] = useState<Asset[]>(() => {
         if (!currentProject) return [];
         return [
-            ...currentProject.characters.map((c: any) => ({
+            ...effectiveCharacters.map((c: any) => ({
                 id: c.id,
                 type: "char" as const,
                 url: getAssetUrl(c.image_url),
@@ -56,7 +58,7 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
     useEffect(() => {
         if (currentProject) {
             const newAssets: Asset[] = [
-                ...currentProject.characters.map((c: any) => ({
+                ...effectiveCharacters.map((c: any) => ({
                     id: c.id,
                     type: "char" as const,
                     url: getAssetUrl(c.image_url),
@@ -71,7 +73,7 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
             ];
             setAssets(newAssets);
         }
-    }, [currentProject?.id, currentProject?.characters, currentProject?.scenes]);
+    }, [currentProject, effectiveCharacters]);
 
     const handleGenerate = async () => {
         if (!projectId) {
@@ -85,8 +87,9 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
             enqueueReceipts(projectId, [receipt]);
             const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             const project = await api.getProject(projectId);
+            const projectCharacters = getEffectiveProjectCharacters(project);
             const newAssets: Asset[] = [
-                ...project.characters.map((c: any) => ({
+                ...projectCharacters.map((c: any) => ({
                     id: c.id,
                     type: "char" as const,
                     url: getAssetUrl(c.image_url),
@@ -101,11 +104,8 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
             ];
             setAssets(newAssets);
             if (currentProject) {
-                updateProject(currentProject.id, {
-                    characters: project.characters,
-                    scenes: project.scenes,
-                    props: project.props,
-                });
+                // 中文注释：系列项目刷新后除了角色列表，还要把 series_character_links 一并带回 store，避免界面继续读到旧链接。
+                updateProject(currentProject.id, project);
             }
             if (job.status !== "succeeded") {
                 console.error("Generate assets finished with non-success status:", job.error_message);

@@ -319,11 +319,11 @@ class ScriptProcessor:
 请根据提供的剧本内容，分析其题材、情绪和氛围，推荐4种截然不同但都适合的视觉风格。
 
 对于每种风格，请提供：
-1. 风格名称（简洁、专业，使用英文）
+1. 风格名称（简洁、专业，使用中文）
 2. 风格描述（1-2句话，用中文）
 3. 推荐理由（为什么这个风格适合这个剧本，用中文，50字以内）
-4. Stable Diffusion 正向提示词（详细的风格关键词，英文，逗号分隔，不超过50个词）
-5. Stable Diffusion 负向提示词（避免的视觉元素，英文，逗号分隔，不超过30个词）
+4. Stable Diffusion 正向提示词（详细的风格关键词，中文，逗号分隔，不超过50个词）
+5. Stable Diffusion 负向提示词（避免的视觉元素，中文，逗号分隔，不超过30个词）
 
 IMPORTANT: 
 - 你的回复必须是严格的JSON格式。
@@ -362,8 +362,6 @@ CRITICAL STYLE GUIDELINES:
             )
             logger.debug("Style Analysis Response:\n%s", content)
             content = _strip_markdown_json(content)
-            # 中文注释：4 组风格 JSON 很容易超过 5000 字符；此前这里先截断再解析，会直接把最后 1 条推荐切掉。
-            # 这里改成只记录日志、不做预截断，优先完整解析原始 JSON，再走后续标准化补齐逻辑。
             if len(content) > 5000:
                 logger.warning("Style analysis response is long (%s chars), skip pre-truncation and parse full payload", len(content))
 

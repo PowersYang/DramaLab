@@ -201,7 +201,16 @@ class MediaWorkflowTimelineMixTest(unittest.TestCase):
                         merged_video_path=merged_video_path,
                         mixed_output_path=mixed_output_path,
                         audio_overlay_specs=audio_specs,
-                        video_track_gain=0.75,
+                        video_audio_segments=[
+                            {
+                                "clip_id": "clip_video_1",
+                                "timeline_start": 0.0,
+                                "duration": 2.5,
+                                "volume": 0.75,
+                                "fade_in_duration": 0.2,
+                                "fade_out_duration": 0.3,
+                            }
+                        ],
                         temp_dir=temp_dir,
                     )
 
@@ -210,7 +219,10 @@ class MediaWorkflowTimelineMixTest(unittest.TestCase):
             self.assertEqual(cmd[0], "ffmpeg")
             self.assertIn("-filter_complex", cmd)
             filter_complex = cmd[cmd.index("-filter_complex") + 1]
-            self.assertIn("[0:a]asetpts=PTS-STARTPTS,volume=0.750[basea]", filter_complex)
+            self.assertIn("[0:a]atrim=start=0.000:duration=2.500,asetpts=PTS-STARTPTS,volume=0.750", filter_complex)
+            self.assertIn("afade=t=in:st=0:d=0.200", filter_complex)
+            self.assertIn("afade=t=out:st=2.200:d=0.300", filter_complex)
+            self.assertIn("[va0]amix=inputs=1:normalize=0:dropout_transition=0[basea]", filter_complex)
             self.assertIn("atrim=start=0.200:duration=3.000", filter_complex)
             self.assertIn("adelay=1500|1500", filter_complex)
             self.assertIn("volume=0.650", filter_complex)
@@ -255,7 +267,7 @@ class MediaWorkflowTimelineMixTest(unittest.TestCase):
                                 "fade_out_duration": 0.0,
                             }
                         ],
-                        video_track_gain=1.0,
+                        video_audio_segments=[],
                         temp_dir=temp_dir,
                     )
 
@@ -295,10 +307,75 @@ class MediaWorkflowTimelineMixTest(unittest.TestCase):
                                 "volume": 1.0,
                             }
                         ],
-                        video_track_gain=1.0,
+                        video_audio_segments=[
+                            {
+                                "clip_id": "clip_video_1",
+                                "timeline_start": 0.0,
+                                "duration": 2.0,
+                                "volume": 1.0,
+                                "fade_in_duration": 0.0,
+                                "fade_out_duration": 0.0,
+                            }
+                        ],
                         temp_dir=temp_dir,
                     )
 
             filter_complex = run_mock.call_args_list[-1].args[0][run_mock.call_args_list[-1].args[0].index("-filter_complex") + 1]
-            self.assertNotIn("[0:a]asetpts=PTS-STARTPTS[basea]", filter_complex)
+            self.assertNotIn("[basea]", filter_complex)
             self.assertIn("amix=inputs=1:normalize=0:dropout_transition=0[aout]", filter_complex)
+
+    def test_resolve_video_audio_segments_honors_clip_level_original_audio_settings(self):
+        workflow = MediaWorkflow()
+        now = utc_now()
+        project = Script(
+            id="project-video-audio",
+            title="Video Audio",
+            original_text="demo",
+            timeline=ProjectTimeline(
+                project_id="project-video-audio",
+                version=1,
+                tracks=[
+                    TimelineTrack(id="track_video_main", track_type="video", label="视频主轨", order=0, enabled=True, gain=0.8, solo=False),
+                ],
+                assets=[],
+                clips=[
+                    TimelineClip(
+                        id="clip_video_1",
+                        asset_id="asset_video_1",
+                        track_id="track_video_main",
+                        clip_order=0,
+                        timeline_start=0,
+                        timeline_end=3,
+                        source_start=0,
+                        source_end=3,
+                        metadata={
+                            "original_audio_enabled": True,
+                            "original_audio_gain": 0.5,
+                            "original_audio_fade_in_duration": 0.2,
+                            "original_audio_fade_out_duration": 0.4,
+                        },
+                    ),
+                    TimelineClip(
+                        id="clip_video_2",
+                        asset_id="asset_video_2",
+                        track_id="track_video_main",
+                        clip_order=1,
+                        timeline_start=3,
+                        timeline_end=6,
+                        source_start=0,
+                        source_end=3,
+                        metadata={"original_audio_enabled": False},
+                    ),
+                ],
+                updated_at=now,
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+
+        segments = workflow._resolve_video_audio_segments(project)
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0]["clip_id"], "clip_video_1")
+        self.assertEqual(segments[0]["volume"], 0.4)
+        self.assertEqual(segments[0]["fade_in_duration"], 0.2)
+        self.assertEqual(segments[0]["fade_out_duration"], 0.4)

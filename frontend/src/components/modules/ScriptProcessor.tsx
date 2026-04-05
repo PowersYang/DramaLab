@@ -2,13 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wand2, User, MapPin, Box, ChevronRight, ChevronLeft, Save, Sparkles, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { User, MapPin, Box, Save, Sparkles, Plus, Trash2 } from "lucide-react";
 import { api, crudApi } from "@/lib/api";
-import BillingActionButton from "@/components/billing/BillingActionButton";
-import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
-import { useTaskStore } from "@/store/taskStore";
-import { getStepTaskActiveCount } from "@/components/modules/ProjectTaskQueuePanel";
+import { getEffectiveProjectCharacters, getProjectCharacterSourceHint, isSeriesProject } from "@/lib/projectAssets";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 interface ScriptNode {
@@ -65,21 +62,6 @@ function hasPropAssets(prop: any) {
 export default function ScriptProcessor() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
-    const analyzeProject = useProjectStore((state) => state.analyzeProject);
-    
-    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
-    
-    const jobsById = useTaskStore((state) => state.jobsById);
-    const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
-
-    const projectJobs = currentProject
-        ? (jobIdsByProject[currentProject.id] || [])
-            .map((jobId) => jobsById[jobId])
-            .filter(Boolean)
-        : [];
-    const isAnalyzingTasks = getStepTaskActiveCount("script", projectJobs) > 0;
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const isAnalyzing = isAnalyzingTasks || isSubmitting;
 
     // Initialize from project data
     const [script, setScript] = useState(currentProject?.originalText || "");
@@ -87,19 +69,16 @@ export default function ScriptProcessor() {
 
     // UI State
     const [selectedNode, setSelectedNode] = useState<ScriptNode | null>(null);
-    const [showPanel, setShowPanel] = useState(true);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-    const [isReparseDialogOpen, setIsReparseDialogOpen] = useState(false);
-    const [reparseAcknowledged, setReparseAcknowledged] = useState(false);
-    const reparsePrice = getTaskPrice("project.reparse");
-    const reparseAffordable = canAffordTask("project.reparse");
+    const showPanel = true;
 
     // Sync from project
     useEffect(() => {
         if (currentProject) {
+            const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
             setScript(currentProject.originalText || "");
             const newNodes: ScriptNode[] = [
-                ...currentProject.characters.map((c: any) => ({
+                ...effectiveCharacters.map((c: any) => ({
                     type: "character" as const,
                     id: c.id,
                     name: c.name,
@@ -127,38 +106,13 @@ export default function ScriptProcessor() {
         }
     }, [currentProject]); // Depend on the whole object to catch updates
 
-    const runAnalyze = async () => {
-        setIsSubmitting(true);
-        try {
-            await analyzeProject(script);
-        } catch (error: any) {
-            console.error("Failed to analyze script:", error);
-            const errorMessage = error?.response?.data?.detail || error?.message || "未知错误";
-            alert(`剧本分析失败: ${errorMessage}`);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    const handleAnalyze = async () => {
-        if (!script) return;
-        const hasExistingEntities = nodes.length > 0;
-        const hasExistingFrames = (currentProject?.frames?.length || 0) > 0;
-        if (hasExistingEntities || hasExistingFrames) {
-            setReparseAcknowledged(false);
-            setIsReparseDialogOpen(true);
-            return;
-        }
-        await runAnalyze();
-    };
-
     const handleDeleteNode = async (node: ScriptNode, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
 
         const hasRelatedAssets = (() => {
             if (node.type === "character") {
-                const character = currentProject.characters.find((item: any) => item.id === node.id);
+                const character = getEffectiveProjectCharacters(currentProject).find((item: any) => item.id === node.id);
                 return hasCharacterAssets(character);
             }
             if (node.type === "scene") {
@@ -231,31 +185,12 @@ export default function ScriptProcessor() {
     return (
         <div className="flex h-full w-full overflow-hidden">
             {/* Left: Script Editor */}
-            <div className={`flex-1 flex flex-col transition-all duration-300 ${showPanel ? 'mr-0' : 'mr-0'}`}>
+            <div className="flex-1 flex flex-col transition-all duration-300">
                 <div className={PANEL_HEADER_CLASS}>
-                    <h2 className={PANEL_TITLE_CLASS}>
+                    <h2 className={`${PANEL_TITLE_CLASS} text-base`}>
                         <Sparkles className="text-primary" size={18} />
-                        剧本编辑器
+                        {currentProject?.title || "剧本编辑器"}
                     </h2>
-                    <div className="flex gap-2">
-                        <BillingActionButton
-                            onClick={handleAnalyze}
-                            disabled={!script || isAnalyzing || !reparseAffordable}
-                            priceCredits={reparsePrice}
-                            balanceCredits={account?.balance_credits}
-                            className="glass-button px-4 py-1.5 text-sm flex items-center gap-2 text-primary border-primary/30 hover:bg-primary/10"
-                            tooltipText={reparsePrice == null ? undefined : `预计消耗${reparsePrice}算力豆${!reparseAffordable ? "，当前余额不足" : ""}`}
-                        >
-                            {isAnalyzing ? <Wand2 className="animate-spin" size={14} /> : <Wand2 size={14} />}
-                            {isAnalyzing ? "智能分析中..." : "提取实体"}
-                        </BillingActionButton>
-                        <button
-                            onClick={() => setShowPanel(!showPanel)}
-                            className="p-2 hover:bg-white/10 rounded-lg text-gray-400"
-                        >
-                            {showPanel ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-                        </button>
-                    </div>
                 </div>
 
                 <div className="flex-1 relative p-6">
@@ -297,12 +232,17 @@ export default function ScriptProcessor() {
 
                         <div className="studio-panel-subheader px-4 py-2">
                             <p className="text-[11px] text-gray-500">已识别 {nodes.length} 个关键要素</p>
+                            {isSeriesProject(currentProject) && (
+                                <p className="mt-1 text-[11px] text-amber-300/80">
+                                    {getProjectCharacterSourceHint(currentProject)}
+                                </p>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                            {nodes.length === 0 && !isAnalyzing && (
+                            {nodes.length === 0 && (
                                 <div className="text-center text-gray-500 mt-10 text-sm">
-                                    点击“提取实体”开始分析
+                                    暂无已识别要素
                                 </div>
                             )}
 
@@ -498,88 +438,6 @@ export default function ScriptProcessor() {
                         onClose={() => setIsCreateDialogOpen(false)}
                         onCreate={handleCreateNode}
                     />
-                )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-                {isReparseDialogOpen && (
-                    <div
-                        className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-                        onClick={() => setIsReparseDialogOpen(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.96, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.96, opacity: 0 }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-[560px] overflow-hidden rounded-2xl border border-white/10 bg-black/30 shadow-2xl"
-                        >
-                            <div className="flex items-start gap-4 border-b border-white/10 bg-black/20 p-6">
-                                <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--studio-shell-warning-soft)] text-[color:var(--studio-shell-warning)]">
-                                    <AlertTriangle size={18} />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <h3 className="text-lg font-bold text-white">重新提取实体？</h3>
-                                    <p className="mt-1 text-sm text-gray-400">
-                                        当前项目已存在已识别实体或分镜，重新提取会覆盖部分结果。
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsReparseDialogOpen(false)}
-                                    className="rounded-lg p-2 text-gray-500 hover:bg-white/10 hover:text-white"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-
-                            <div className="space-y-4 p-6">
-                                <div className="rounded-2xl border border-[color:var(--studio-shell-warning-soft)] bg-[color:var(--studio-shell-warning-soft)] p-4">
-                                    <p className="text-sm font-semibold text-[color:var(--studio-text-strong)]">需要注意</p>
-                                    <ul className="mt-2 space-y-1 text-sm text-[color:var(--studio-text-soft)]">
-                                        <li>角色 / 场景 / 道具会按当前剧本重新识别并写入。</li>
-                                        <li>如果分镜、资产已引用旧实体，可能需要重新检查绑定关系。</li>
-                                    </ul>
-                                </div>
-
-                                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-                                    <input
-                                        type="checkbox"
-                                        checked={reparseAcknowledged}
-                                        onChange={(e) => setReparseAcknowledged(e.target.checked)}
-                                        className="mt-1 h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-2 focus:ring-primary/40"
-                                    />
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-semibold text-white">我已了解重新提取可能覆盖已有结果</p>
-                                        <p className="mt-1 text-xs text-gray-400">
-                                            建议先确认分镜与资产都已保存或导出，避免误操作。
-                                        </p>
-                                    </div>
-                                </label>
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 border-t border-white/10 bg-black/20 p-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsReparseDialogOpen(false)}
-                                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-[color:var(--studio-text-soft)] hover:bg-white/10 hover:text-white"
-                                >
-                                    取消
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={!reparseAffordable || !reparseAcknowledged || isAnalyzing}
-                                    onClick={async () => {
-                                        setIsReparseDialogOpen(false);
-                                        await runAnalyze();
-                                    }}
-                                    className="rounded-xl bg-[color:var(--studio-shell-warning)] px-5 py-2 text-sm font-semibold text-white shadow-[0_14px_36px_rgba(15,23,42,0.18)] transition disabled:cursor-not-allowed disabled:opacity-50 hover:brightness-105"
-                                >
-                                    继续提取
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
                 )}
             </AnimatePresence>
         </div>

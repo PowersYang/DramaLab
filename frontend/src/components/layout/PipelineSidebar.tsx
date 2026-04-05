@@ -61,23 +61,23 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                             >
                                 <ChevronLeft size={16} />
                             </button>
-                            <nav className="flex items-center gap-1 text-xs min-w-0 flex-1">
+                            <nav className="flex items-center gap-1 text-sm font-bold tracking-tight min-w-0 flex-1">
                                 {breadcrumbSegments.map((seg, i) => {
                                     const isLast = i === breadcrumbSegments.length - 1;
                                     return (
                                         <span key={i} className="flex items-center gap-1 min-w-0">
-                                            {i > 0 && <span className="studio-sidebar-crumb-separator flex-shrink-0">&rsaquo;</span>}
+                                            {i > 0 && <span className="studio-sidebar-crumb-separator flex-shrink-0 text-base leading-none">&rsaquo;</span>}
                                             {(seg.href || seg.hash) && !isLast ? (
                                                 <a
                                                     href={seg.href || seg.hash}
-                                                    className="studio-sidebar-crumb-link transition-colors truncate"
+                                                    className="studio-sidebar-crumb-link transition-colors truncate font-bold"
                                                 >
                                                     {seg.label}
                                                 </a>
                                             ) : (
                                                 <span className={clsx(
                                                     "truncate",
-                                                    isLast ? "studio-sidebar-crumb-current font-semibold" : "studio-sidebar-crumb-link"
+                                                    isLast ? "studio-sidebar-crumb-current font-bold" : "studio-sidebar-crumb-link font-bold"
                                                 )}>
                                                     {seg.label}
                                                 </span>

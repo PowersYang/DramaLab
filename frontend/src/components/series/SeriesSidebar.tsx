@@ -4,46 +4,35 @@ import { motion } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
-  Users,
-  MapPin,
-  Package,
+  Boxes,
+  Sun,
+  Moon,
   Plus,
   Download,
 } from "lucide-react";
 import clsx from "clsx";
-import type { Series, Project } from "@/store/projectStore";
+import type { Series } from "@/store/projectStore";
+import type { EpisodeBrief } from "@/lib/api";
+import type { StudioTheme } from "@/components/studio/studioTheme";
 
 // ── Types ──
 
 export type SidebarItem =
-  | { kind: "asset"; tab: "characters" | "scenes" | "props" }
+  | { kind: "shared_assets" }
   | { kind: "episode"; episodeId: string };
 
 interface SeriesSidebarProps {
   series: Series;
-  episodes: Project[];
+  episodes: EpisodeBrief[];
   activeItem: SidebarItem;
   onItemChange: (item: SidebarItem) => void;
   onBack: () => void;
-  // Title editing
-  isEditingTitle: boolean;
-  editTitle: string;
-  onEditTitleChange: (val: string) => void;
-  onTitleDoubleClick: () => void;
-  onTitleSave: () => void;
-  onTitleKeyDown: (e: React.KeyboardEvent) => void;
   onOpenCreateEpisode: () => void;
   // Actions
   onOpenImportAssets: () => void;
+  theme: StudioTheme;
+  onThemeChange: (theme: StudioTheme) => void;
 }
-
-// ── Asset nav config ──
-
-const ASSET_TABS = [
-  { tab: "characters" as const, label: "角色", icon: Users },
-  { tab: "scenes" as const, label: "场景", icon: MapPin },
-  { tab: "props" as const, label: "道具", icon: Package },
-] as const;
 
 // ── Component ──
 
@@ -53,20 +42,15 @@ export default function SeriesSidebar({
   activeItem,
   onItemChange,
   onBack,
-  isEditingTitle,
-  editTitle,
-  onEditTitleChange,
-  onTitleDoubleClick,
-  onTitleSave,
-  onTitleKeyDown,
   onOpenCreateEpisode,
   onOpenImportAssets,
+  theme,
+  onThemeChange,
 }: SeriesSidebarProps) {
-  const getAssetCount = (tab: "characters" | "scenes" | "props") => {
-    if (tab === "characters") return series.characters?.length || 0;
-    if (tab === "scenes") return series.scenes?.length || 0;
-    return series.props?.length || 0;
-  };
+  const sharedAssetsCount =
+    (series.characters?.length ?? 0) +
+    (series.scenes?.length ?? 0) +
+    (series.props?.length ?? 0);
 
   const sortedEpisodes = [...episodes].sort(
     (a, b) => (a.episode_number || 0) - (b.episode_number || 0)
@@ -79,10 +63,9 @@ export default function SeriesSidebar({
       transition={{ duration: 0.4, ease: [0.25, 1, 0.5, 1] }}
       className="flex h-full w-72 flex-shrink-0 flex-col border-r border-white/10 bg-white/5 backdrop-blur-xl"
     >
-      {/* ── Header: breadcrumb + editable title ── */}
+      {/* ── Header ── */}
       <div className="border-b border-white/10 p-5">
-        <div className="space-y-2">
-          {/* Back row */}
+        <div className="space-y-3">
           <div className="flex items-center gap-1.5">
             <button
               onClick={onBack}
@@ -91,103 +74,93 @@ export default function SeriesSidebar({
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="truncate text-xs text-gray-500">DramaLab / 系列控制台</span>
+            <span className="truncate text-xs text-gray-500">DramaLab / 剧集控制台</span>
           </div>
 
-          {/* Editable title */}
-          {isEditingTitle ? (
-            <input
-              type="text"
-              value={editTitle}
-              onChange={(e) => onEditTitleChange(e.target.value)}
-              onBlur={onTitleSave}
-              onKeyDown={onTitleKeyDown}
-              className="w-full border-b-2 border-primary bg-transparent text-base font-display font-bold text-gray-200 outline-none"
-              autoFocus
-            />
-          ) : (
-            <h1
-              className="cursor-pointer truncate text-base font-display font-bold text-gray-200 transition-colors hover:text-white"
-              onDoubleClick={onTitleDoubleClick}
-              title="双击编辑标题"
+          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
+            <button
+              type="button"
+              onClick={() => onThemeChange("light")}
+              aria-pressed={theme === "light"}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                theme === "light" ? "bg-white text-slate-950 shadow-sm" : "text-gray-400 hover:text-white"
+              }`}
             >
-              {series.title}
-            </h1>
-          )}
-
-          {series.description && (
-            <p className="truncate text-xs text-gray-400">{series.description}</p>
-          )}
+              <Sun size={14} />
+              浅色
+            </button>
+            <button
+              type="button"
+              onClick={() => onThemeChange("dark")}
+              aria-pressed={theme === "dark"}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+                theme === "dark" ? "bg-primary text-white shadow-sm" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <Moon size={14} />
+              深色
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ── Asset navigation ── */}
       <div className="p-3 space-y-1">
-        <div className="px-3 py-1.5">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-            共享资产
+        <button
+          onClick={() => onItemChange({ kind: "shared_assets" })}
+          className={clsx(
+            "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
+            activeItem.kind === "shared_assets"
+              ? "bg-white/10 text-gray-200"
+              : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+          )}
+        >
+          {activeItem.kind === "shared_assets" && (
+            <motion.div
+              layoutId="series-active-pill"
+              className="absolute left-0 w-1 h-full bg-primary"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            />
+          )}
+          <Boxes
+            size={18}
+            className={clsx(
+              "transition-colors",
+              activeItem.kind === "shared_assets" ? "text-white" : "group-hover:text-gray-200"
+            )}
+          />
+          <div className="flex-1 text-left leading-tight">
+            <div className="text-sm font-semibold">共享资产</div>
+            <div className="text-[11px] text-gray-500">角色 / 场景 / 道具</div>
+          </div>
+          <span
+            className={clsx(
+              "text-xs px-1.5 py-0.5 rounded-md font-mono",
+              activeItem.kind === "shared_assets"
+                ? "bg-white/10 text-gray-200"
+                : "bg-white/5 text-gray-400"
+            )}
+          >
+            {sharedAssetsCount}
           </span>
-        </div>
-        {ASSET_TABS.map(({ tab, label, icon: Icon }) => {
-          const isActive =
-            activeItem.kind === "asset" && activeItem.tab === tab;
-          const count = getAssetCount(tab);
-
-          return (
-            <button
-              key={tab}
-              onClick={() => onItemChange({ kind: "asset", tab })}
-              className={clsx(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative overflow-hidden",
-                isActive
-                  ? "bg-white/10 text-gray-200"
-                  : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
-              )}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="series-active-pill"
-                  className="absolute left-0 w-1 h-full bg-primary"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                />
-              )}
-              <Icon
-                size={18}
-                className={clsx(
-                  "transition-colors",
-                  isActive ? "text-white" : "group-hover:text-gray-200"
-                )}
-              />
-              <span className="text-sm font-medium flex-1 text-left">
-                {label}
-              </span>
-              <span
-                className={clsx(
-                  "text-xs px-1.5 py-0.5 rounded-md font-mono",
-                  isActive
-                    ? "bg-white/10 text-gray-200"
-                    : "bg-white/5 text-gray-400"
-                )}
-              >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+        </button>
       </div>
 
       {/* ── Episode list ── */}
       <div className="flex min-h-0 flex-1 flex-col border-t border-white/10">
-        <div className="px-4 py-2.5 flex items-center justify-between">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">集数 ({episodes.length})</span>
+        <div className="px-4 pt-3 pb-2 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold tracking-wide text-gray-300">集数</span>
+            <span className="text-[10px] font-mono text-gray-500">{episodes.length}</span>
+          </div>
           <button
             type="button"
             onClick={onOpenCreateEpisode}
-            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-white/10"
+            className="studio-button studio-button-primary w-full !h-9 !rounded-xl !px-4 text-[12px] font-semibold"
           >
-            <Plus size={13} />
-            添加
+            <Plus size={14} />
+            添加集数
           </button>
         </div>
 
@@ -232,7 +205,7 @@ export default function SeriesSidebar({
                   {ep.title}
                 </span>
                 <span className="text-[10px] font-mono text-gray-500">
-                  {ep.frames?.length || 0}
+                  {ep.frame_count || 0}
                 </span>
                 {isActive && (
                   <ChevronRight size={14} className="opacity-40" />

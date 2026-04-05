@@ -99,6 +99,10 @@ class Character(BaseModel):
     id: str = Field(..., description="角色的唯一标识")
     created_at: datetime = Field(default_factory=utc_now, description="创建时间")
     name: str = Field(..., description="角色名称")
+    canonical_name: Optional[str] = Field(None, description="系列主档标准名")
+    aliases: List[str] = Field(default_factory=list, description="系列角色别名列表")
+    identity_fingerprint: Optional[str] = Field(None, description="归一化身份指纹")
+    merge_status: str = Field("active", description="系列角色主档合并状态")
     description: str = Field(..., description="角色外貌与性格描述")
     
     # 新增属性
@@ -352,6 +356,23 @@ class TimelineClip(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="预留的片段级扩展字段")
 
 
+class TimelineDiagnostics(BaseModel):
+    """项目时间轴的工程级诊断摘要。"""
+
+    video_clip_count: int = Field(0, description="视频片段数量")
+    audio_clip_count: int = Field(0, description="音频片段数量")
+    enabled_track_count: int = Field(0, description="启用轨道数量")
+    solo_track_count: int = Field(0, description="独奏轨道数量")
+    has_dialogue: bool = Field(False, description="是否存在对白片段")
+    has_sfx: bool = Field(False, description="是否存在音效片段")
+    has_bgm: bool = Field(False, description="是否存在背景音乐片段")
+    has_video_original_audio: bool = Field(False, description="视频原声是否仍参与混音")
+    has_ducking_path: bool = Field(False, description="是否存在对白压低 BGM 的导出路径")
+    export_readiness: str = Field("base_ready", description="导出就绪度：missing_video/base_ready/mix_ready")
+    flags: Dict[str, bool] = Field(default_factory=dict, description="供前端渲染工程健康状态的布尔标记")
+    summary_notes: List[str] = Field(default_factory=list, description="供前端直接展示的工程摘要说明")
+
+
 class ProjectTimeline(BaseModel):
     """项目级时间轴工程。"""
     project_id: str = Field(..., description="所属项目 ID")
@@ -359,6 +380,7 @@ class ProjectTimeline(BaseModel):
     tracks: List[TimelineTrack] = Field(default_factory=list, description="轨道列表")
     assets: List[TimelineAsset] = Field(default_factory=list, description="媒体资产快照列表")
     clips: List[TimelineClip] = Field(default_factory=list, description="时间轴片段列表")
+    diagnostics: TimelineDiagnostics = Field(default_factory=TimelineDiagnostics, description="工程级混音与编排摘要")
     updated_at: datetime = Field(default_factory=utc_now, description="最近一次更新时间")
 
 class Script(BaseModel):
@@ -367,6 +389,7 @@ class Script(BaseModel):
     original_text: str = Field(..., description="原始小说文本")
     
     characters: List[Character] = Field(default_factory=list)
+    series_character_links: List["ProjectCharacterLink"] = Field(default_factory=list, description="系列项目的角色引用关系")
     scenes: List[Scene] = Field(default_factory=list)
     props: List[Prop] = Field(default_factory=list)
     frames: List[StoryboardFrame] = Field(default_factory=list)
@@ -405,6 +428,28 @@ class Script(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectCharacterLink(BaseModel):
+    """系列项目中的角色引用关系。"""
+
+    id: str = Field(..., description="引用关系唯一标识")
+    project_id: str = Field(..., description="所属项目 ID")
+    series_id: str = Field(..., description="所属系列 ID")
+    character_id: str = Field(..., description="引用的系列角色 ID")
+    source_name: Optional[str] = Field(None, description="本次提取命中的原始名称")
+    source_alias: Optional[str] = Field(None, description="本集确认的别名或称呼")
+    episode_notes: Optional[str] = Field(None, description="本集局部备注")
+    override_json: Dict[str, Any] = Field(default_factory=dict, description="本集轻量覆盖字段")
+    match_confidence: Optional[float] = Field(None, description="自动匹配置信度")
+    match_status: str = Field("confirmed", description="自动匹配结果状态")
+    character: Optional[Character] = Field(None, description="引用的系列角色主档")
+    organization_id: Optional[str] = Field(None, description="所属组织 ID")
+    workspace_id: Optional[str] = Field(None, description="所属工作区 ID")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="最后修改人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
 
 
 class Series(BaseModel):

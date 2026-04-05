@@ -5,7 +5,7 @@ import tempfile
 
 from .project_service import ProjectService
 from ...repository import ProjectRepository
-from ...schemas.models import ProjectTimeline, TimelineAsset, TimelineClip, TimelineTrack
+from ...schemas.models import ProjectTimeline, TimelineAsset, TimelineClip, TimelineDiagnostics, TimelineTrack
 from ...utils.audio_waveform import AudioWaveformAnalyzer
 from ...utils.datetime import utc_now
 from ...utils.oss_utils import OSSImageUploader, is_object_key
@@ -134,6 +134,8 @@ class ProjectTimelineService:
                 )
             )
 
+        diagnostics = self._build_timeline_diagnostics(tracks=tracks, clips=clips)
+
         return timeline.model_copy(
             update={
                 "tracks": [
@@ -147,9 +149,65 @@ class ProjectTimelineService:
                 ],
                 "assets": assets,
                 "clips": clips,
+                "diagnostics": diagnostics,
                 "version": max(int(timeline.version or 0), 0) + (1 if bump_version else 0),
                 "updated_at": utc_now() if bump_version else timeline.updated_at,
             }
+        )
+
+    def _build_timeline_diagnostics(self, tracks: list[TimelineTrack], clips: list[TimelineClip]) -> TimelineDiagnostics:
+        """构建时间轴工程级诊断摘要，供前端直接展示当前编排与混音能力。"""
+        track_by_id = {track.id: track for track in tracks}
+        video_track_ids = {track.id for track in tracks if track.track_type == "video"}
+        dialogue_track_ids = {track.id for track in tracks if track.track_type == "dialogue"}
+        sfx_track_ids = {track.id for track in tracks if track.track_type == "sfx"}
+        bgm_track_ids = {track.id for track in tracks if track.track_type == "bgm"}
+
+        video_clips = [clip for clip in clips if clip.track_id in video_track_ids]
+        audio_clips = [clip for clip in clips if clip.track_id not in video_track_ids]
+        has_dialogue = any(clip.track_id in dialogue_track_ids for clip in clips)
+        has_sfx = any(clip.track_id in sfx_track_ids for clip in clips)
+        has_bgm = any(clip.track_id in bgm_track_ids for clip in clips)
+        has_video_original_audio = any(bool((clip.metadata or {}).get("original_audio_enabled", True)) for clip in video_clips)
+        enabled_track_count = sum(1 for track in tracks if track.enabled)
+        solo_track_count = sum(1 for track in tracks if track.enabled and track.solo)
+
+        # 只要对白轨和 BGM 轨都存在且启用，就说明当前工程具备 ducking 导出路径。
+        has_ducking_path = any(track.enabled for track in tracks if track.track_type == "dialogue") and any(
+            track.enabled for track in tracks if track.track_type == "bgm"
+        )
+        export_readiness = "missing_video"
+        if video_clips:
+            export_readiness = "mix_ready" if (has_dialogue or has_sfx or has_bgm or has_video_original_audio) else "base_ready"
+        summary_notes: list[str] = []
+        if has_ducking_path and has_dialogue and has_bgm:
+            summary_notes.append("对白优先与 BGM ducking 链路已就绪。")
+        if has_video_original_audio:
+            summary_notes.append("视频原声片段级混音已启用。")
+        if solo_track_count > 0:
+            summary_notes.append("当前工程存在独奏监听轨道。")
+        if not summary_notes:
+            summary_notes.append("当前工程已建立基础混音结构。")
+        flags = {
+            "multitrack_audio": has_dialogue or has_sfx or has_bgm,
+            "monitoring_overrides": solo_track_count > 0,
+            "video_original_audio": has_video_original_audio,
+            "ducking_ready": has_ducking_path and has_dialogue and has_bgm,
+        }
+
+        return TimelineDiagnostics(
+            video_clip_count=len(video_clips),
+            audio_clip_count=len(audio_clips),
+            enabled_track_count=enabled_track_count,
+            solo_track_count=solo_track_count,
+            has_dialogue=has_dialogue,
+            has_sfx=has_sfx,
+            has_bgm=has_bgm,
+            has_video_original_audio=has_video_original_audio,
+            has_ducking_path=has_ducking_path,
+            export_readiness=export_readiness,
+            flags=flags,
+            summary_notes=summary_notes,
         )
 
     def _build_default_timeline(self, project) -> ProjectTimeline:

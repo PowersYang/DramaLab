@@ -16,7 +16,7 @@ from ..auth.constants import (
     ROLE_PLATFORM_SUPER_ADMIN,
 )
 from ..common.log import get_logger
-from ..schemas.models import User
+from ..schemas.models import AuthMeResponse, User
 
 
 auth_service = AuthService()
@@ -28,6 +28,7 @@ class RequestContext:
     """请求级认证上下文，统一承载当前用户与租户边界信息。"""
 
     user: User
+    me: AuthMeResponse
     current_workspace_id: str | None
     current_organization_id: str | None
     current_role_code: str | None
@@ -113,6 +114,7 @@ def get_request_context(
     )
     return RequestContext(
         user=user,
+        me=me,
         current_workspace_id=me.current_workspace_id,
         current_organization_id=me.current_organization_id,
         current_role_code=me.current_role_code,

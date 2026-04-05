@@ -122,6 +122,12 @@ class AddEpisodeRequest(BaseModel):
     episode_number: Optional[int] = None
 
 
+class CreateEpisodeRequest(BaseModel):
+    title: str
+    text: str = ""
+    episode_number: Optional[int] = None
+
+
 class UpdateModelSettingsRequest(BaseModel):
     t2i_model: Optional[str] = None
     i2i_model: Optional[str] = None

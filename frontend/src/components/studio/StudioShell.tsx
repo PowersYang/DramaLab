@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Boxes, ChevronDown, Clapperboard, CreditCard, FolderKanban, LayoutDashboard, Library, Palette, Settings2, SlidersHorizontal, Users2, WalletCards, Workflow, Menu } from "lucide-react";
+import clsx from "clsx";
 
 import AdminBreadcrumbs from "@/components/studio/admin/AdminBreadcrumbs";
 import TagsView from "@/components/studio/TagsView";
@@ -40,7 +41,7 @@ interface StudioNavItem {
 
 const NAV_ITEMS: StudioNavItem[] = [
   { href: "/studio", label: "工作台总览", shortLabel: "总览", hint: "经营态势、告警与生产信号", icon: LayoutDashboard, capability: "workspace.view", section: "overview" },
-  { href: "/studio/projects", label: "项目与系列", shortLabel: "项目", hint: "剧本母体、系列编排与单集台账", icon: FolderKanban, capability: "workspace.view", section: "planning" },
+  { href: "/studio/projects", label: "剧集中心", shortLabel: "剧集", hint: "作品主档、剧集编排与最近创作入口", icon: FolderKanban, capability: "workspace.view", section: "planning" },
   { href: "/studio/library", label: "角色场景资产", shortLabel: "资产", hint: "角色、场景、道具与复用资源", icon: Library, capability: "workspace.view", section: "planning" },
   { href: "/studio/styles", label: "美术风格策略", shortLabel: "风格", hint: "视觉风格沉淀与项目复用", icon: Palette, capability: "workspace.view", section: "planning" },
   { href: "/studio/tasks", label: "生产调度中心", shortLabel: "任务", hint: "分镜、视频与异步任务队列", icon: Workflow, capability: "task.run", section: "execution" },
@@ -151,7 +152,7 @@ export default function StudioShell({
     <div className="flex h-screen w-full overflow-hidden bg-[#f0f2f5] text-slate-900">
       {/* Sidebar - Dark theme like vue-element-admin */}
       <aside className={`fixed inset-y-0 left-0 z-50 flex w-[210px] flex-col bg-[#304156] shadow-xl transition-all duration-300 lg:static lg:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="flex h-[50px] items-center px-4">
+        <div className="flex h-[54px] items-center border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent px-4">
           <Link href="/studio" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white">
               <Clapperboard size={20} />
@@ -160,13 +161,18 @@ export default function StudioShell({
           </Link>
         </div>
 
-        <div className="no-scrollbar flex-1 overflow-y-auto py-2">
+        <div className="no-scrollbar flex-1 overflow-y-auto py-3">
           {navSections.map((group) => (
-            <div key={group.section} className="mb-4">
-              <div className="px-5 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>
-              </div>
-              <nav className="space-y-0.5">
+            <div key={group.section} className={clsx("mb-6", group.section === "overview" && group.items.length === 1 && "mb-4")}>
+              {!(group.section === "overview" && group.items.length === 1) && (
+                <div className="px-5 py-2">
+                  <div className="flex items-center gap-3">
+                    <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-400/90">{group.label}</p>
+                    <div className="h-px flex-1 bg-white/10" />
+                  </div>
+                </div>
+              )}
+              <nav className="space-y-1 px-2">
                 {group.items.map((item) => {
                   const isActive = pathname === item.href || (item.href !== "/studio" && pathname.startsWith(`${item.href}/`));
                   const Icon = item.icon;
@@ -174,19 +180,27 @@ export default function StudioShell({
                     <Link
                       key={item.href}
                       href={item.href}
+                      title={item.hint}
                       onClick={() => {
                         setPendingPath(item.href);
                         setIsSidebarOpen(false);
                       }}
-                      className={`group flex items-center gap-3 px-5 py-3 text-[13px] transition-all ${
-                        isActive
-                          ? "bg-[#263445] text-[#409eff]"
-                          : "text-[#bfcbd9] hover:bg-[#263445] hover:text-white"
-                      }`}
+                      className={clsx(
+                        "group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13px] transition-colors duration-150",
+                        "text-[#bfcbd9] hover:bg-[#263445]/90 hover:text-white",
+                        isActive && "bg-gradient-to-r from-[#1f2b3a] to-[#263445] text-white shadow-[inset_0_0_0_1px_rgba(64,158,255,0.22)]",
+                        isActive && "before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r before:bg-[#409eff]"
+                      )}
                     >
-                      <Icon size={16} className={isActive ? "text-[#409eff]" : "group-hover:text-white"} />
-                      <span className="font-medium">{item.label}</span>
-                      {isActive && <div className="ml-auto h-1 w-1 rounded-full bg-[#409eff]" />}
+                      <Icon
+                        size={16}
+                        className={clsx(
+                          "shrink-0 text-[#9aa8b8] transition-colors group-hover:text-white",
+                          isActive && "text-[#8cc5ff]"
+                        )}
+                      />
+                      <span className={clsx("font-semibold tracking-tight", isActive && "text-white")}>{item.label}</span>
+                      {isActive && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-[#409eff] shadow-[0_0_0_3px_rgba(64,158,255,0.12)]" />}
                     </Link>
                   );
                 })}

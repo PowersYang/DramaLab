@@ -145,6 +145,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return me;
       } catch {
         const payload = await api.refreshSession();
+        // 中文注释：refresh 接口在无会话时会返回 null，这里直接收敛到外层匿名态分支，不再把正常未登录场景当成运行时错误。
+        if (!payload) {
+          throw new Error("No active auth session");
+        }
         setAccessToken(payload.session.access_token);
         writeAuthSnapshot({ accessToken: payload.session.access_token, me: payload.me });
         set({ me: payload.me, authStatus: "authenticated", isBootstrapping: false });

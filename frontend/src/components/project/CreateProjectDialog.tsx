@@ -61,7 +61,7 @@ export default function CreateProjectDialog({ isOpen, onClose, redirectBasePath 
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-display font-bold text-slate-950">创建新项目</h2>
+                            <h2 className="text-2xl font-display font-bold text-slate-950">创建独立创作项目</h2>
                             <button
                                 onClick={onClose}
                                 className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-950"
@@ -79,7 +79,7 @@ export default function CreateProjectDialog({ isOpen, onClose, redirectBasePath 
                                     type="text"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
-                                    placeholder="输入项目标题..."
+                                    placeholder="输入独立项目标题..."
                                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition-colors focus:border-primary focus:bg-white"
                                 />
                             </div>
@@ -91,7 +91,7 @@ export default function CreateProjectDialog({ isOpen, onClose, redirectBasePath 
                                 <textarea
                                     value={text}
                                     onChange={(e) => setText(e.target.value)}
-                                    placeholder="粘贴小说或剧本内容..."
+                                    placeholder="粘贴用于独立创作的小说或剧本内容..."
                                     rows={10}
                                     className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm text-slate-900 outline-none transition-colors focus:border-primary focus:bg-white"
                                 />
@@ -109,7 +109,7 @@ export default function CreateProjectDialog({ isOpen, onClose, redirectBasePath 
                                     disabled={isCreating || !title}
                                     className="flex-1 rounded-full bg-primary px-6 py-3 font-medium text-white transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    {isCreating ? "创建中..." : "创建项目"}
+                                    {isCreating ? "创建中..." : "创建独立项目"}
                                 </button>
                             </div>
                         </div>

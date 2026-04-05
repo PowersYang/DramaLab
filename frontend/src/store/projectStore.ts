@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { api, API_URL } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useTaskStore } from '@/store/taskStore';
 
 export interface ImageVariant {
@@ -82,6 +82,24 @@ export interface Character {
     full_body_updated_at?: string | number;
     three_view_updated_at?: string | number;
     headshot_updated_at?: string | number;
+    canonical_name?: string;
+    aliases?: string[];
+    identity_fingerprint?: string;
+    merge_status?: string;
+}
+
+export interface ProjectCharacterLink {
+    id: string;
+    project_id: string;
+    series_id: string;
+    character_id: string;
+    source_name?: string | null;
+    source_alias?: string | null;
+    episode_notes?: string | null;
+    override_json?: Record<string, any>;
+    match_confidence?: number | null;
+    match_status: string;
+    character?: Character | null;
 }
 
 export interface Scene {
@@ -384,6 +402,7 @@ export interface Project {
     created_at?: string | number;
     updated_at?: string | number;
     characters: Character[];
+    series_character_links?: ProjectCharacterLink[];
     scenes: Scene[];
     props: Prop[];
     frames: any[]; // Keeping as any for now to avoid breaking too much, but ideally StoryboardFrame[]
@@ -556,10 +575,34 @@ const normalizeProject = (project: any): any => {
         ...(Array.isArray(item?.video_assets) ? { video_assets: sortVideoTasks(item.video_assets) } : {}),
     });
 
+    const normalizedSeriesCharacterLinks = Array.isArray(project.series_character_links)
+        ? project.series_character_links.map((link: any) => ({
+            ...link,
+            ...(link?.character ? { character: normalizeAssetOwner(link.character) } : {}),
+        }))
+        : [];
+    const derivedSeriesCharacters = normalizedSeriesCharacterLinks
+        .map((link: any) => link?.character)
+        .filter((character: any): character is Character => Boolean(character))
+        .reduce((acc: Character[], character: Character) => {
+            if (acc.some((item) => item.id === character.id)) {
+                return acc;
+            }
+            acc.push(character);
+            return acc;
+        }, []);
+    const normalizedCharacters = Array.isArray(project.characters)
+        ? sortByCreatedAt(project.characters).map(normalizeAssetOwner)
+        : [];
+    const effectiveCharacters = project.series_id && derivedSeriesCharacters.length > 0
+        ? sortByCreatedAt(derivedSeriesCharacters)
+        : normalizedCharacters;
+
     const normalizedTimeline = project.timeline || undefined;
     return {
         ...project,
-        ...(Array.isArray(project.characters) ? { characters: sortByCreatedAt(project.characters).map(normalizeAssetOwner) } : {}),
+        characters: effectiveCharacters,
+        ...(normalizedSeriesCharacterLinks.length > 0 ? { series_character_links: normalizedSeriesCharacterLinks } : {}),
         ...(Array.isArray(project.scenes) ? { scenes: sortByCreatedAt(project.scenes).map(normalizeAssetOwner) } : {}),
         ...(Array.isArray(project.props) ? { props: sortByCreatedAt(project.props).map(normalizeAssetOwner) } : {}),
         ...(Array.isArray(project.frames) ? { frames: sortStoryboardFrames(project.frames) } : {}),
@@ -597,6 +640,9 @@ const mergeProjectAssetState = (currentProject: any, incomingProject: any): any 
         ...currentProject,
         ...incomingProject,
         characters: mergeAssetCollection(currentProject.characters, incomingProject.characters, mergeCharacterState),
+        series_character_links: Array.isArray(incomingProject.series_character_links)
+            ? incomingProject.series_character_links
+            : currentProject.series_character_links,
         scenes: mergeAssetCollection(currentProject.scenes, incomingProject.scenes, mergeSimpleAssetState),
         props: mergeAssetCollection(currentProject.props, incomingProject.props, mergeSimpleAssetState),
         frames: Array.isArray(incomingProject.frames) ? incomingProject.frames : currentProject.frames,
@@ -735,23 +781,18 @@ export const useProjectStore = create<ProjectStore>()(
 
                 // Then fetch latest data from backend
                 try {
-                    const response = await fetch(`${API_URL}/projects/${id}`);
-                    if (response.ok) {
-                        const rawData = await response.json();
-                        // Transform data to match frontend model (snake_case -> camelCase for specific fields)
-                        const latestProject = normalizeProject(mergeProjectAssetState(cachedProject, mergeProjectDrafts({
-                            ...rawData,
-                            originalText: rawData.original_text
-                        }, cachedProject)));
+                    // 中文注释：项目详情必须复用统一 API 客户端，确保鉴权头、cookie、401 刷新重放和错误格式化全部走同一条链路。
+                    const rawData = await api.getProject(id);
+                    // Transform data to match frontend model (snake_case -> camelCase for specific fields)
+                    const latestProject = normalizeProject(mergeProjectAssetState(cachedProject, mergeProjectDrafts(rawData, cachedProject)));
 
-                        // Update both currentProject and projects array with latest data
-                        set((state) => ({
-                            currentProject: latestProject,
-                            projects: state.projects.map((p) =>
-                                p.id === id ? latestProject : p
-                            ),
-                        }));
-                    }
+                    // Update both currentProject and projects array with latest data
+                    set((state) => ({
+                        currentProject: latestProject,
+                        projects: state.projects.some((p) => p.id === id)
+                            ? state.projects.map((p) => (p.id === id ? latestProject : p))
+                            : [...state.projects, latestProject],
+                    }));
                 } catch (error) {
                     console.error('Failed to fetch latest project data:', error);
                     // Keep using cached version if fetch fails

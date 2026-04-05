@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Calendar, Trash2, Play } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Project } from "@/store/projectStore";
+import { getEffectiveProjectCharacterCount } from "@/lib/projectAssets";
 
 interface ProjectCardProps {
     project: Project;
@@ -22,6 +23,7 @@ export default function ProjectCard({ project, onDelete, href }: ProjectCardProp
     const createdDate = project.createdAt
         ? new Date(project.createdAt)
         : parseDate(project.created_at);
+    const characterCount = getEffectiveProjectCharacterCount(project);
 
     const handleOpen = () => {
         router.push(href || `/studio/projects/${project.id}`);
@@ -70,7 +72,7 @@ export default function ProjectCard({ project, onDelete, href }: ProjectCardProp
             </div>
 
             <div className="flex items-center gap-3 text-xs text-gray-400 mb-4">
-                <span>角色 <span className="text-white font-medium">{project.characters?.length || 0}</span></span>
+                <span>角色 <span className="text-white font-medium">{characterCount}</span></span>
                 <span className="text-gray-600">·</span>
                 <span>场景 <span className="text-white font-medium">{project.scenes?.length || 0}</span></span>
                 <span className="text-gray-600">·</span>

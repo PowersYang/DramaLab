@@ -5,13 +5,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
-  ChevronDown,
   ChevronRight,
-  FileText,
   FileUp,
   FolderKanban,
-  Play,
-  Plus,
   Search,
   Sparkles,
   Trash2,
@@ -25,15 +21,12 @@ import {
   readStudioCache,
   STUDIO_PROJECT_SUMMARIES_CACHE_KEY,
   STUDIO_SERIES_SUMMARIES_CACHE_KEY,
+  writeStudioCache,
 } from "@/lib/studioCache";
 import { useProjectStore } from "@/store/projectStore";
 
-const CreateProjectDialog = dynamic(() => import("@/components/project/CreateProjectDialog"));
 const ImportFileDialog = dynamic(() => import("@/components/series/ImportFileDialog"));
 const CreateSeriesDialog = dynamic(() => import("@/components/studio/CreateSeriesDialog"));
-
-type FilterMode = "all" | "series" | "project";
-type LedgerTab = "all" | "recent" | "risk";
 
 const PROJECTS_DASHBOARD_LOG_PREFIX = "[projects-dashboard]";
 
@@ -50,16 +43,6 @@ const formatDate = (value?: string | number | null) => {
   return new Date(timestamp).toLocaleDateString("zh-CN");
 };
 
-const getProjectStage = (project: ProjectSummary) => {
-  if ((project.frame_count || 0) > 0) {
-    return { label: "分镜生产中", tone: "accent" as const };
-  }
-  if ((project.character_count || 0) > 0 || (project.scene_count || 0) > 0) {
-    return { label: "资产筹备中", tone: "warning" as const };
-  }
-  return { label: "待推进", tone: "neutral" as const };
-};
-
 function SeriesLedgerRow({
   series,
   episodes,
@@ -68,6 +51,7 @@ function SeriesLedgerRow({
   onDelete,
   onToggleExpand,
   onEpisodesChange,
+  onEpisodeCreated,
 }: {
   series: SeriesSummary;
   episodes: EpisodeBrief[] | undefined;
@@ -76,6 +60,7 @@ function SeriesLedgerRow({
   onDelete: (id: string) => void;
   onToggleExpand: (seriesId: string) => void;
   onEpisodesChange: (seriesId: string) => void;
+  onEpisodeCreated: (seriesId: string, episode: EpisodeBrief, project: any) => void;
 }) {
   const [inlineTitle, setInlineTitle] = useState("");
   const [isAdding, setIsAdding] = useState(false);
@@ -89,10 +74,22 @@ function SeriesLedgerRow({
     setIsAdding(true);
     try {
       const nextEpisodeNumber = (episodes?.length || 0) + 1;
-      await api.createEpisodeForSeries(series.id, inlineTitle.trim(), nextEpisodeNumber);
+      const project = await api.createEpisodeForSeries(series.id, inlineTitle.trim(), nextEpisodeNumber);
+      onEpisodeCreated(
+        series.id,
+        {
+          id: project.id,
+          title: project.title,
+          series_id: series.id,
+          episode_number: nextEpisodeNumber,
+          frame_count: 0,
+          created_at: project.created_at ?? project.createdAt,
+          updated_at: project.updated_at ?? project.updatedAt,
+        },
+        project,
+      );
       setInlineTitle("");
       setShowInlineInput(false);
-      onEpisodesChange(series.id);
     } catch (error) {
       console.error("Failed to add episode inline:", error);
     } finally {
@@ -106,11 +103,11 @@ function SeriesLedgerRow({
         <td>
           <div className="admin-ledger-main">
             <div className="flex items-center gap-2">
-              <span className="admin-status-badge admin-status-badge-neutral">系列</span>
+              <span className="admin-status-badge admin-status-badge-neutral">剧集</span>
               <h4 className="truncate text-sm font-bold text-slate-800">{series.title}</h4>
             </div>
             <p className="truncate text-[11px] text-slate-400">
-              {series.description || "系列母体"}
+              {series.description || "剧集主档"}
             </p>
           </div>
         </td>
@@ -132,7 +129,7 @@ function SeriesLedgerRow({
             </Link>
             <button
               onClick={() => {
-                if (confirm(`确定要删除系列"${series.title}"吗？`)) {
+                if (confirm(`确定要删除剧集"${series.title}"吗？`)) {
                   onDelete(series.id);
                 }
               }}
@@ -166,7 +163,7 @@ function SeriesLedgerRow({
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-1 text-xs text-slate-400">从这里快速进入单集编辑器，或在列表内补齐集数标题。</p>
+                      <p className="mt-1 text-xs text-slate-400">从这里快速进入单集编辑器，或继续补齐剧集下的集数标题。</p>
                   </div>
                 </div>
 
@@ -276,67 +273,12 @@ function SeriesLedgerRow({
   );
 }
 
-function ProjectLedgerRow({ project, onDelete }: { project: ProjectSummary; onDelete: (id: string) => void }) {
-  const stage = getProjectStage(project);
-
-  return (
-    <tr>
-      <td>
-        <div className="admin-ledger-main">
-          <div className="flex items-center gap-2">
-            <span className="admin-status-badge admin-status-badge-neutral">项目</span>
-            <h4 className="truncate text-sm font-bold text-slate-800">{project.title}</h4>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-400">
-            <span className="flex items-center gap-1">
-              <Calendar size={10} />
-              {formatDate(project.created_at)}
-            </span>
-          </div>
-        </div>
-      </td>
-
-      <td className="admin-table-cell-center whitespace-nowrap">
-        <span className={`text-[11px] admin-status-badge-${stage.tone} whitespace-nowrap`}>{stage.label}</span>
-      </td>
-      <td className="admin-table-cell-center admin-table-cell-text">{project.character_count || 0}</td>
-      <td className="admin-table-cell-center admin-table-cell-text">{project.scene_count || 0}</td>
-      <td className="admin-table-cell-center admin-table-cell-text">{project.prop_count || 0}</td>
-      <td className="admin-table-cell-center admin-table-cell-text">{project.frame_count || 0}</td>
-      <td className="admin-table-cell-center admin-table-cell-text text-slate-400">{formatDate(project.updated_at)}</td>
-
-      <td>
-        <div className="admin-ledger-actions">
-          <Link href={`/studio/projects/${project.id}`} className="studio-button studio-button-primary !h-7 !px-3 text-[11px]">
-            打开
-          </Link>
-          <button
-            onClick={() => {
-              if (confirm(`确定要删除项目"${project.title}"吗？`)) {
-                onDelete(project.id);
-              }
-            }}
-            className="studio-button studio-button-danger !h-7 !w-7 !p-0"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
 export default function StudioProjectsPage() {
-  const deleteProject = useProjectStore((state) => state.deleteProject);
   const deleteSeries = useProjectStore((state) => state.deleteSeries);
 
-  const [filter, setFilter] = useState<FilterMode>("all");
-  const [ledgerTab, setLedgerTab] = useState<LedgerTab>("all");
   const [keyword, setKeyword] = useState("");
-  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreateSeriesOpen, setIsCreateSeriesOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
-  const [showCreateDropdown, setShowCreateDropdown] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [seriesList, setSeriesList] = useState<SeriesSummary[]>([]);
   const [seriesEpisodes, setSeriesEpisodes] = useState<Record<string, EpisodeBrief[]>>({});
@@ -415,109 +357,125 @@ export default function StudioProjectsPage() {
     }
   }, [loadWorkspaceData]);
 
-  useEffect(() => {
-    if (expandedSeriesIds.length === 0) {
+  const fetchSeriesEpisodes = async (seriesId: string, options?: { force?: boolean }) => {
+    if (!options?.force && (seriesEpisodes[seriesId] || episodesLoadingBySeries[seriesId])) {
       return;
     }
-
-    let cancelled = false;
-    const run = async () => {
-      for (const seriesId of expandedSeriesIds) {
-        if (cancelled || seriesEpisodes[seriesId] || episodesLoadingBySeries[seriesId]) {
-          continue;
-        }
-        try {
-          setEpisodesLoadingBySeries((state) => ({ ...state, [seriesId]: true }));
-          const episodes = await logRequestDuration(`episode-briefs:${seriesId}`, api.getSeriesEpisodeBriefs(seriesId));
-          if (cancelled) return;
-          setSeriesEpisodes((state) => ({ ...state, [seriesId]: episodes }));
-        } catch (error) {
-          if (cancelled) return;
-          console.error("Failed to load series episode briefs:", seriesId, error);
-        } finally {
-          if (!cancelled) {
-            setEpisodesLoadingBySeries((state) => ({ ...state, [seriesId]: false }));
-          }
-        }
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [episodesLoadingBySeries, expandedSeriesIds, seriesEpisodes]);
-
-  const toggleSeriesExpand = (seriesId: string) => {
-    setExpandedSeriesIds((current) =>
-      current.includes(seriesId) ? current.filter((item) => item !== seriesId) : [...current, seriesId],
-    );
-  };
-
-  const refreshSeriesEpisodes = async (seriesId: string) => {
+    setEpisodesLoadingBySeries((state) => ({ ...state, [seriesId]: true }));
     try {
-      setEpisodesLoadingBySeries((state) => ({ ...state, [seriesId]: true }));
-      const episodes = await api.getSeriesEpisodeBriefs(seriesId);
+      const episodes = await logRequestDuration(`episode-briefs:${seriesId}`, api.getSeriesEpisodeBriefs(seriesId));
       setSeriesEpisodes((state) => ({ ...state, [seriesId]: episodes }));
-      await loadWorkspaceData();
+      return episodes;
     } catch (error) {
-      console.error("Failed to refresh series episodes:", error);
+      console.error("Failed to load series episode briefs:", seriesId, error);
+      return;
     } finally {
       setEpisodesLoadingBySeries((state) => ({ ...state, [seriesId]: false }));
     }
   };
 
-  const standaloneProjects = useMemo(() => projects.filter((project) => !project.series_id), [projects]);
+  const toggleSeriesExpand = (seriesId: string) => {
+    const willExpand = !expandedSeriesIds.includes(seriesId);
+    setExpandedSeriesIds((current) =>
+      current.includes(seriesId) ? current.filter((item) => item !== seriesId) : [...current, seriesId],
+    );
+    if (willExpand) {
+      void fetchSeriesEpisodes(seriesId);
+    }
+  };
+
+  const refreshSeriesEpisodes = async (seriesId: string) => {
+    try {
+      const episodes = await fetchSeriesEpisodes(seriesId, { force: true });
+      if (episodes) {
+        setSeriesList((current) => {
+          const next = current.map((item) =>
+            item.id === seriesId
+              ? { ...item, episode_count: episodes.length, updated_at: new Date().toISOString() }
+              : item,
+          );
+          writeStudioCache(STUDIO_SERIES_SUMMARIES_CACHE_KEY, next);
+          return next;
+        });
+      }
+    } catch (error) {
+      console.error("Failed to refresh series episodes:", error);
+    }
+  };
+
+  const handleEpisodeCreated = useCallback((seriesId: string, episode: EpisodeBrief, project: any) => {
+    setSeriesEpisodes((current) => {
+      const previous = current[seriesId] || [];
+      const exists = previous.some((item) => item.id === episode.id);
+      const nextForSeries = exists ? previous : [...previous, episode];
+      return {
+        ...current,
+        [seriesId]: nextForSeries,
+      };
+    });
+
+    setSeriesList((current) => {
+      const next = current.map((item) =>
+        item.id === seriesId
+          ? { ...item, episode_count: (item.episode_count || 0) + 1, updated_at: new Date().toISOString() }
+          : item,
+      );
+      writeStudioCache(STUDIO_SERIES_SUMMARIES_CACHE_KEY, next);
+      return next;
+    });
+
+    setProjects((current) => {
+      const exists = current.some((item) => item.id === project.id);
+      if (exists) return current;
+      const createdAt = project.created_at ?? project.createdAt;
+      const updatedAt = project.updated_at ?? project.updatedAt;
+      const next: ProjectSummary[] = [
+        ...current,
+        {
+          id: project.id,
+          title: project.title,
+          series_id: seriesId,
+          episode_number: episode.episode_number ?? null,
+          status: project.status || "pending",
+          character_count: 0,
+          scene_count: 0,
+          prop_count: 0,
+          frame_count: 0,
+          created_at: createdAt,
+          updated_at: updatedAt,
+        },
+      ];
+      writeStudioCache(STUDIO_PROJECT_SUMMARIES_CACHE_KEY, next);
+      return next;
+    });
+  }, []);
+
   const keywordLower = keyword.trim().toLowerCase();
 
   const filteredSeries = useMemo(() => {
-    let rows = filter === "project" ? [] : [...seriesList];
-    if (ledgerTab === "recent") {
-      rows = rows.sort((a, b) => parseTime(b.updated_at) - parseTime(a.updated_at)).slice(0, 8);
-    } else if (ledgerTab === "risk") {
-      rows = rows.filter((item) => (item.episode_count || 0) === 0 || ((item.character_count || 0) === 0 && (item.scene_count || 0) === 0));
-    }
+    let rows = [...seriesList];
     if (keywordLower) {
       rows = rows.filter((item) => `${item.title} ${item.description || ""}`.toLowerCase().includes(keywordLower));
     }
     return rows;
-  }, [filter, keywordLower, ledgerTab, seriesList]);
-
-  const filteredProjects = useMemo(() => {
-    let rows = filter === "series" ? [] : [...standaloneProjects];
-    if (ledgerTab === "recent") {
-      rows = rows.sort((a, b) => parseTime(b.updated_at) - parseTime(a.updated_at)).slice(0, 10);
-    } else if (ledgerTab === "risk") {
-      rows = rows.filter((item) => (item.frame_count || 0) === 0);
-    }
-    if (keywordLower) {
-      rows = rows.filter((item) => item.title.toLowerCase().includes(keywordLower));
-    }
-    return rows;
-  }, [filter, keywordLower, ledgerTab, standaloneProjects]);
+  }, [keywordLower, seriesList]);
 
   const summaryItems = useMemo(
     () => [
-      { label: "全部项目", value: projects.length, icon: FolderKanban },
-      { label: "系列总数", value: seriesList.length, icon: FileText },
+      { label: "剧集总数", value: seriesList.length, icon: FolderKanban },
       {
         label: "待推进",
-        value: projects.filter((item) => (item.frame_count || 0) === 0).length,
+        value: projects.filter((item) => item.series_id && (item.frame_count || 0) === 0).length,
         icon: Sparkles,
       },
       {
         label: "已入分镜",
-        value: projects.filter((item) => (item.frame_count || 0) > 0).length,
-        icon: Play,
+        value: projects.filter((item) => item.series_id && (item.frame_count || 0) > 0).length,
+        icon: Calendar,
       },
     ],
     [projects, seriesList.length],
   );
-
-  const handleDeleteProject = async (id: string) => {
-    await deleteProject(id);
-    await loadWorkspaceData();
-  };
 
   const handleDeleteSeries = async (id: string) => {
     await deleteSeries(id);
@@ -533,7 +491,7 @@ export default function StudioProjectsPage() {
     <div className="space-y-6">
       {loadError ? (
         <section className="studio-panel rounded-[1.5rem] px-5 py-4 text-sm text-rose-300" style={{ borderColor: "rgba(244,63,94,0.22)", background: "rgba(127, 29, 29, 0.24)" }}>
-          项目中心加载失败：{loadError}
+          剧集中心加载失败：{loadError}
         </section>
       ) : null}
 
@@ -547,46 +505,10 @@ export default function StudioProjectsPage() {
               <input
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
-                placeholder="搜索系列、项目或关键词"
+                placeholder="搜索剧集、单集项目或关键词"
                 className="admin-filter-search-input"
               />
             </label>
-
-            <div className="admin-filter-divider" />
-
-            <div className="admin-filter-chip-group">
-              {[
-                { id: "all", label: "全部台账" },
-                { id: "series", label: "系列" },
-                { id: "project", label: "独立项目" },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setFilter(item.id as FilterMode)}
-                  className={`admin-filter-chip ${filter === item.id ? "admin-filter-chip-active" : ""}`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="admin-filter-divider" />
-
-            <div className="admin-filter-chip-group">
-              {[
-                { id: "all", label: "全部" },
-                { id: "recent", label: "最近编辑" },
-                { id: "risk", label: "待推进" },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setLedgerTab(item.id as LedgerTab)}
-                  className={`admin-filter-chip ${ledgerTab === item.id ? "admin-filter-chip-active" : ""}`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -595,25 +517,13 @@ export default function StudioProjectsPage() {
               导入剧本
             </button>
 
-            <div className="relative">
-              <button onClick={() => setShowCreateDropdown((value) => !value)} className="studio-button studio-button-primary !h-8 !px-3">
-                <Plus size={14} />
-                新建资源
-                <ChevronDown size={14} className="ml-1" />
-              </button>
-              {showCreateDropdown ? (
-                <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-                  <button onClick={() => { setIsCreateSeriesOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                    <FolderKanban size={14} className="text-blue-500" />
-                    新建系列
-                  </button>
-                  <button onClick={() => { setIsCreateProjectOpen(true); setShowCreateDropdown(false); }} className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                    <FileText size={14} className="text-blue-500" />
-                    新建项目
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <button
+              onClick={() => setIsCreateSeriesOpen(true)}
+              className="studio-button studio-button-primary !h-8 !px-3"
+            >
+              <FolderKanban size={14} />
+              新建剧集
+            </button>
           </div>
         </div>
       </section>
@@ -621,7 +531,7 @@ export default function StudioProjectsPage() {
       {filteredSeries.length > 0 ? (
         <section className="studio-panel overflow-hidden">
           <div className="admin-ledger-head">
-            <h3 className="text-sm font-bold text-slate-800">系列台账</h3>
+            <h3 className="text-sm font-bold text-slate-800">剧集列表</h3>
             <span className="text-[11px] font-medium text-slate-400">{filteredSeries.length} 条</span>
           </div>
           <div className="admin-table-container">
@@ -649,6 +559,7 @@ export default function StudioProjectsPage() {
                     onDelete={handleDeleteSeries}
                     onToggleExpand={toggleSeriesExpand}
                     onEpisodesChange={refreshSeriesEpisodes}
+                    onEpisodeCreated={handleEpisodeCreated}
                   />
                 ))}
               </tbody>
@@ -657,44 +568,13 @@ export default function StudioProjectsPage() {
         </section>
       ) : null}
 
-      {filteredProjects.length > 0 ? (
-        <section className="studio-panel overflow-hidden">
-          <div className="admin-ledger-head">
-            <h3 className="text-sm font-bold text-slate-800">独立项目台账</h3>
-            <span className="text-[11px] font-medium text-slate-400">{filteredProjects.length} 条</span>
-          </div>
-          <div className="admin-table-container">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "auto" }}>主信息</th>
-                  <th style={{ width: "120px" }} className="admin-table-cell-center whitespace-nowrap">阶段</th>
-                  <th style={{ width: "60px" }} className="admin-table-cell-center">角色</th>
-                  <th style={{ width: "60px" }} className="admin-table-cell-center">场景</th>
-                  <th style={{ width: "60px" }} className="admin-table-cell-center">道具</th>
-                  <th style={{ width: "60px" }} className="admin-table-cell-center">分镜</th>
-                  <th style={{ width: "120px" }} className="admin-table-cell-center">最后更新</th>
-                  <th style={{ width: "160px" }} className="admin-table-cell-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProjects.map((project) => (
-                  <ProjectLedgerRow key={project.id} project={project} onDelete={handleDeleteProject} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
-
-      {filteredSeries.length === 0 && filteredProjects.length === 0 ? (
+      {filteredSeries.length === 0 ? (
         <section className="studio-panel p-10 text-center">
           <Sparkles size={24} className="mx-auto opacity-10" />
-          <p className="mt-4 text-sm font-semibold studio-strong">暂无符合条件的项目</p>
+          <p className="mt-4 text-sm font-semibold studio-strong">暂无符合条件的剧集</p>
         </section>
       ) : null}
 
-      <CreateProjectDialog isOpen={isCreateProjectOpen} onClose={() => setIsCreateProjectOpen(false)} />
       <CreateSeriesDialog isOpen={isCreateSeriesOpen} onClose={() => setIsCreateSeriesOpen(false)} />
       <ImportFileDialog isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onSuccess={() => { void loadWorkspaceData(); }} />
     </div>

@@ -494,12 +494,28 @@ class CharacterRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "characters"
     __table_args__ = (
         Index("ix_characters_owner", "owner_type", "owner_id"),
+        Index(
+            "ux_characters_series_canonical_name_active",
+            "owner_id",
+            "canonical_name",
+            unique=True,
+            postgresql_where=text("owner_type = 'series' AND is_deleted = false AND canonical_name IS NOT NULL"),
+            sqlite_where=text("owner_type = 'series' AND is_deleted = 0 AND canonical_name IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     owner_type: Mapped[str] = mapped_column(String(32), nullable=False)
     owner_id: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 中文注释：系列模式下优先使用 canonical_name 作为主档稳定展示名，避免 name 因提取波动导致重复角色。
+    canonical_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 中文注释：aliases_json 用于沉淀系列角色的别名与称呼，给分集提取匹配复用。
+    aliases_json: Mapped[list | None] = mapped_column(JSON_TYPE, nullable=True)
+    # 中文注释：identity_fingerprint 用于保存归一化身份指纹，便于后续规则匹配与迁移对账。
+    identity_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 中文注释：merge_status 预留给历史角色合并治理流程，区分 active / merged 等主档状态。
+    merge_status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     age: Mapped[str | None] = mapped_column(String(128), nullable=True)
     gender: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -529,6 +545,34 @@ class CharacterRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     voice_volume: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
     locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+
+
+class ProjectCharacterLinkRecord(TenantAuditMixin, SoftDeleteMixin, Base):
+    __tablename__ = "project_character_links"
+    __table_args__ = (
+        Index("ix_project_character_links_project", "project_id"),
+        Index("ix_project_character_links_character", "character_id"),
+        Index("ix_project_character_links_series_status", "series_id", "match_status"),
+        Index(
+            "ux_project_character_links_project_character_active",
+            "project_id",
+            "character_id",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+            sqlite_where=text("is_deleted = 0"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), ForeignKey("projects.id"), nullable=False)
+    series_id: Mapped[str] = mapped_column(String(64), ForeignKey("series.id"), nullable=False)
+    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id"), nullable=False)
+    source_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_alias: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    episode_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    override_json: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    match_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    match_status: Mapped[str] = mapped_column(String(32), default="confirmed", nullable=False)
 
 
 class SceneRecord(TenantAuditMixin, SoftDeleteMixin, Base):

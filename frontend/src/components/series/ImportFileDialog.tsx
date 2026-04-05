@@ -151,7 +151,7 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess, redirectB
             });
             const job = await waitForJob(receipt.job_id, { intervalMs: 2000 });
             if (job.status !== "succeeded") {
-                throw new Error(job.error_message || "创建系列失败");
+                throw new Error(job.error_message || "创建剧集失败");
             }
             const result = job.result_json || {};
             setCreatedResult({
@@ -197,7 +197,7 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess, redirectB
                     >
                         {/* Header */}
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-display font-bold text-white">导入文件创建系列</h2>
+                            <h2 className="text-2xl font-display font-bold text-white">导入文件创建剧集</h2>
                             <button
                                 onClick={handleClose}
                                 className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
@@ -290,13 +290,13 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess, redirectB
                                     {/* Series Title */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-300 mb-2">
-                                            系列标题 <span className="text-red-400">*</span>
+                                            剧集标题 <span className="text-red-400">*</span>
                                         </label>
                                         <input
                                             type="text"
                                             value={seriesTitle}
                                             onChange={(e) => setSeriesTitle(e.target.value)}
-                                            placeholder="输入系列标题..."
+                                            placeholder="输入剧集标题..."
                                             className="glass-input w-full"
                                         />
                                     </div>
@@ -304,12 +304,12 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess, redirectB
                                     {/* Description */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-300 mb-2">
-                                            描述（可选）
+                                            剧集简介（可选）
                                         </label>
                                         <textarea
                                             value={description}
                                             onChange={(e) => setDescription(e.target.value)}
-                                            placeholder="输入系列描述..."
+                                            placeholder="输入剧集简介..."
                                             rows={3}
                                             className="glass-input w-full resize-none"
                                         />
@@ -424,9 +424,9 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess, redirectB
                                         <Check size={32} className="text-green-400" />
                                     </div>
                                     <div className="text-center">
-                                        <h3 className="text-xl font-bold text-white mb-2">系列创建成功</h3>
+                                        <h3 className="text-xl font-bold text-white mb-2">剧集创建成功</h3>
                                         <p className="text-gray-400">
-                                            系列「{seriesTitle}」已创建，共 {createdResult.episode_count} 集
+                                            剧集「{seriesTitle}」已创建，共 {createdResult.episode_count} 集
                                         </p>
                                     </div>
                                     <button
@@ -434,7 +434,7 @@ export default function ImportFileDialog({ isOpen, onClose, onSuccess, redirectB
                                         className="bg-primary hover:bg-primary/90 text-white px-8 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
                                     >
                                         <BookOpen size={18} />
-                                        查看系列
+                                        查看剧集
                                     </button>
                                 </div>
                             )}

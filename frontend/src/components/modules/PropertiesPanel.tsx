@@ -1,12 +1,13 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Settings, Sliders, Image as ImageIcon, Type, FileText, Users, Layout, Video, Mic, Music, Film, Palette, Wand2, Sparkles } from "lucide-react";
+import { FileText, Users, Layout, Video, Mic, Music, Film, Palette, Wand2, Sparkles } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useState, useEffect, useRef } from "react";
-import { api, API_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
+import { getEffectiveProjectCharacters, getEffectiveProjectCharacterCount, getProjectCharacterSourceHint } from "@/lib/projectAssets";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 interface PropertiesPanelProps {
@@ -27,7 +28,7 @@ export default function PropertiesPanel({ activeStep, embedded = false }: Proper
             case "script":
                 return <ScriptInspector project={currentProject} />;
             case "assets":
-                return <AssetsInspector project={currentProject} />;
+                return <AssetsInspector />;
             case "storyboard":
                 return <StoryboardInspector />;
             case "motion":
@@ -73,7 +74,7 @@ export default function PropertiesPanel({ activeStep, embedded = false }: Proper
 function ScriptInspector({ project }: { project: any }) {
     if (!project) return null;
     const wordCount = project.originalText?.length || 0;
-    const charCount = project.characters?.length || 0;
+    const charCount = getEffectiveProjectCharacterCount(project);
     const sceneCount = project.scenes?.length || 0;
 
     return (
@@ -91,18 +92,20 @@ function ScriptInspector({ project }: { project: any }) {
             </div>
 
             <div className="pt-4 border-t border-white/10">
+                {project?.series_id && (
+                    <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
+                        {getProjectCharacterSourceHint(project)}
+                    </div>
+                )}
                 <ArtDirectionStyleDisplay project={project} />
             </div>
         </div>
     );
 }
 
-function AssetsInspector({ project }: { project: any }) {
+function AssetsInspector() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
-
-    // Get art direction style from Step 2
-    const artDirectionStyle = currentProject?.art_direction?.style_config;
 
     // Get aspect ratios from model settings
     const characterAspectRatio = currentProject?.model_settings?.character_aspect_ratio || '9:16';
@@ -147,12 +150,12 @@ function AssetsInspector({ project }: { project: any }) {
             <div className="space-y-4 pt-4 border-t border-white/10">
                 <div className="flex items-center gap-2 mb-2">
                     <Layout className="text-primary" size={14} />
-                    <h3 className="font-bold text-white text-xs">Aspect Ratios</h3>
+                    <h3 className="font-bold text-white text-xs">资产比例</h3>
                 </div>
 
                 {/* Character Aspect Ratio */}
                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Character</label>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">角色</label>
                     <div className="grid grid-cols-3 gap-1.5">
                         {['9:16', '16:9', '1:1'].map((ratio) => (
                             <button
@@ -171,7 +174,7 @@ function AssetsInspector({ project }: { project: any }) {
 
                 {/* Scene Aspect Ratio */}
                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Scene</label>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">场景</label>
                     <div className="grid grid-cols-3 gap-1.5">
                         {['9:16', '16:9', '1:1'].map((ratio) => (
                             <button
@@ -190,7 +193,7 @@ function AssetsInspector({ project }: { project: any }) {
 
                 {/* Prop Aspect Ratio */}
                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Prop</label>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">道具</label>
                     <div className="grid grid-cols-3 gap-1.5">
                         {['9:16', '16:9', '1:1'].map((ratio) => (
                             <button
@@ -277,7 +280,7 @@ function StoryboardInspector() {
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
 
-    if (!currentProject) return null;
+    const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
 
     const selectedFrame = currentProject?.frames?.find((f: any) => f.id === selectedFrameId);
 
@@ -303,7 +306,7 @@ function StoryboardInspector() {
         if (!selectedFrame || !currentProject) return;
 
         const scene = currentProject.scenes?.find((s: any) => s.id === selectedFrame.scene_id);
-        const characters = currentProject.characters?.filter((c: any) => selectedFrame.character_ids?.includes(c.id));
+        const characters = effectiveCharacters.filter((c: any) => selectedFrame.character_ids?.includes(c.id));
 
         // Construct prompt based on User Guide: Motion + Camera (+ Context)
         const promptParts = [];
@@ -367,6 +370,8 @@ function StoryboardInspector() {
     const [isPolishing, setIsPolishing] = useState(false);
     const [feedbackText, setFeedbackText] = useState("");
 
+    if (!currentProject) return null;
+
     const polishedPrompt = selectedFrame ? polishedPrompts[selectedFrame.id] : null;
 
     const handlePolish = async (feedback: string = "") => {
@@ -381,7 +386,7 @@ function StoryboardInspector() {
         }
         if (selectedFrame.character_ids) {
             selectedFrame.character_ids.forEach((cid: string) => {
-                const char = currentProject.characters?.find((c: any) => c.id === cid);
+                const char = effectiveCharacters.find((c: any) => c.id === cid);
                 if (char) assets.push({ type: 'Character', name: char.name, description: char.description });
             });
         }
@@ -473,7 +478,7 @@ function StoryboardInspector() {
                     const selectedScene = currentProject?.scenes?.find((s: any) => s.id === selectedFrame.scene_id);
                     const sceneHasImage = selectedScene?.image_url;
 
-                    const selectedChars = currentProject?.characters?.filter((c: any) => selectedFrame.character_ids?.includes(c.id));
+                    const selectedChars = effectiveCharacters.filter((c: any) => selectedFrame.character_ids?.includes(c.id));
                     const charImageCount = selectedChars?.filter((c: any) => c.image_url || c.avatar_url).length || 0;
 
                     const selectedProps = currentProject?.props?.filter((p: any) => selectedFrame.prop_ids?.includes(p.id));
@@ -541,7 +546,7 @@ function StoryboardInspector() {
                             <div className="space-y-2">
                                 <label className="text-[10px] font-bold text-gray-500 uppercase">角色</label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {currentProject?.characters?.map((char: any) => {
+                                    {effectiveCharacters.map((char: any) => {
                                         const isSelected = selectedFrame.character_ids?.includes(char.id);
                                         const hasImage = char.image_url || char.avatar_url;
                                         // Disable if not selected, has image, and limit reached
@@ -851,6 +856,7 @@ function AudioInspector() {
     const [loadingPreviewVoiceId, setLoadingPreviewVoiceId] = useState<string | null>(null);
     const [previewUrlsByVoiceId, setPreviewUrlsByVoiceId] = useState<Record<string, string>>({});
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
 
     useEffect(() => {
         api.getVoices().then(setVoices).catch(console.error);
@@ -867,9 +873,12 @@ function AudioInspector() {
     }, [voices]);
 
     useEffect(() => {
-        if (!currentProject?.characters) return;
+        if (effectiveCharacters.length === 0) {
+            setCharParams({});
+            return;
+        }
         const nextParams: Record<string, { speed: number; pitch: number; volume: number }> = {};
-        currentProject.characters.forEach((char: any) => {
+        effectiveCharacters.forEach((char: any) => {
             nextParams[char.id] = {
                 speed: char.voice_speed ?? 1.0,
                 pitch: char.voice_pitch ?? 1.0,
@@ -877,10 +886,10 @@ function AudioInspector() {
             };
         });
         setCharParams(nextParams);
-    }, [currentProject?.characters]);
+    }, [effectiveCharacters]);
 
     useEffect(() => {
-        const characters = currentProject?.characters || [];
+        const characters = effectiveCharacters;
         if (characters.length === 0) {
             if (selectedAudioCharacterId) {
                 setSelectedAudioCharacterId(null);
@@ -890,7 +899,7 @@ function AudioInspector() {
         if (!selectedAudioCharacterId || !characters.some((char: any) => char.id === selectedAudioCharacterId)) {
             setSelectedAudioCharacterId(characters[0].id);
         }
-    }, [currentProject?.characters, selectedAudioCharacterId, setSelectedAudioCharacterId]);
+    }, [effectiveCharacters, selectedAudioCharacterId, setSelectedAudioCharacterId]);
 
     const resolveSelectedVoiceId = (voiceId?: string | null) => {
         if (!voiceId) return "";
@@ -901,7 +910,7 @@ function AudioInspector() {
         return matched?.id || "";
     };
 
-    const selectedCharacter = currentProject?.characters?.find((char: any) => char.id === selectedAudioCharacterId);
+    const selectedCharacter = effectiveCharacters.find((char: any) => char.id === selectedAudioCharacterId);
 
     const handlePlayPreview = (voiceId: string, url: string) => {
         if (!audioRef.current) return;
@@ -938,10 +947,24 @@ function AudioInspector() {
 
     const handleBindVoice = async (charId: string, voiceId: string, voiceName: string) => {
         if (!currentProject) return;
-        const nextCharacters = (currentProject.characters || []).map((char: any) =>
+        const nextCharacters = effectiveCharacters.map((char: any) =>
             char.id === charId ? { ...char, voice_id: voiceId, voice_name: voiceName } : char
         );
-        updateProject(currentProject.id, { characters: nextCharacters });
+        const nextSeriesCharacterLinks = currentProject.series_character_links?.map((link: any) =>
+            link.character_id === charId || link.character?.id === charId
+                ? {
+                    ...link,
+                    character: link.character
+                        ? { ...link.character, voice_id: voiceId, voice_name: voiceName }
+                        : link.character,
+                }
+                : link
+        );
+        // 中文注释：系列项目的角色真源在 link.character 上，乐观更新时要同时补上，界面才不会闪回旧值。
+        updateProject(currentProject.id, {
+            characters: nextCharacters,
+            ...(nextSeriesCharacterLinks ? { series_character_links: nextSeriesCharacterLinks } : {}),
+        });
         setBindingVoiceCharId(charId);
         try {
             const updatedProject = await api.bindVoice(currentProject.id, charId, voiceId, voiceName);
@@ -980,6 +1003,11 @@ function AudioInspector() {
                 onEnded={() => setPreviewingVoiceId(null)}
                 className="hidden"
             />
+            {currentProject?.series_id && (
+                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
+                    {getProjectCharacterSourceHint(currentProject)}
+                </div>
+            )}
             {!selectedCharacter ? (
                 <div className="p-4 bg-white/5 rounded-lg border border-white/10 text-center text-gray-500 text-xs">
                     请选择左侧角色以编辑音色和配音参数。

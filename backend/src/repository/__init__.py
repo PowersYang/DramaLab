@@ -17,6 +17,7 @@ from .model_catalog_entry_repository import ModelCatalogEntryRepository
 from .model_provider_config_repository import ModelProviderConfigRepository
 from .organization_repository import OrganizationRepository
 from .prop_repository import PropRepository
+from .project_character_link_repository import ProjectCharacterLinkRepository
 from .project_repository import ProjectRepository
 from .role_repository import RoleRepository
 from .scene_repository import SceneRepository
@@ -54,6 +55,7 @@ __all__ = [
     "ModelCatalogEntryRepository",
     "ModelProviderConfigRepository",
     "OrganizationRepository",
+    "ProjectCharacterLinkRepository",
     "ProjectRepository",
     "PropRepository",
     "RoleRepository",

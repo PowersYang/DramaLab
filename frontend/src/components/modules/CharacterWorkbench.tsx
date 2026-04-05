@@ -7,6 +7,7 @@ import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { api } from "@/lib/api";
 import { applyCharacterVariantSelection, getPreferredCharacterPanel } from "@/lib/characterAssets";
+import { isSeriesProject } from "@/lib/projectAssets";
 
 import { useProjectStore, type Character } from "@/store/projectStore";
 import { Image as PhotoIcon } from "lucide-react";
@@ -391,10 +392,22 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
         latestSelectionRef.current[type] = variantId;
 
         // 点击后先同步本地项目状态，确保弹窗左侧预览和角色卡片列表立即切到新图。
+        const nextCharacters = currentProject.characters?.map((character) =>
+            character.id === asset.id ? applyCharacterVariantSelection(character as any, type, variantId) : character
+        );
+        const nextSeriesCharacterLinks = isSeriesProject(currentProject)
+            ? currentProject.series_character_links?.map((link: any) =>
+                link.character_id === asset.id || link.character?.id === asset.id
+                    ? {
+                        ...link,
+                        character: link.character ? applyCharacterVariantSelection(link.character as any, type, variantId) : link.character,
+                    }
+                    : link
+            )
+            : undefined;
         updateProject(currentProject.id, {
-            characters: currentProject.characters?.map((character) =>
-                character.id === asset.id ? applyCharacterVariantSelection(character as any, type, variantId) : character
-            ),
+            characters: nextCharacters,
+            ...(nextSeriesCharacterLinks ? { series_character_links: nextSeriesCharacterLinks } : {}),
         } as any);
 
         void flushVariantSelection(type);

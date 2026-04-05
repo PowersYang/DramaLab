@@ -92,14 +92,16 @@ class TaskService:
         )
         with session_scope() as session:
             try:
+                self.task_job_repository.create(job, session=session)
+                # 中文注释：计费单会立刻以 job_id 建外键关联 billing_charges，
+                # 所以必须先把 task_jobs 父记录 flush 到数据库，避免 PostgreSQL 在同一事务里先校验到不存在的父表行。
+                session.flush()
                 self.billing_service.charge_task_submission(
                     job=job,
                     actor_id=job.created_by,
                     idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
                     session=session,
                 )
-                self.task_job_repository.create(job, session=session)
-                session.flush()
                 video_task.source_job_id = job.id
                 self.video_task_repository.save(video_task, session=session)
                 self.task_event_repository.create(
@@ -200,14 +202,16 @@ class TaskService:
         )
         with session_scope() as session:
             try:
+                self.task_job_repository.create(job, session=session)
+                # 中文注释：通用任务在入队时也会同步创建 billing_charges，
+                # 这里先 flush 父表 task_jobs，确保后续 charge 的 job_id 外键在 PostgreSQL 下可见。
+                session.flush()
                 self.billing_service.charge_task_submission(
                     job=job,
                     actor_id=job.created_by,
                     idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
                     session=session,
                 )
-                self.task_job_repository.create(job, session=session)
-                session.flush()
                 self.task_event_repository.create(
                     TaskEvent(
                         id=f"evt_{uuid.uuid4().hex[:16]}",

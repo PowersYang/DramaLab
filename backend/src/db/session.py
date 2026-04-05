@@ -107,6 +107,7 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
     billing_pricing_rule_columns = {column["name"] for column in inspector.get_columns("billing_pricing_rules", schema=schema)}
     project_columns = {column["name"] for column in inspector.get_columns("projects", schema=schema)}
     series_columns = {column["name"] for column in inspector.get_columns("series", schema=schema)}
+    character_columns = {column["name"] for column in inspector.get_columns("characters", schema=schema)}
     statements: list[str] = []
 
     # 中文注释：当前仓库还没有正式 migration 基础设施，这里只为新增的认证列做一次幂等补齐，避免旧库启动后直接报错。
@@ -160,6 +161,21 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
             statements.append(f"ALTER TABLE {target} ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'")
         else:
             statements.append("ALTER TABLE series ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'")
+
+    character_additions = {
+        "canonical_name": "VARCHAR(255)",
+        "aliases_json": "JSONB" if engine.dialect.name == "postgresql" else "JSON",
+        "identity_fingerprint": "VARCHAR(255)",
+        "merge_status": "VARCHAR(32) NOT NULL DEFAULT 'active'",
+    }
+    for column_name, definition in character_additions.items():
+        if column_name in character_columns:
+            continue
+        if engine.dialect.name == "postgresql":
+            target = f'"{schema}"."characters"' if schema else '"characters"'
+            statements.append(f"ALTER TABLE {target} ADD COLUMN {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE characters ADD COLUMN {column_name} {definition}")
 
     billing_transaction_additions = {
         "charge_id": "VARCHAR(64)",
@@ -235,6 +251,31 @@ def _ensure_incremental_indexes(engine, schema: str | None = None) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_task_jobs_active_dedupe_key "
             "ON task_jobs(dedupe_key) "
             "WHERE dedupe_key IS NOT NULL AND status IN ('queued','claimed','running','retry_waiting','cancel_requested')"
+        )
+
+    if engine.dialect.name == "postgresql":
+        characters_table = f'"{schema}"."characters"' if schema else '"characters"'
+        project_character_links_table = f'"{schema}"."project_character_links"' if schema else '"project_character_links"'
+        statements.append(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_characters_series_canonical_name_active "
+            f"ON {characters_table}(owner_id, canonical_name) "
+            "WHERE owner_type = 'series' AND is_deleted = false AND canonical_name IS NOT NULL"
+        )
+        statements.append(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_project_character_links_project_character_active "
+            f"ON {project_character_links_table}(project_id, character_id) "
+            "WHERE is_deleted = false"
+        )
+    else:
+        statements.append(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_characters_series_canonical_name_active "
+            "ON characters(owner_id, canonical_name) "
+            "WHERE owner_type = 'series' AND is_deleted = 0 AND canonical_name IS NOT NULL"
+        )
+        statements.append(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_project_character_links_project_character_active "
+            "ON project_character_links(project_id, character_id) "
+            "WHERE is_deleted = 0"
         )
 
     with engine.begin() as connection:

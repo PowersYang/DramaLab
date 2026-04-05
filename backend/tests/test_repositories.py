@@ -239,6 +239,130 @@ class RepositoryPersistenceTest(unittest.TestCase):
         self.assertEqual(loaded[series.id].workspace_id, "ws_1")
         self.assertEqual(loaded[series.id].characters[0].full_body.image_variants[0].id, "shared_img_1")
 
+    def test_project_character_link_repository_round_trip(self):
+        from src.repository import ProjectCharacterLinkRepository, ProjectRepository, SeriesRepository
+        from src.schemas.models import Character, ProjectCharacterLink, Script, Series
+
+        now = utc_now()
+        project_repository = ProjectRepository()
+        series_repository = SeriesRepository()
+        link_repository = ProjectCharacterLinkRepository()
+
+        series_repository.create(
+            Series(
+                id="series_link_1",
+                title="Series Link",
+                description="desc",
+                characters=[
+                    Character(
+                        id="series_char_link_1",
+                        name="Shared Hero",
+                        canonical_name="Shared Hero",
+                        description="shared hero",
+                    )
+                ],
+                created_at=now,
+                updated_at=now,
+                organization_id="org_1",
+                workspace_id="ws_1",
+            )
+        )
+        project_repository.create(
+            Script(
+                id="project_link_1",
+                title="Episode Link",
+                original_text="text",
+                series_id="series_link_1",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                created_at=now,
+                updated_at=now,
+                organization_id="org_1",
+                workspace_id="ws_1",
+            )
+        )
+
+        link_repository.sync_for_project(
+            "project_link_1",
+            "series_link_1",
+            [
+                ProjectCharacterLink(
+                    id="project_char_link_1",
+                    project_id="project_link_1",
+                    series_id="series_link_1",
+                    character_id="series_char_link_1",
+                    source_name="Hero",
+                    match_status="auto_matched",
+                    match_confidence=1.0,
+                    organization_id="org_1",
+                    workspace_id="ws_1",
+                    created_at=now,
+                    updated_at=now,
+                )
+            ],
+        )
+
+        links = link_repository.list_by_project("project_link_1")
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0].project_id, "project_link_1")
+        self.assertEqual(links[0].character_id, "series_char_link_1")
+        self.assertEqual(links[0].match_status, "auto_matched")
+        loaded_project = project_repository.get("project_link_1")
+        self.assertIsNotNone(loaded_project)
+        self.assertEqual(len(loaded_project.series_character_links), 1)
+        self.assertEqual(loaded_project.series_character_links[0].character_id, "series_char_link_1")
+        self.assertIsNotNone(loaded_project.series_character_links[0].character)
+        self.assertEqual(loaded_project.series_character_links[0].character.name, "Shared Hero")
+
+    def test_series_service_create_episode_draft_creates_project_and_binds_series(self):
+        from src.application.services import SeriesService
+        from src.repository import ProjectRepository
+
+        service = SeriesService()
+        series = service.create_series(
+            "Series Ep Create",
+            "",
+            organization_id="org_1",
+            workspace_id="ws_1",
+            created_by="user_1",
+        )
+
+        episode_1 = service.create_episode_draft(
+            series_id=series.id,
+            title="Ep 1",
+            organization_id="org_1",
+            workspace_id="ws_1",
+            created_by="user_1",
+        )
+        loaded_1 = ProjectRepository().get(episode_1.id)
+        self.assertIsNotNone(loaded_1)
+        self.assertEqual(loaded_1.series_id, series.id)
+        self.assertEqual(loaded_1.episode_number, 1)
+
+        episode_2 = service.create_episode_draft(
+            series_id=series.id,
+            title="Ep 2",
+            organization_id="org_1",
+            workspace_id="ws_1",
+            created_by="user_1",
+        )
+        loaded_2 = ProjectRepository().get(episode_2.id)
+        self.assertIsNotNone(loaded_2)
+        self.assertEqual(loaded_2.series_id, series.id)
+        self.assertEqual(loaded_2.episode_number, 2)
+
+        with self.assertRaisesRegex(ValueError, "Series not found"):
+            service.create_episode_draft(
+                series_id=series.id,
+                title="Ep mismatch",
+                organization_id="org_1",
+                workspace_id="ws_other",
+                created_by="user_1",
+            )
+
     def test_series_workflow_import_assets_appends_without_dropping_existing_assets(self):
         from src.application.workflows.series_workflow import SeriesWorkflow
         from src.repository import SeriesRepository

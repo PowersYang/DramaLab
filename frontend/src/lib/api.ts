@@ -41,12 +41,13 @@ export const API_URL = getApiUrl();
 
 const LOG_PREFIX = "[dramalab-api]";
 const SENSITIVE_KEYWORDS = ["password", "secret", "token", "key", "authorization", "cookie"];
+const AUTH_REQUEST_TIMEOUT_MS = 12000;
 
 const axios = axiosLib.create();
 axios.defaults.withCredentials = true;
 
 let accessToken: string | null = null;
-let pendingRefreshPromise: Promise<AuthBootstrapPayload> | null = null;
+let pendingRefreshPromise: Promise<AuthBootstrapPayload | null> | null = null;
 
 export const setAccessToken = (token: string | null) => {
     accessToken = token;
@@ -173,6 +174,11 @@ axios.interceptors.response.use(
                 pendingRefreshPromise = refreshed;
                 const payload = await refreshed;
                 pendingRefreshPromise = null;
+                // 中文注释：没有 refresh cookie 时，/auth/refresh 返回 401 属于匿名态的正常分支，不应继续冒泡成运行时崩溃。
+                if (!payload) {
+                    setAccessToken(null);
+                    return Promise.reject(error);
+                }
                 setAccessToken(payload.session.access_token);
                 config.headers = config.headers ?? {};
                 config.headers["Authorization"] = `Bearer ${payload.session.access_token}`;
@@ -187,9 +193,17 @@ axios.interceptors.response.use(
     }
 );
 
-const refreshAuthSession = async () => {
-    const response = await axios.post(`${API_URL}/auth/refresh`);
-    return response.data as AuthBootstrapPayload;
+const refreshAuthSession = async (): Promise<AuthBootstrapPayload | null> => {
+    try {
+        const response = await axios.post(`${API_URL}/auth/refresh`, undefined, { timeout: AUTH_REQUEST_TIMEOUT_MS });
+        return response.data as AuthBootstrapPayload;
+    } catch (error) {
+        // 中文注释：刷新令牌缺失或过期时，前端应回到 anonymous，而不是把预期内的 401 当成致命异常。
+        if (axiosLib.isAxiosError(error) && error.response?.status === 401) {
+            return null;
+        }
+        throw error;
+    }
 };
 
 const fetchJson = async (input: string, init?: RequestInit) => {
@@ -763,12 +777,28 @@ export interface TimelineClip {
     metadata?: Record<string, any>;
 }
 
+export interface TimelineDiagnostics {
+    video_clip_count: number;
+    audio_clip_count: number;
+    enabled_track_count: number;
+    solo_track_count: number;
+    has_dialogue: boolean;
+    has_sfx: boolean;
+    has_bgm: boolean;
+    has_video_original_audio: boolean;
+    has_ducking_path: boolean;
+    export_readiness: "missing_video" | "base_ready" | "mix_ready";
+    flags: Record<string, boolean>;
+    summary_notes: string[];
+}
+
 export interface ProjectTimeline {
     project_id: string;
     version: number;
     tracks: TimelineTrack[];
     assets: TimelineAsset[];
     clips: TimelineClip[];
+    diagnostics: TimelineDiagnostics;
     updated_at: string;
 }
 
@@ -926,7 +956,7 @@ export const api = {
     },
 
     getMe: async () => {
-        const res = await axios.get(`${API_URL}/auth/me`);
+        const res = await axios.get(`${API_URL}/auth/me`, { timeout: AUTH_REQUEST_TIMEOUT_MS });
         return res.data as AuthMeResponse;
     },
 
@@ -1023,7 +1053,7 @@ export const api = {
                 series_id: project.series_id,
                 episode_number: project.episode_number,
                 status: project.status || "pending",
-                character_count: project.characters?.length || 0,
+                character_count: project.characters?.length || project.series_character_links?.length || 0,
                 scene_count: project.scenes?.length || 0,
                 frame_count: project.frames?.length || 0,
                 created_at: project.created_at || project.createdAt,
@@ -1898,6 +1928,10 @@ export const api = {
         const response = await axios.get(`${API_URL}/series/${seriesId}`);
         return response.data;
     },
+    getSeriesLight: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}`, { params: { include_episodes: false } });
+        return response.data;
+    },
     updateSeries: async (seriesId: string, data: { title?: string; description?: string }) => {
         const response = await axios.put(`${API_URL}/series/${seriesId}`, data);
         return response.data;
@@ -1911,6 +1945,14 @@ export const api = {
     getSeriesEpisodes: async (seriesId: string) => {
         const response = await axios.get(`${API_URL}/series/${seriesId}/episodes`);
         return response.data;
+    },
+    createEpisodeInSeries: async (seriesId: string, title: string, episodeNumber?: number, text: string = "") => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/episodes/create`, {
+            title,
+            text,
+            episode_number: episodeNumber,
+        });
+        return { ...response.data, originalText: response.data.original_text };
     },
     addEpisodeToSeries: async (seriesId: string, scriptId: string, episodeNumber?: number) => {
         const response = await axios.post(`${API_URL}/series/${seriesId}/episodes`, { script_id: scriptId, episode_number: episodeNumber });
@@ -1959,9 +2001,13 @@ export const api = {
 
     // Helper: create a project and add it as an episode to a series
     createEpisodeForSeries: async (seriesId: string, title: string, episodeNumber: number) => {
-        const project = await api.createProject(title, "", true);
-        await api.addEpisodeToSeries(seriesId, project.id, episodeNumber);
-        return project;
+        try {
+            return await api.createEpisodeInSeries(seriesId, title, episodeNumber);
+        } catch (error) {
+            const project = await api.createProject(title, "", true);
+            await api.addEpisodeToSeries(seriesId, project.id, episodeNumber);
+            return project;
+        }
     },
 
     // File Import

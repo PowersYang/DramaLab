@@ -39,10 +39,10 @@ const TASK_COPY: Record<string, string> = {
   "project.export": "项目导出",
   "project.reparse": "项目重解析",
   "project.sync_descriptions": "描述同步",
-  "series.asset.generate": "系列资产生成",
-  "series.assets.import": "系列资产导入",
-  "series.import.confirm": "系列导入确认",
-  "series.import.preview": "系列导入预分析",
+  "series.asset.generate": "剧集资产生成",
+  "series.assets.import": "剧集资产导入",
+  "series.import.confirm": "剧集导入确认",
+  "series.import.preview": "剧集导入预分析",
   "storyboard.analyze": "分镜分析",
   "storyboard.generate_all": "分镜生成",
   "storyboard.refine_prompt": "分镜提示词润色",
@@ -74,7 +74,7 @@ type OwnerFilter = "all" | "project" | "series" | "system";
 
 interface TaskTableRow extends TaskJob {
   scopeName: string;
-  scopeType: "项目" | "系列" | "系统";
+  scopeType: "项目" | "剧集" | "系统";
   taskLabel: string;
   statusLabel: string;
 }
@@ -129,8 +129,8 @@ const getScopeMeta = (
   }
   if (task.series_id) {
     return {
-      scopeName: seriesMap.get(task.series_id)?.title || `系列 ${task.series_id}`,
-      scopeType: "系列",
+      scopeName: seriesMap.get(task.series_id)?.title || `剧集 ${task.series_id}`,
+      scopeType: "剧集",
     };
   }
   return {
@@ -358,7 +358,7 @@ export default function StudioTasksPage() {
         return false;
       }
       if (ownerFilter !== "all") {
-        const expectedType = ownerFilter === "project" ? "项目" : ownerFilter === "series" ? "系列" : "系统";
+        const expectedType = ownerFilter === "project" ? "项目" : ownerFilter === "series" ? "剧集" : "系统";
         if (row.scopeType !== expectedType) {
           return false;
         }
@@ -424,7 +424,7 @@ export default function StudioTasksPage() {
               <input
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
-                placeholder="搜索项目名、系列名、任务类型或任务 ID"
+                placeholder="搜索项目名、剧集名、任务类型或任务 ID"
                 className="admin-filter-search-input"
               />
             </label>
@@ -453,7 +453,7 @@ export default function StudioTasksPage() {
               >
                 <option value="all">全部归属</option>
                 <option value="project">项目任务</option>
-                <option value="series">系列任务</option>
+                <option value="series">剧集任务</option>
                 <option value="system">系统任务</option>
               </select>
             </label>

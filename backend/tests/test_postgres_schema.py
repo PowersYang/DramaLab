@@ -144,6 +144,15 @@ class PostgresSchemaSqlTest(unittest.TestCase):
             "create index if not exists ix_series_org_workspace_updated on series (organization_id, workspace_id, is_deleted, updated_at)",
             sql,
         )
+        self.assertIn("create table if not exists project_character_links", sql)
+        self.assertIn("canonical_name varchar(255)", sql)
+        self.assertIn("aliases_json jsonb", sql)
+        self.assertIn("identity_fingerprint varchar(255)", sql)
+        self.assertIn("merge_status varchar(32) not null default 'active'", sql)
+        self.assertIn(
+            "create unique index if not exists ux_project_character_links_project_character_active on project_character_links (project_id, character_id) where is_deleted = false",
+            sql,
+        )
 
     def test_init_database_backfills_project_status_and_timeline_columns_for_legacy_sqlite(self):
         from sqlalchemy import create_engine, inspect, text
@@ -246,6 +255,90 @@ class PostgresSchemaSqlTest(unittest.TestCase):
 
             columns = {column["name"] for column in inspect(get_engine()).get_columns("series")}
             self.assertIn("status", columns)
+
+            override_env_path_for_tests(None)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()
+
+    def test_init_database_backfills_character_master_columns_and_project_character_links_for_legacy_sqlite(self):
+        from sqlalchemy import create_engine, inspect, text
+
+        from src.settings.env_settings import override_env_path_for_tests
+        from src.db.session import get_engine, get_session_factory, init_database
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "legacy-characters.db"
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text(f"DATABASE_URL=sqlite:///{db_path}\n", encoding="utf-8")
+
+            override_env_path_for_tests(env_path)
+            get_engine.cache_clear()
+            get_session_factory.cache_clear()
+
+            legacy_engine = create_engine(f"sqlite:///{db_path}", future=True)
+            with legacy_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        CREATE TABLE characters (
+                            id VARCHAR(64) PRIMARY KEY,
+                            owner_type VARCHAR(32) NOT NULL,
+                            owner_id VARCHAR(64) NOT NULL,
+                            organization_id VARCHAR(64),
+                            workspace_id VARCHAR(64),
+                            name VARCHAR(255) NOT NULL,
+                            description TEXT NOT NULL,
+                            age VARCHAR(128),
+                            gender VARCHAR(64),
+                            clothing TEXT,
+                            visual_weight INTEGER NOT NULL DEFAULT 3,
+                            full_body_image_url TEXT,
+                            full_body_prompt TEXT,
+                            full_body_asset_selected_id VARCHAR(64),
+                            three_view_image_url TEXT,
+                            three_view_prompt TEXT,
+                            three_view_asset_selected_id VARCHAR(64),
+                            headshot_image_url TEXT,
+                            headshot_prompt TEXT,
+                            headshot_asset_selected_id VARCHAR(64),
+                            video_prompt TEXT,
+                            image_url TEXT,
+                            avatar_url TEXT,
+                            is_consistent BOOLEAN NOT NULL DEFAULT 1,
+                            full_body_updated_at DATETIME NOT NULL,
+                            three_view_updated_at DATETIME NOT NULL,
+                            headshot_updated_at DATETIME NOT NULL,
+                            base_character_id VARCHAR(64),
+                            voice_id VARCHAR(128),
+                            voice_name VARCHAR(255),
+                            voice_speed FLOAT NOT NULL DEFAULT 1.0,
+                            voice_pitch FLOAT NOT NULL DEFAULT 1.0,
+                            voice_volume INTEGER NOT NULL DEFAULT 50,
+                            locked BOOLEAN NOT NULL DEFAULT 0,
+                            status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                            is_deleted BOOLEAN NOT NULL DEFAULT 0,
+                            deleted_at DATETIME,
+                            deleted_by VARCHAR(64),
+                            created_by VARCHAR(64),
+                            updated_by VARCHAR(64),
+                            created_at DATETIME NOT NULL,
+                            updated_at DATETIME NOT NULL
+                        )
+                        """
+                    )
+                )
+
+            init_database()
+
+            inspector = inspect(get_engine())
+            character_columns = {column["name"] for column in inspector.get_columns("characters")}
+            self.assertIn("canonical_name", character_columns)
+            self.assertIn("aliases_json", character_columns)
+            self.assertIn("identity_fingerprint", character_columns)
+            self.assertIn("merge_status", character_columns)
+
+            tables = set(inspector.get_table_names())
+            self.assertIn("project_character_links", tables)
 
             override_env_path_for_tests(None)
             get_engine.cache_clear()

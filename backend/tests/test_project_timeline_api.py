@@ -17,7 +17,7 @@ class ProjectTimelineApiTest(unittest.TestCase):
         from src.auth.dependencies import RequestContext, get_request_context
         from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory, init_database
-        from src.schemas.models import Script, StoryboardFrame, User, VideoTask
+        from src.schemas.models import AuthMeResponse, Script, StoryboardFrame, User, VideoTask
         from src.repository import ProjectRepository
         from src.utils.datetime import utc_now
 
@@ -80,6 +80,19 @@ class ProjectTimelineApiTest(unittest.TestCase):
                 created_at=now,
                 updated_at=now,
             ),
+            me=AuthMeResponse(
+                user=User(
+                    id="user_1",
+                    email="user@example.com",
+                    display_name="User",
+                    auth_provider="email_otp",
+                    platform_role="platform_member",
+                    status="active",
+                    created_at=now,
+                    updated_at=now,
+                ),
+                capabilities=[],
+            ),
             current_workspace_id=None,
             current_organization_id=None,
             current_role_code=None,
@@ -106,6 +119,11 @@ class ProjectTimelineApiTest(unittest.TestCase):
         self.assertEqual(payload["project_id"], "project_timeline_api_1")
         self.assertEqual(len(payload["tracks"]), 4)
         self.assertEqual(payload["clips"][0]["track_id"], "track_video_main")
+        self.assertIn("diagnostics", payload)
+        self.assertIn("video_clip_count", payload["diagnostics"])
+        self.assertIn("summary_notes", payload["diagnostics"])
+        self.assertIn("export_readiness", payload["diagnostics"])
+        self.assertIn("flags", payload["diagnostics"])
         dialogue_asset = next(item for item in payload["assets"] if item["role"] == "dialogue")
         self.assertIn("metadata", dialogue_asset)
 
@@ -139,6 +157,8 @@ class ProjectTimelineApiTest(unittest.TestCase):
         self.assertEqual(updated_dialogue_clip["source_start"], 0.5)
         self.assertEqual(updated_dialogue_clip["source_end"], 3.5)
         self.assertEqual(updated_dialogue_clip["volume"], 0.65)
+        self.assertIn("diagnostics", updated_payload)
+        self.assertGreaterEqual(updated_payload["diagnostics"]["audio_clip_count"], 1)
         self.assertGreater(updated_payload["version"], payload["version"])
 
     def test_get_project_timeline_preserves_existing_waveform_metadata(self):

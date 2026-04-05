@@ -221,14 +221,14 @@ class MediaWorkflow:
                 subprocess.run(cmd, check=True, capture_output=True, timeout=600)
                 final_output_path = output_path
                 audio_overlay_specs = self._resolve_timeline_audio_clips(project)
-                video_track_gain = self._get_video_track_gain(project)
-                if audio_overlay_specs or video_track_gain != 1.0:
+                video_audio_segments = self._resolve_video_audio_segments(project)
+                if audio_overlay_specs or video_audio_segments:
                     final_output_path = self._mix_timeline_audio(
                         ffmpeg_path=ffmpeg_path,
                         merged_video_path=output_path,
                         mixed_output_path=mixed_output_path,
                         audio_overlay_specs=audio_overlay_specs,
-                        video_track_gain=video_track_gain,
+                        video_audio_segments=video_audio_segments,
                         temp_dir=temp_dir,
                     )
                 merged_video_url = self._persist_output(final_output_path, "video/merged")
@@ -391,6 +391,61 @@ class MediaWorkflow:
             return max(float(track.gain or 0), 0.0)
         return 1.0
 
+    def _resolve_video_audio_segments(self, project) -> list[dict[str, Any]]:
+        """从视频轨时间轴提取片段级原声控制，供最终导出时重建视频原声。"""
+        timeline = project.timeline
+        if not timeline:
+            return []
+
+        solo_track_types = {track.track_type for track in timeline.tracks if track.solo}
+        video_track = next((track for track in timeline.tracks if track.track_type == "video"), None)
+        if not video_track or not video_track.enabled:
+            return []
+        if solo_track_types and "video" not in solo_track_types:
+            return []
+
+        video_track_gain = max(float(video_track.gain or 0), 0.0)
+        if video_track_gain <= 0:
+            return []
+
+        video_track_ids = {track.id for track in timeline.tracks if track.track_type == "video"}
+        segments: list[dict[str, Any]] = []
+
+        for clip in sorted(timeline.clips, key=lambda item: (item.clip_order, item.timeline_start, item.id)):
+            if clip.track_id not in video_track_ids:
+                continue
+
+            duration = max(float(clip.timeline_end or 0) - float(clip.timeline_start or 0), 0.1)
+            metadata = clip.metadata or {}
+            if metadata.get("original_audio_enabled", True) is False:
+                continue
+
+            clip_gain = max(float(metadata.get("original_audio_gain", 1.0) or 0), 0.0)
+            effective_gain = round(video_track_gain * clip_gain, 3)
+            if effective_gain <= 0:
+                continue
+
+            fade_in_duration = min(
+                max(float(metadata.get("original_audio_fade_in_duration", 0.0) or 0), 0.0),
+                max(duration - 0.01, 0.0),
+            )
+            fade_out_duration = min(
+                max(float(metadata.get("original_audio_fade_out_duration", 0.0) or 0), 0.0),
+                max(duration - fade_in_duration - 0.01, 0.0),
+            )
+            segments.append(
+                {
+                    "clip_id": clip.id,
+                    "timeline_start": round(max(float(clip.timeline_start or 0), 0.0), 3),
+                    "duration": round(duration, 3),
+                    "volume": effective_gain,
+                    "fade_in_duration": round(fade_in_duration, 3),
+                    "fade_out_duration": round(fade_out_duration, 3),
+                }
+            )
+
+        return segments
+
     def _trim_video_clip(self, ffmpeg_path: str, source_path: str, temp_dir: str, index: int, trim_start: float, trim_end: float) -> str:
         """把单个视频片段裁切成标准化中间文件，供后续 concat 使用。"""
         duration = max(trim_end - trim_start, 0.1)
@@ -431,7 +486,7 @@ class MediaWorkflow:
         merged_video_path: str,
         mixed_output_path: str,
         audio_overlay_specs: list[dict[str, Any]],
-        video_track_gain: float,
+        video_audio_segments: list[dict[str, Any]],
         temp_dir: str,
     ) -> str:
         """把 timeline 音频片段按绝对时间位置混入最终成片。"""
@@ -449,17 +504,41 @@ class MediaWorkflow:
             normalized_specs.append({**spec, "local_path": local_path})
             local_audio_inputs.append(local_path)
 
-        if not normalized_specs and video_track_gain == 1.0:
+        if not normalized_specs and not video_audio_segments:
             return merged_video_path
 
         filter_parts: list[str] = []
         final_mix_labels: list[str] = []
         grouped_labels: dict[str, list[str]] = {"dialogue": [], "sfx": [], "bgm": []}
 
-        has_base_audio = self._video_has_audio_stream(ffmpeg_path, merged_video_path) and video_track_gain > 0
+        has_base_audio = self._video_has_audio_stream(ffmpeg_path, merged_video_path) and bool(video_audio_segments)
         if has_base_audio:
-            filter_parts.append(f"[0:a]asetpts=PTS-STARTPTS,volume={video_track_gain:.3f}[basea]")
-            final_mix_labels.append("[basea]")
+            video_segment_labels: list[str] = []
+            for index, segment in enumerate(video_audio_segments):
+                label = f"va{index}"
+                timeline_start = max(float(segment["timeline_start"]), 0.0)
+                duration = max(float(segment["duration"]), 0.1)
+                volume = max(float(segment["volume"]), 0.0)
+                fade_in_duration = min(max(float(segment.get("fade_in_duration") or 0), 0.0), max(duration - 0.01, 0.0))
+                fade_out_duration = min(max(float(segment.get("fade_out_duration") or 0), 0.0), max(duration - fade_in_duration - 0.01, 0.0))
+                delay_ms = max(int(round(timeline_start * 1000)), 0)
+                audio_filter = (
+                    f"[0:a]atrim=start={timeline_start:.3f}:duration={duration:.3f},"
+                    f"asetpts=PTS-STARTPTS,volume={volume:.3f}"
+                )
+                if fade_in_duration > 0:
+                    audio_filter += f",afade=t=in:st=0:d={fade_in_duration:.3f}"
+                if fade_out_duration > 0:
+                    fade_out_start = max(duration - fade_out_duration, 0.0)
+                    audio_filter += f",afade=t=out:st={fade_out_start:.3f}:d={fade_out_duration:.3f}"
+                filter_parts.append(f"{audio_filter},adelay={delay_ms}|{delay_ms}[{label}]")
+                video_segment_labels.append(f"[{label}]")
+
+            if video_segment_labels:
+                filter_parts.append(
+                    f"{''.join(video_segment_labels)}amix=inputs={len(video_segment_labels)}:normalize=0:dropout_transition=0[basea]"
+                )
+                final_mix_labels.append("[basea]")
 
         for index, spec in enumerate(normalized_specs, start=1):
             delay_ms = max(int(round(float(spec["timeline_start"]) * 1000)), 0)

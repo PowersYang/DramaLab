@@ -28,11 +28,11 @@ const STUDIO_SHELL_META: Record<string, StudioShellMeta> = {
     breadcrumbs: [{ label: "Studio", href: "/studio" }, { label: "工作台总览" }],
   },
   "/studio/projects": {
-    title: "项目与系列",
-    description: "用后台台账视角管理系列母体、项目单元、分集编排与导入入口。",
-    sectionLabel: "Project Ledger",
-    sectionHint: "系列母体、分集与项目台账",
-    breadcrumbs: [{ label: "Studio", href: "/studio" }, { label: "项目与系列" }],
+    title: "剧集中心",
+    description: "以剧集为主对象管理作品主档、分集编排、独立创作项目与导入入口。",
+    sectionLabel: "Show Ledger",
+    sectionHint: "剧集主档、单集与独立项目台账",
+    breadcrumbs: [{ label: "Studio", href: "/studio" }, { label: "剧集中心" }],
   },
   "/studio/library": {
     title: "角色场景资产",

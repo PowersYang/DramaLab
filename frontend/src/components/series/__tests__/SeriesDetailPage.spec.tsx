@@ -26,6 +26,7 @@ vi.mock('lucide-react', () => ({
     Users: (props: any) => <span data-testid="icon-users" {...props} />,
     MapPin: (props: any) => <span data-testid="icon-map-pin" {...props} />,
     Package: (props: any) => <span data-testid="icon-package" {...props} />,
+    FolderKanban: (props: any) => <span data-testid="icon-folder-kanban" {...props} />,
     Plus: (props: any) => <span data-testid="icon-plus" {...props} />,
     X: (props: any) => <span data-testid="icon-x" {...props} />,
     Image: (props: any) => <span data-testid="icon-image" {...props} />,
@@ -36,6 +37,10 @@ vi.mock('lucide-react', () => ({
     ChevronLeft: (props: any) => <span data-testid="icon-chevron-left" {...props} />,
     ChevronRight: (props: any) => <span data-testid="icon-chevron-right" {...props} />,
     Play: (props: any) => <span data-testid="icon-play" {...props} />,
+    Film: (props: any) => <span data-testid="icon-film" {...props} />,
+    Sparkles: (props: any) => <span data-testid="icon-sparkles" {...props} />,
+    Sun: (props: any) => <span data-testid="icon-sun" {...props} />,
+    Moon: (props: any) => <span data-testid="icon-moon" {...props} />,
 }));
 
 // Mock AssetCard
@@ -138,7 +143,7 @@ describe('SeriesDetailPage', () => {
             mockGetSeriesEpisodes.mockRejectedValue(new Error('Network error'));
             renderPage();
             await waitFor(() => {
-                expect(screen.getByText('系列未找到')).toBeInTheDocument();
+                expect(screen.getByText('剧集未找到')).toBeInTheDocument();
             });
         });
 

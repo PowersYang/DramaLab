@@ -235,7 +235,7 @@ async def logout(response: Response, request: Request):
 
 @router.get("/auth/me")
 async def get_me(context: RequestContext = Depends(get_request_context)):
-    return signed_response(auth_service.build_auth_me(context.user, context.current_workspace_id))
+    return signed_response(context.me)
 
 
 @router.post("/auth/workspace/switch")

@@ -80,12 +80,12 @@ describe('ImportFileDialog', () => {
     describe('Rendering', () => {
         it('does not render when isOpen is false', () => {
             renderDialog({ isOpen: false });
-            expect(screen.queryByText('导入文件创建系列')).not.toBeInTheDocument();
+            expect(screen.queryByText('导入文件创建剧集')).not.toBeInTheDocument();
         });
 
         it('renders dialog when isOpen is true', () => {
             renderDialog();
-            expect(screen.getByText('导入文件创建系列')).toBeInTheDocument();
+            expect(screen.getByText('导入文件创建剧集')).toBeInTheDocument();
         });
 
         it('shows step indicator with 3 steps', () => {
@@ -107,7 +107,7 @@ describe('ImportFileDialog', () => {
 
         it('shows series title input', () => {
             renderDialog();
-            expect(screen.getByPlaceholderText('输入系列标题...')).toBeInTheDocument();
+            expect(screen.getByPlaceholderText('输入剧集标题...')).toBeInTheDocument();
         });
 
         it('shows suggested episodes input', () => {
@@ -134,7 +134,7 @@ describe('ImportFileDialog', () => {
             const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
             const file = createMockFile('my-story.txt');
             fireEvent.change(fileInput, { target: { files: [file] } });
-            const titleInput = screen.getByPlaceholderText('输入系列标题...') as HTMLInputElement;
+            const titleInput = screen.getByPlaceholderText('输入剧集标题...') as HTMLInputElement;
             expect(titleInput.value).toBe('my-story');
         });
 
@@ -238,7 +238,7 @@ describe('ImportFileDialog', () => {
                 });
             });
             await waitFor(() => {
-                expect(screen.getByText('系列创建成功')).toBeInTheDocument();
+                expect(screen.getByText('剧集创建成功')).toBeInTheDocument();
             });
         });
 
@@ -293,7 +293,7 @@ describe('ImportFileDialog', () => {
 
             // Should be back on step 1
             expect(screen.getByText('开始分析')).toBeInTheDocument();
-            expect(screen.getByPlaceholderText('输入系列标题...')).toBeInTheDocument();
+            expect(screen.getByPlaceholderText('输入剧集标题...')).toBeInTheDocument();
         });
     });
 

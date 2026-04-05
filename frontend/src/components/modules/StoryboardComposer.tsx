@@ -21,6 +21,7 @@ import {
 import { api, crudApi, type StoryboardRenderPayload, type TaskJob } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
+import { getEffectiveProjectCharacters, getProjectCharacterSourceHint, isSeriesProject } from "@/lib/projectAssets";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
@@ -178,14 +179,24 @@ export default function StoryboardComposer() {
     const storyboardAnalyzeAffordable = canAffordTask("storyboard.analyze");
     const storyboardRenderPrice = getTaskPrice("storyboard.render");
     const storyboardRenderAffordable = canAffordTask("storyboard.render");
+    const effectiveProject = useMemo(() => {
+        if (!currentProject) {
+            return null;
+        }
+        return {
+            ...currentProject,
+            // 中文注释：系列项目的分镜引用、提示词拼装和参考图收集都要基于系列角色主档，而不是旧的 project.characters。
+            characters: getEffectiveProjectCharacters(currentProject),
+        } as StoryboardProject;
+    }, [currentProject]);
 
     const sortedFrames = useMemo(() => {
-        if (!currentProject?.frames) {
+        if (!effectiveProject?.frames) {
             return [];
         }
 
         // 分镜展示始终以数据库中的 frame_order 为准，避免局部更新后出现视觉乱序。
-        return [...currentProject.frames].sort((a, b) => {
+        return [...effectiveProject.frames].sort((a, b) => {
             const orderA = typeof a?.frame_order === "number" ? a.frame_order : Number.MAX_SAFE_INTEGER;
             const orderB = typeof b?.frame_order === "number" ? b.frame_order : Number.MAX_SAFE_INTEGER;
             if (orderA !== orderB) {
@@ -193,7 +204,7 @@ export default function StoryboardComposer() {
             }
             return String(a?.id || "").localeCompare(String(b?.id || ""));
         });
-    }, [currentProject?.frames]);
+    }, [effectiveProject?.frames]);
 
     const editableFrame = useMemo(
         () => (editingFrameId ? sortedFrames.find((frame) => frame.id === editingFrameId) ?? null : null),
@@ -201,11 +212,11 @@ export default function StoryboardComposer() {
     );
 
     const activeStoryboardRenderJobs = useMemo(() => {
-        if (!currentProject) {
+        if (!effectiveProject) {
             return [];
         }
 
-        return (jobIdsByProject[currentProject.id] || [])
+        return (jobIdsByProject[effectiveProject.id] || [])
             .map((jobId) => jobsById[jobId])
             .filter((job): job is TaskJob => {
                 return Boolean(
@@ -214,7 +225,7 @@ export default function StoryboardComposer() {
                     && ACTIVE_STORYBOARD_JOB_STATUSES.includes(job.status as typeof ACTIVE_STORYBOARD_JOB_STATUSES[number])
                 );
             });
-    }, [currentProject, jobIdsByProject, jobsById]);
+    }, [effectiveProject, jobIdsByProject, jobsById]);
 
     const activeStoryboardRenderJobIds = useMemo(
         () => activeStoryboardRenderJobs.map((job) => job.id),
@@ -322,7 +333,7 @@ export default function StoryboardComposer() {
             throw new Error("当前项目不存在");
         }
 
-        const { compositionData, finalPrompt } = buildStoryboardRenderPayload(currentProject, frame);
+        const { compositionData, finalPrompt } = buildStoryboardRenderPayload(effectiveProject || currentProject, frame);
         return api.renderFrame(currentProject.id, frame.id, compositionData, finalPrompt, batchSize);
     };
 
@@ -332,7 +343,7 @@ export default function StoryboardComposer() {
         }
 
         return frames.map((frame) => {
-            const { compositionData, finalPrompt } = buildStoryboardRenderPayload(currentProject, frame);
+            const { compositionData, finalPrompt } = buildStoryboardRenderPayload(effectiveProject || currentProject, frame);
             return {
                 frame_id: frame.id,
                 composition_data: compositionData,
@@ -613,6 +624,11 @@ export default function StoryboardComposer() {
                     </h3>
                 </div>
                 <div className="px-4 pb-4">
+                    {isSeriesProject(currentProject) && (
+                        <div className="mb-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
+                            {getProjectCharacterSourceHint(currentProject)}
+                        </div>
+                    )}
                     <motion.div
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}

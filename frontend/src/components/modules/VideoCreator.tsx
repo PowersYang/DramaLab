@@ -21,6 +21,7 @@ import { useProjectStore } from "@/store/projectStore";
 import { api, TaskReceipt, VideoTask } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
+import { getEffectiveProjectCharacters, getProjectCharacterSourceHint, isSeriesProject } from "@/lib/projectAssets";
 import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder";
 import type { VideoParams } from "@/store/projectStore";
 
@@ -39,6 +40,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
     const waitForJob = useTaskStore((state) => state.waitForJob);
     const { account, getTaskPrice, canAffordTask } = useBillingGuard();
+    const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
 
     const sortedFrames = useMemo(() => {
         if (!currentProject?.frames) {
@@ -461,7 +463,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
 
     // Available assets for drag/drop or selection
     const availableAssets = currentProject ? [
-        ...currentProject.characters.map((c: any) => ({
+        ...effectiveCharacters.map((c: any) => ({
             url: getAssetUrl(c.image_url),
             title: c.name
         })),
@@ -474,7 +476,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
     // Available Reference Videos (for R2V)
     const availableReferenceVideos = currentProject ? [
         // Character asset video variants (full_body and headshot)
-        ...currentProject.characters.flatMap((c: any) => {
+        ...effectiveCharacters.flatMap((c: any) => {
             const variants = [];
             // Full body video variants
             if (c.full_body?.video_variants?.length) {
@@ -503,7 +505,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             return variants;
         }),
         // Character legacy video assets
-        ...currentProject.characters.flatMap((c: any) =>
+        ...effectiveCharacters.flatMap((c: any) =>
             (c.video_assets || []).map((v: any) => ({
                 url: v.video_url,
                 thumbnail: v.image_url,
@@ -539,6 +541,11 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             {/* Scrollable Content Area */}
             <div className="video-scroll-frame flex-1 overflow-y-auto p-6 custom-scrollbar min-h-0 md:p-8">
                 <div className="video-header-block mb-6 rounded-[1.75rem] px-5 py-5 md:px-6">
+                    {isSeriesProject(currentProject) && (
+                        <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
+                            {getProjectCharacterSourceHint(currentProject)}
+                        </div>
+                    )}
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                         <span className="video-header-kicker">AI Video Workspace</span>
                         <span className="video-status-badge rounded-full px-2.5 py-1 text-[10px] font-semibold">Motion</span>

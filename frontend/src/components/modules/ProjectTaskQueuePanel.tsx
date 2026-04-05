@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, Loader2, Tag } from "lucide-react";
 
 import { TaskJob } from "@/lib/api";
+import { getEffectiveProjectCharacters } from "@/lib/projectAssets";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 
@@ -419,8 +420,9 @@ function buildStoryboardJobDisplayInfo(job: TaskJob, project: any): QueueJobDisp
     const frameOrder = typeof frame?.frame_order === "number" ? frame.frame_order + 1 : null;
     const frameLabel = frameOrder ? `第 ${frameOrder} 帧` : "分镜帧";
     const scene = frame?.scene_id ? project?.scenes?.find((item: any) => item.id === frame.scene_id) : null;
+    const effectiveCharacters = getEffectiveProjectCharacters(project);
     const characterNames = Array.isArray(frame?.character_ids)
-        ? (project?.characters || [])
+        ? effectiveCharacters
             .filter((item: any) => frame.character_ids.includes(item.id))
             .map((item: any) => item.name)
             .slice(0, 2)
@@ -471,8 +473,9 @@ function buildAudioJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayIn
     const frame = findFrame(project, frameId);
     const frameOrder = typeof frame?.frame_order === "number" ? frame.frame_order + 1 : null;
     const frameLabel = frameOrder ? `第 ${frameOrder} 镜` : "对白镜头";
+    const effectiveCharacters = getEffectiveProjectCharacters(project);
     const speaker = Array.isArray(frame?.character_ids)
-        ? (project?.characters || []).find((item: any) => item.id === frame.character_ids[0])
+        ? effectiveCharacters.find((item: any) => item.id === frame.character_ids[0])
         : null;
     const tuningParts = [
         typeof job.payload_json?.speed === "number" ? `语速 ${job.payload_json.speed}x` : null,
@@ -505,7 +508,7 @@ function findAsset(project: any, assetType: "character" | "scene" | "prop" | nul
     }
 
     if (assetType === "character") {
-        return project.characters?.find((item: any) => item.id === assetId) || null;
+        return getEffectiveProjectCharacters(project).find((item: any) => item.id === assetId) || null;
     }
     if (assetType === "scene") {
         return project.scenes?.find((item: any) => item.id === assetId) || null;
