@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Building2, Loader2, RefreshCw, Save, X } from "lucide-react";
+import { Building2, Check, Loader2, RefreshCw, Save, X } from "lucide-react";
 
 import { api, type OrganizationSummary, type TaskConcurrencyLimitSummary, type TaskConcurrencyTaskTypeOption } from "@/lib/api";
 
@@ -118,12 +118,19 @@ export default function StudioTaskConcurrencyPage() {
 
   const clearSelection = () => setSelectedTaskTypes(new Set());
 
+  type SaveOneResult =
+    | { action: "noop" }
+    | { action: "deleted" }
+    | { action: "upserted"; maxConcurrency: number };
+
   const saveOne = async (taskType: string, rawValue: string) => {
-    if (!selectedOrganizationId) return;
+    if (!selectedOrganizationId) {
+      return { action: "noop" } as SaveOneResult;
+    }
     try {
       if (!rawValue) {
         if (!limitMap.get(`${selectedOrganizationId}::${taskType}`)) {
-          return { action: "noop" as const };
+        return { action: "noop" as const };
         }
         await api.deleteTaskConcurrencyLimit(selectedOrganizationId, taskType);
         setLimits((prev) =>
@@ -470,7 +477,7 @@ export default function StudioTaskConcurrencyPage() {
         {message && (
           <div className="animate-in fade-in slide-in-from-bottom-4 flex items-center gap-3 rounded-full bg-slate-900 px-6 py-3 text-sm font-medium text-white shadow-2xl backdrop-blur-xl pointer-events-auto">
             <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
-              <svg size={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <Check size={12} strokeWidth={3} />
             </div>
             {message}
           </div>

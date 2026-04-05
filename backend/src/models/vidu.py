@@ -86,7 +86,7 @@ class ViduModel(VideoGenModel):
                 bgm=kwargs.get("bgm", True),
             )
 
-        logger.info(f"[Vidu] Task submitted: {task_id} (model={used_model})")
+        logger.info("视频模型：任务已提交 任务编号=%s 模型=%s", task_id, used_model)
 
         # 轮询等待任务完成
         poll_url = provider_service.build_provider_url(
@@ -104,13 +104,13 @@ class ViduModel(VideoGenModel):
 
             resp = requests.get(poll_url, headers=self._headers(), timeout=30)
             if resp.status_code not in (200, 201):
-                logger.warning(f"[Vidu] Poll returned HTTP {resp.status_code}")
+                logger.warning("视频模型：轮询返回非成功状态码=%s", resp.status_code)
                 continue
 
             data = resp.json()
             state = data.get("state", "unknown")
             normalized = self._map_status(state)
-            logger.info(f"[Vidu] Task status: {state} -> {normalized} ({elapsed}s)")
+            logger.info("视频模型：任务状态 原始=%s 归一=%s 已等待=%s秒", state, normalized, elapsed)
 
             if normalized == "succeeded":
                 video_url = data["creations"][0]["url"]
@@ -121,7 +121,7 @@ class ViduModel(VideoGenModel):
                     f.write(video_content)
 
                 generation_time = time.time() - start_time
-                logger.info(f"[Vidu] Done in {generation_time:.1f}s -> {output_path}")
+                logger.info("视频模型：任务完成 用时=%.1f秒 输出路径=%s", generation_time, output_path)
                 return output_path, generation_time
 
             elif normalized == "failed":
@@ -158,7 +158,7 @@ class ViduModel(VideoGenModel):
             base_url=get_provider_base_url("VIDU"),
             path_suffix=str(submit_path),
         )
-        logger.info(f"[Vidu] Submitting t2v task (model={used_model}, duration={duration}s)")
+        logger.info("视频模型：提交文生视频任务 模型=%s 时长=%s秒", used_model, duration)
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)
         if resp.status_code not in (200, 201):
@@ -203,7 +203,7 @@ class ViduModel(VideoGenModel):
             base_url=get_provider_base_url("VIDU"),
             path_suffix=str(submit_path),
         )
-        logger.info(f"[Vidu] Submitting i2v task (model={used_model}, duration={duration}s)")
+        logger.info("视频模型：提交图生视频任务 模型=%s 时长=%s秒", used_model, duration)
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)
         if resp.status_code not in (200, 201):

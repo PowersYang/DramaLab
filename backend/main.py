@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from src.api.auth import router as auth_router
+from src.api.asset_job import router as asset_job_router
 from src.api.asset import router as project_assets_router
 from src.api.billing import router as billing_router
 from src.api.project import router as project_core_router
@@ -46,27 +47,28 @@ def bootstrap_runtime() -> None:
     os.chdir(app_dir)
     setup_logging()
     # 日志统一写入用户数据目录，避免仓库目录再承载运行时状态。
-    logger.info("BOOTSTRAP: app_dir=%s log_dir=%s", app_dir, get_log_dir())
+    logger.info("启动引导：应用目录=%s 日志目录=%s", app_dir, get_log_dir())
 
 
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        logger.info("APP: entering lifespan startup")
+        logger.info("应用：进入 lifespan 启动阶段")
         bootstrap_api_environment(logging.getLogger(__name__))
         # 统一由主入口托管 worker，当前已经接管 llm/image/video/audio/export 几类长任务。
-        task_worker = TaskWorker(queues=["llm", "image", "video", "audio", "export"], poll_interval=2.0)
+        # 中文注释：video_series_motion 是系列动作参考专用队列，用于隔离历史版本 worker 的执行差异。
+        task_worker = TaskWorker(queues=["llm", "image", "video", "video_series_motion", "audio", "export"], poll_interval=2.0)
         task_worker.start_in_thread()
         app.state.task_worker = task_worker
         try:
             yield
         finally:
-            logger.info("APP: entering lifespan shutdown")
+            logger.info("应用：进入 lifespan 关闭阶段")
             task_worker.stop(timeout=5.0)
 
     app = FastAPI(title="AI Comic Gen API", lifespan=lifespan)
     # 在应用创建时补一条汇总日志，方便确认当前实例已经把哪些核心路由装载进来。
-    logger.info("APP: creating FastAPI application instance")
+    logger.info("应用：创建 FastAPI 实例")
 
     app.add_middleware(
         CORSMiddleware,
@@ -91,13 +93,14 @@ def create_app() -> FastAPI:
     app.include_router(announcement_router)
     app.include_router(billing_router)
     app.include_router(task_router)
+    app.include_router(asset_job_router)
     app.include_router(tenant_admin_router)
     app.include_router(series_router)
     app.include_router(project_core_router)
     app.include_router(project_assets_router)
     app.include_router(project_media_router)
     app.include_router(project_storyboard_router)
-    logger.info("APP: routers registered successfully")
+    logger.info("应用：路由注册完成")
     return app
 
 

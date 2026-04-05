@@ -102,6 +102,10 @@ def _scoped(query, include_deleted: bool = False):
     return query if include_deleted else _active(query)
 
 
+def _normalize_entity_name(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
 def _image_variant_record(owner_type: str, owner_id: str, variant_group: str, variant: ImageVariant, tenant: dict) -> ImageVariantRecord:
     return ImageVariantRecord(
         id=variant.id,
@@ -485,7 +489,13 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
     project_character_links = _scoped(session.query(ProjectCharacterLinkRecord), include_deleted).filter(
         ProjectCharacterLinkRecord.project_id.in_(project_ids)
     ).order_by(ProjectCharacterLinkRecord.project_id.asc(), ProjectCharacterLinkRecord.created_at.asc(), ProjectCharacterLinkRecord.id.asc()).all()
-    linked_series_ids = {record.series_id for record in project_character_links if record.series_id}
+    # 中文注释：项目详情需要把“分集关联的系列共享场景/道具”也带出来，
+    # 不能只依赖角色链接表命中的系列 ID；否则没有角色链接的新分集会看不到系列素材库。
+    linked_series_ids = {
+        record.series_id for record in project_character_links if record.series_id
+    } | {
+        record.series_id for record in project_records if record.series_id
+    }
     series_map = hydrate_series_map(session, linked_series_ids, include_deleted=include_deleted) if linked_series_ids else {}
     series_characters_by_id = {
         character.id: character
@@ -730,19 +740,73 @@ def hydrate_project_map(session: Session, project_ids: set[str] | None = None, i
 
     result = {}
     for record in project_records:
+        # 中文注释：系列项目默认可引用系列共享角色/场景/道具，项目本地资产优先，缺失再回退系列主档。
+        project_characters = list(chars_by_project.get(record.id, []))
+        project_scenes = list(scenes_by_project.get(record.id, []))
+        project_props = list(props_by_project.get(record.id, []))
+        project_character_links = project_character_links_by_project.get(record.id, [])
+        linked_series_character_names = {
+            _normalize_entity_name((link.character.canonical_name or link.character.name) if link.character else None)
+            for link in project_character_links
+        }
+        linked_series_character_names.discard("")
+        if linked_series_character_names:
+            project_characters = [
+                item
+                for item in project_characters
+                if _normalize_entity_name(item.canonical_name or item.name) not in linked_series_character_names
+            ]
+        if record.series_id and record.series_id in series_map:
+            series_character_names = {
+                _normalize_entity_name(item.canonical_name or item.name)
+                for item in (series_map[record.series_id].characters or [])
+            }
+            series_character_names.discard("")
+            if series_character_names:
+                # 中文注释：系列分集优先展示系列主档角色；若分集本地历史角色与主档同名，
+                # 这里在读模型层过滤本地副本，避免前端出现“同名不同 ID”的重复卡片。
+                project_characters = [
+                    item
+                    for item in project_characters
+                    if _normalize_entity_name(item.canonical_name or item.name) not in series_character_names
+                ]
+            seen_character_ids = {item.id for item in project_characters}
+            seen_scene_ids = {item.id for item in project_scenes}
+            seen_prop_ids = {item.id for item in project_props}
+            project_characters.extend(
+                item.model_copy(deep=True)
+                for item in (series_map[record.series_id].characters or [])
+                if item.id not in seen_character_ids
+            )
+            project_scenes.extend(
+                item.model_copy(deep=True)
+                for item in (series_map[record.series_id].scenes or [])
+                if item.id not in seen_scene_ids
+            )
+            project_props.extend(
+                item.model_copy(deep=True)
+                for item in (series_map[record.series_id].props or [])
+                if item.id not in seen_prop_ids
+            )
+
         result[record.id] = Script(
             id=record.id,
             title=record.title,
             original_text=record.original_text,
-            characters=chars_by_project.get(record.id, []),
-            series_character_links=project_character_links_by_project.get(record.id, []),
-            scenes=scenes_by_project.get(record.id, []),
-            props=props_by_project.get(record.id, []),
+            characters=project_characters,
+            series_character_links=project_character_links,
+            scenes=project_scenes,
+            props=project_props,
             frames=frames_by_project.get(record.id, []),
             video_tasks=tasks_by_project.get(record.id, []),
             style_preset=record.style_preset,
             style_prompt=record.style_prompt,
             art_direction=ArtDirection(**record.art_direction) if record.art_direction else None,
+            art_direction_source=record.art_direction_source or ("series_default" if record.series_id else "standalone"),
+            art_direction_override=record.art_direction_override or {},
+            art_direction_resolved=ArtDirection(**record.art_direction_resolved) if record.art_direction_resolved else None,
+            art_direction_overridden_at=record.art_direction_overridden_at,
+            art_direction_overridden_by=record.art_direction_overridden_by,
             model_settings=ModelSettings(**(record.model_settings or {})),
             prompt_config=PromptConfig(**(record.prompt_config or {})),
             merged_video_url=record.merged_video_url,
@@ -963,6 +1027,8 @@ def hydrate_series_map(session: Session, series_ids: set[str] | None = None, inc
             scenes=scenes_by_series.get(record.id, []),
             props=props_by_series.get(record.id, []),
             art_direction=ArtDirection(**record.art_direction) if record.art_direction else None,
+            art_direction_updated_at=record.art_direction_updated_at,
+            art_direction_updated_by=record.art_direction_updated_by,
             prompt_config=PromptConfig(**(record.prompt_config or {})),
             model_settings=ModelSettings(**(record.model_settings or {})),
             episode_ids=episode_ids_by_series.get(record.id, []),
@@ -1013,6 +1079,11 @@ def replace_project_graph(session: Session, items: list[Script]) -> None:
                 series_id=project.series_id,
                 episode_number=project.episode_number,
                 art_direction=project.art_direction.model_dump(mode="json") if project.art_direction else None,
+                art_direction_source=project.art_direction_source,
+                art_direction_override=project.art_direction_override or None,
+                art_direction_resolved=project.art_direction_resolved.model_dump(mode="json") if project.art_direction_resolved else None,
+                art_direction_overridden_at=project.art_direction_overridden_at,
+                art_direction_overridden_by=project.art_direction_overridden_by,
                 model_settings=project.model_settings.model_dump(mode="json"),
                 prompt_config=project.prompt_config.model_dump(mode="json"),
                 timeline_json=project.timeline.model_dump(mode="json") if project.timeline else None,
@@ -1043,6 +1114,8 @@ def replace_series_graph(session: Session, items: list[Series]) -> None:
                 title=series.title,
                 description=series.description,
                 art_direction=series.art_direction.model_dump(mode="json") if series.art_direction else None,
+                art_direction_updated_at=series.art_direction_updated_at,
+                art_direction_updated_by=series.art_direction_updated_by,
                 model_settings=series.model_settings.model_dump(mode="json"),
                 prompt_config=series.prompt_config.model_dump(mode="json"),
                 version=series.version,

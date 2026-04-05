@@ -164,46 +164,8 @@ export default function VideoSidebar({ tasks, projectId, onRemix, params, setPar
                             <section className="video-card rounded-[1.35rem] p-4 space-y-4">
                                 <h3 className="video-section-title flex items-center gap-2">
                                     <div className="w-1 h-3 bg-primary rounded-full" />
-                                    Basic Settings
+                                    生成参数
                                 </h3>
-
-                                {/* Model Selection - R2V mode: only Wan 2.6 is selectable */}
-                                <div>
-                                    <label className="video-field-label block mb-2">
-                                        Model (模型)
-                                        {params.generationMode === "r2v" && (
-                                            <span className="ml-2 text-[11px] text-primary">(R2V仅支持 Wan 2.6)</span>
-                                        )}
-                                    </label>
-                                    <div className="space-y-2">
-                                        {catalog.i2v.map((model) => {
-                                            const isR2VMode = params.generationMode === "r2v";
-                                            const isWan26 = model.id === "wan2.6-i2v";
-                                            const isDisabled = isR2VMode && !isWan26;
-                                            const isSelected = isR2VMode ? isWan26 : params.model === model.id;
-
-                                            return (
-                                                <button
-                                                    key={model.id}
-                                                    onClick={() => !isDisabled && updateParam("model", model.id)}
-                                                    disabled={isDisabled}
-                                                    className={`w-full flex items-center justify-between rounded-xl border p-3 transition-all text-left ${isSelected
-                                                        ? 'video-card-selected bg-primary/10'
-                                                        : 'video-card-soft'
-                                                        } ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                                                >
-                                                    <div>
-                                                        <span className="text-xs font-semibold text-white">{model.name}</span>
-                                                        <p className="video-helper-text mt-1">{model.description}</p>
-                                                    </div>
-                                                    {isSelected && (
-                                                        <div className="h-2 w-2 rounded-full bg-primary" />
-                                                    )}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
 
                                 {/* Duration - Dynamic per model */}
                                 {(() => {

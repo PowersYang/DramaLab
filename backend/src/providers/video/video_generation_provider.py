@@ -28,7 +28,7 @@ class VideoGenerator:
     def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str = None, negative_prompt: str | None = None) -> Dict[str, Any]:
         """根据输入图片生成动作参考视频。"""
 
-        logger.info("Generating I2V motion reference: prompt=%s..., duration=%s", prompt[:50], duration)
+        logger.info("生成动作参考视频：提示词=%s... 时长=%s秒", prompt[:50], duration)
 
         img_path = None
         if image_url and not image_url.startswith("http") and not is_object_key(image_url) and os.path.exists(image_url):
@@ -49,12 +49,12 @@ class VideoGenerator:
             object_key = uploader.upload_file(output_path, sub_path="motion_ref") if uploader.is_configured else None
             if not object_key:
                 raise RuntimeError("Failed to upload motion reference video to OSS.")
-            logger.info("Uploaded motion ref video to OSS: %s", object_key)
+            logger.info("已上传动作参考视频到对象存储：对象键=%s", object_key)
             video_url = object_key
 
             return {"video_url": video_url}
         except Exception as exc:
-            logger.error("Failed to generate I2V motion reference: %s", exc)
+            logger.error("生成动作参考视频失败：%s", exc)
             raise
         finally:
             remove_temp_file(output_path)
@@ -62,7 +62,7 @@ class VideoGenerator:
     def generate_clip(self, frame: StoryboardFrame) -> StoryboardFrame:
         """根据分镜帧生成视频片段。"""
         if not frame.image_url:
-            logger.error("Frame %s has no image URL. Cannot generate video.", frame.id)
+            logger.error("分镜帧缺少图片链接，无法生成视频：帧编号=%s", frame.id)
             frame.status = GenerationStatus.FAILED
             return frame
 
@@ -87,11 +87,11 @@ class VideoGenerator:
             object_key = uploader.upload_file(output_path, sub_path="video") if uploader.is_configured else None
             if not object_key:
                 raise RuntimeError(f"Failed to upload video for frame {frame.id} to OSS.")
-            logger.info("Uploaded video for frame %s to OSS: %s", frame.id, object_key)
+            logger.info("已上传分镜视频到对象存储：帧编号=%s 对象键=%s", frame.id, object_key)
             frame.video_url = object_key
             frame.status = GenerationStatus.COMPLETED
         except Exception as exc:
-            logger.error("Failed to generate video for frame %s: %s", frame.id, exc)
+            logger.error("生成分镜视频失败：帧编号=%s 错误=%s", frame.id, exc)
             frame.status = GenerationStatus.FAILED
         finally:
             remove_temp_file(output_path)

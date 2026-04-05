@@ -78,14 +78,14 @@ def get_sms_provider() -> SmsProvider | None:
         url = (get_env("AUTH_SMS_WEBHOOK_URL") or "").strip()
         token = (get_env("AUTH_SMS_WEBHOOK_TOKEN") or "").strip() or None
         if not url:
-            logger.warning("SMS webhook provider is enabled but AUTH_SMS_WEBHOOK_URL is missing")
+            logger.warning("短信回调发送已启用，但未配置回调地址")
             _sms_provider = None
             _sms_provider_source = provider
             return None
         _sms_provider = WebhookSmsProvider(url=url, token=token)
         _sms_provider_source = provider
         return _sms_provider
-    logger.warning("Unknown AUTH_SMS_PROVIDER=%s, SMS delivery disabled", provider)
+    logger.warning("短信供应商配置无法识别：%s，短信发送已禁用", provider)
     _sms_provider = None
     _sms_provider_source = provider
     return None

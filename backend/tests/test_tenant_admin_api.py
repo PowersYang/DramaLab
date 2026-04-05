@@ -18,7 +18,7 @@ class TenantAdminApiTest(unittest.TestCase):
         from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory, init_database
         from src.repository import UserRepository
-        from src.schemas.models import User
+        from src.schemas.models import AuthMeResponse, User
         from src.application.services.model_provider_service import ModelProviderService
         from src.utils.datetime import utc_now
 
@@ -92,18 +92,17 @@ class TenantAdminApiTest(unittest.TestCase):
                 "is_public": True,
             }
         )
-        UserRepository().create(
-            User(
-                id="user_super_admin",
-                email="admin@example.com",
-                display_name="Admin",
-                auth_provider="email_otp",
-                platform_role="platform_super_admin",
-                status="active",
-                created_at=utc_now(),
-                updated_at=utc_now(),
-            )
+        admin_user = User(
+            id="user_super_admin",
+            email="admin@example.com",
+            display_name="Admin",
+            auth_provider="email_otp",
+            platform_role="platform_super_admin",
+            status="active",
+            created_at=utc_now(),
+            updated_at=utc_now(),
         )
+        UserRepository().create(admin_user)
 
         from src.api.billing import router as billing_router
         from src.api.tenant_admin import router as tenant_admin_router
@@ -115,15 +114,17 @@ class TenantAdminApiTest(unittest.TestCase):
         app.include_router(system_router)
         app.dependency_overrides[require_platform_role] = lambda: None
         app.dependency_overrides[get_request_context] = lambda: RequestContext(
-            user=User(
-                id="user_super_admin",
-                email="admin@example.com",
-                display_name="Admin",
-                auth_provider="email_otp",
-                platform_role="platform_super_admin",
-                status="active",
-                created_at=utc_now(),
-                updated_at=utc_now(),
+            user=admin_user,
+            me=AuthMeResponse(
+                user=admin_user,
+                current_workspace_id=None,
+                current_organization_id=None,
+                current_role_code=None,
+                current_role_name=None,
+                is_platform_super_admin=True,
+                capabilities=["org.manage"],
+                workspaces=[],
+                memberships=[],
             ),
             current_workspace_id=None,
             current_organization_id=None,

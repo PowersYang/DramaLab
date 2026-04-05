@@ -49,14 +49,14 @@ class ScriptProcessor:
 
     def parse_novel(self, title: str, text: str) -> Script:
         """把原始故事文本解析成项目内部结构化剧本模型。"""
-        logger.info("Parsing novel: %s...", title)
+        logger.info("正在解析小说：%s...", title)
         if not self.is_configured:
-            logger.error("LLM API key not configured.")
+            logger.error("未配置文本模型访问密钥。")
             raise ValueError("LLM API Key 未配置。请在 API 配置中设置对应的 API Key 后重试。")
 
         prompt = self._construct_prompt(text)
         logger.info(
-            "SCRIPT_PROCESSOR: parse_novel title=%s text_length=%s",
+            "剧本处理器：解析小说 标题=%s 文本长度=%s",
             title,
             len(text or ""),
         )
@@ -65,7 +65,7 @@ class ScriptProcessor:
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
             )
-            logger.debug("LLM Response Content:\n%s", content)
+            logger.debug("LLM 响应内容：\n%s", content)
             content = _strip_markdown_json(content)
             data = json.loads(content)
             return self._create_script_from_data(title, text, data)
@@ -264,93 +264,105 @@ class ScriptProcessor:
     def _construct_prompt(self, text: str) -> str:
         """构造发送给 LLM 的解析提示词。"""
         return f"""
-你是一名影视前期拆解助手，只做实体提取。
-
-任务要求：
-1. 只提取 `characters`、`scenes`、`props` 三类实体。
-2. 所有 `name`、`description`、`age`、`gender`、`clothing` 必须使用简体中文。
-3. 不要输出分镜，不要解释，不要补充额外字段。
-4. 角色描述只保留稳定外观特征，不要写临时动作或情绪。
-5. 同一角色如果服装变化特别大，可拆成变体角色，例如“叶墨（古装）”。
-6. `visual_weight` 使用 1-5 的整数，主角/核心场景可更高。
-
-返回 JSON 结构：
-{{
-  "characters": [
-    {{
-      "id": "char_001",
-      "name": "角色名",
-      "description": "稳定外观描述",
-      "age": "年龄估计",
-      "gender": "性别",
-      "clothing": "默认服装描述",
-      "visual_weight": 5
-    }}
-  ],
-  "scenes": [
-    {{
-      "id": "scene_001",
-      "name": "场景名",
-      "description": "场景视觉描述",
-      "visual_weight": 3
-    }}
-  ],
-  "props": [
-    {{
-      "id": "prop_001",
-      "name": "道具名",
-      "description": "道具视觉描述"
-    }}
-  ]
-}}
-
-待分析文本：
-{text}
-"""
+            你是一名影视前期拆解助手，只做实体提取。用户会给你输入一段完整的剧本，或者角色、场景、道具的相关描述。
+            你需要通过用户输入信息提取出角色、场景和道具实体。
+             
+            任务要求：
+            1. 只提取 `characters`（角色）、`scenes`（场景）、`props`（道具） 三类实体。
+            2. 所有 `name`、`description`、`age`、`gender`、`clothing` 必须使用简体中文。
+            3. 不要输出分镜，不要解释，不要补充额外字段。
+            4. 角色描述只保留稳定外观特征，不要写临时动作或情绪。
+            5. 同一角色如果服装变化特别大，可拆成变体角色，例如“叶墨（古装）”。
+            6. `visual_weight` 使用 1-5 的整数，主角/核心场景可更高。
+            7. 同一角色的不同称呼必须合并为同一个人物：
+               - 包括姓名、职称、关系称呼、代称
+               - 需要判断是否为同一人，并统一为一个角色
+               - name 使用“最明确的称呼”（优先姓名，其次固定称呼）
+               - description 中可以补充“别称/身份”，但不要创建新角色
+            8. 如果两个称呼可能指同一人，优先合并，不要拆分，除非文本明确说明是不同人物。 
+            9. 角色命名规则：
+               - 有姓名：使用姓名
+               - 无姓名但有稳定称呼：使用最具体称呼
+               - 避免使用关系型称呼作为主名
+            
+            
+            返回 JSON 结构：
+            {{
+              "characters": [
+                {{
+                  "id": "char_001",
+                  "name": "角色名",
+                  "description": "稳定外观描述",
+                  "age": "年龄估计",
+                  "gender": "性别",
+                  "clothing": "默认服装描述",
+                  "visual_weight": 5
+                }}
+              ],
+              "scenes": [
+                {{
+                  "id": "scene_001",
+                  "name": "场景名",
+                  "description": "场景视觉描述",
+                  "visual_weight": 3
+                }}
+              ],
+              "props": [
+                {{
+                  "id": "prop_001",
+                  "name": "道具名",
+                  "description": "道具视觉描述"
+                }}
+              ]
+            }}
+            
+            待分析文本：
+            {text}
+            """
 
     def analyze_script_for_styles(self, script_text: str) -> List[Dict[str, Any]]:
         """为剧本推荐可选视觉风格。"""
-        logger.info("Analyzing script for visual style recommendations...")
+        logger.info("正在分析剧本以生成视觉风格建议...")
         if not self.is_configured:
-            logger.warning("Text model provider is not configured in platform settings. Returning default recommendations.")
+            logger.warning("平台设置未配置文本模型供应商，返回默认建议。")
             return self._mock_style_recommendations()
 
         system_prompt = """你是一个专业的电影美术指导和视觉风格顾问。
-请根据提供的剧本内容，分析其题材、情绪和氛围，推荐4种截然不同但都适合的视觉风格。
-
-对于每种风格，请提供：
-1. 风格名称（简洁、专业，使用中文）
-2. 风格描述（1-2句话，用中文）
-3. 推荐理由（为什么这个风格适合这个剧本，用中文，50字以内）
-4. Stable Diffusion 正向提示词（详细的风格关键词，中文，逗号分隔，不超过50个词）
-5. Stable Diffusion 负向提示词（避免的视觉元素，中文，逗号分隔，不超过30个词）
-
-IMPORTANT: 
-- 你的回复必须是严格的JSON格式。
-- 不要包含任何解释性文字。
-- 所有文本中的引号必须使用转义符号 (例如 \")。
-- 确保JSON完整，不要被截断。
-- 保持内容精炼，避免过长的描述。
-- 严禁重复生成相同的内容，不要陷入循环。
-- 只返回4个推荐风格，不要多也不要少。
-
-CRITICAL STYLE GUIDELINES:
-- 正向提示词必须只描述：光影、色调、材质、艺术媒介、氛围、镜头语言 (e.g., "cinematic lighting, film grain, watercolor texture, dark atmosphere").
-- 严禁描述具体实体：不要包含人物、服装、具体物品、环境细节 (e.g., 禁止 "cracked helmet", "blood stains", "monster", "forest", "sword").
-- 风格必须是通用的，能套用到任何角色或场景上，而不会改变其原本的物理结构。
-
-返回格式：
-{
-  "recommendations": [
-    {
-      "name": "风格名称",
-      "description": "风格描述",
-      "reason": "推荐理由",
-      "positive_prompt": "正向提示词",
-      "negative_prompt": "负向提示词"
-    }
-  ]
-}"""
+            请根据提供的剧本内容，分析其题材、情绪和氛围，推荐4种截然不同但都适合的视觉风格。
+            
+            对于每种风格，请提供：
+            1. 风格名称（简洁、专业，使用中文）
+            2. 风格描述（1-2句话，用中文）
+            3. 推荐理由（为什么这个风格适合这个剧本，用中文，50字以内）
+            4. Stable Diffusion 正向提示词（详细的风格关键词，中文，逗号分隔，不超过50个词）
+            5. Stable Diffusion 负向提示词（避免的视觉元素，中文，逗号分隔，不超过30个词）
+            
+            IMPORTANT: 
+            - 你的回复必须是严格的JSON格式。
+            - 不要包含任何解释性文字。
+            - 所有文本中的引号必须使用转义符号 (例如 \")。
+            - 确保JSON完整，不要被截断。
+            - 保持内容精炼，避免过长的描述。
+            - 严禁重复生成相同的内容，不要陷入循环。
+            - 只返回4个推荐风格，不要多也不要少。
+            
+            CRITICAL STYLE GUIDELINES:
+            - 正向提示词必须只描述：光影、色调、材质、艺术媒介、氛围、镜头语言 (e.g., "cinematic lighting, film grain, watercolor texture, dark atmosphere").
+            - 严禁描述具体实体：不要包含人物、服装、具体物品、环境细节 (e.g., 禁止 "cracked helmet", "blood stains", "monster", "forest", "sword").
+            - 风格必须是通用的，能套用到任何角色或场景上，而不会改变其原本的物理结构。
+            
+            返回格式：
+            {
+              "recommendations": [
+                {
+                  "name": "风格名称",
+                  "description": "风格描述",
+                  "reason": "推荐理由",
+                  "positive_prompt": "正向提示词",
+                  "negative_prompt": "负向提示词"
+                }
+              ]
+            }"""
         user_prompt = f"剧本内容：\n\n{script_text[:2000]}"
         try:
             content = self.llm.chat(
@@ -360,10 +372,10 @@ CRITICAL STYLE GUIDELINES:
                 ],
                 response_format={"type": "json_object"},
             )
-            logger.debug("Style Analysis Response:\n%s", content)
+            logger.debug("风格分析响应：\n%s", content)
             content = _strip_markdown_json(content)
             if len(content) > 5000:
-                logger.warning("Style analysis response is long (%s chars), skip pre-truncation and parse full payload", len(content))
+                logger.warning("风格分析响应较长（%s 字符），跳过预截断并解析完整内容", len(content))
 
             def repair_json(json_str):
                 json_str = json_str.strip()
@@ -382,8 +394,8 @@ CRITICAL STYLE GUIDELINES:
             try:
                 data = json.loads(content)
             except json.JSONDecodeError as exc:
-                logger.error("JSON parsing error: %s", exc)
-                logger.error("Raw content length: %s", len(content))
+                logger.error("JSON 解析错误：%s", exc)
+                logger.error("原始内容长度：%s", len(content))
                 try:
                     json_match = re.search(r"\{[\s\S]*\}", content)
                     if json_match:
@@ -391,7 +403,7 @@ CRITICAL STYLE GUIDELINES:
                     content = repair_json(content)
                     data = json.loads(content)
                 except Exception as inner_exc:
-                    logger.error("Failed to recover JSON: %s", inner_exc)
+                    logger.error("JSON 恢复失败：%s", inner_exc)
                     try:
                         recommendations = []
                         style_matches = re.finditer(r'\{\s*"name":\s*"(.*?)",\s*"description":\s*"(.*?)".*?\}', content, re.DOTALL)
@@ -417,7 +429,7 @@ CRITICAL STYLE GUIDELINES:
                 recommendation["is_custom"] = False
             return recommendations
         except Exception as exc:
-            logger.error("Error analyzing script for styles: %s", exc, exc_info=True)
+            logger.error("分析剧本风格时出错：%s", exc, exc_info=True)
             return self._mock_style_recommendations()
 
     def _normalize_style_recommendations(self, recommendations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -497,78 +509,148 @@ CRITICAL STYLE GUIDELINES:
 
     def analyze_to_storyboard(self, text: str, entities_json: Dict[str, Any]) -> List[Dict[str, Any]]:
         """把剧本文本和实体上下文转换成分镜帧规划。"""
-        logger.info("Analyzing text to storyboard: %s...", text[:100])
+        logger.info("正在将文本分析为分镜：%s...", text[:100])
         if not self.is_configured:
-            logger.warning("Text model provider is not configured in platform settings. Returning mock frames.")
+            logger.warning("平台设置未配置文本模型供应商，返回模拟分镜帧。")
             return self._mock_storyboard_frames(text)
 
         characters_list = entities_json.get("characters", [])
         scenes_list = entities_json.get("scenes", [])
         props_list = entities_json.get("props", [])
         entities_str = f"""
-Characters:
-{json.dumps(characters_list, ensure_ascii=False, indent=2)}
+            Characters:
+            {json.dumps(characters_list, ensure_ascii=False, indent=2)}
+            
+            Scenes:
+            {json.dumps(scenes_list, ensure_ascii=False, indent=2)}
+            
+            Props:
+            {json.dumps(props_list, ensure_ascii=False, indent=2)}
+            """
 
-Scenes:
-{json.dumps(scenes_list, ensure_ascii=False, indent=2)}
-
-Props:
-{json.dumps(props_list, ensure_ascii=False, indent=2)}
-"""
         system_prompt = f"""
-# 角色
-你是一名电影级的分镜师（Storyboard Artist）和导演。你的任务是将剧本文本拆解为可供 AI 视频模型生成的一系列精细分镜帧。
+            # 角色
+            你是一名电影级分镜师（Storyboard Artist）和导演助手。你的任务是将用户输入的剧本文本，拆解为适合 AI 图片/视频模型生成的细粒度分镜帧。
+            
+            # 任务目标
+            你需要把剧本中的叙事内容，转化为一组连续、清晰、可直接视觉生成的分镜画面。
+            目标是：**忠实拆解、视觉明确、节奏连贯、便于生成**，而不是自由改编或文学润色。
+            
+            # 输入适配原则
+            用户输入的剧本结构可能并不统一，可能包含但不限于：
+            - 集标题、章节标题、场景列表
+            - 镜头编号、段落编号、自然段叙事
+            - 动作描写、环境描写、对白、心理活动、旁白、音效
+            - 已经存在的镜头景别信息，也可能完全没有镜头信息
+            你不能假设输入一定遵循某一种固定格式。
+            你必须直接根据文本语义理解剧情，并完成分镜拆解。
+            
+            # 已提取的实体上下文
+            {entities_str}
+            
+            # 核心规则（必须严格遵守）
+            1. **忠实拆解，不改写剧情**
+               - 严格依据用户提供的文本拆解分镜。
+               - 不要补充剧本中没有明确出现的新动作、新道具、新人物关系、新情节。
+               - 不要为了“画面更丰富”而随意添加多余细节。
+            
+            2. **视觉原子化**
+               - 每个分镜帧只保留一个主要视觉动作核心。
+               - 如果一个句子或一个段落中包含多个连续动作，必须拆成多个分镜帧。
+               - 例如：“走近大门 + 推门 + 开口说话” 应拆成至少 2-3 个分镜，而不是塞进同一帧。
+               - 每帧应控制在 3-5 秒内能够清晰成立。
+            
+            3. **动作描述必须可被镜头直接看到**
+               - `action_description` 只写镜头中可直接看到的内容。
+               - 包括：人物动作、姿态变化、与动作直接相关的表情、道具状态变化、环境中的可见动态。
+               - 不要把推测、分析、抽象概念写进动作描述。
+               
+            4. **禁止无依据脑补细节**
+               - 不要添加原文未明确写出的细节，如：
+                 - 衣摆翻飞
+                 - 长发飘动
+                 - 手指颤抖
+                 - 眼神闪烁
+                 - 身形灵巧
+                 - 嘴角轻扬
+               - 除非原文明确写出，或该细节是动作成立所必需。
 
-# 任务目标
-不仅仅是提取文本，而是要进行**视觉化拆解**。你需要将剧本中的文字转化为一系列连续的、单一动作的视觉画面。
+            5. **对白与动作分离**
+               - `dialogue` 只写台词内容，不要把动作混进去。
+               - `speaker` 只写说话者。
+               - 如果是内心独白、画外音、群杂议论，也要保留原文语义，不要伪装成角色正在张口说话。
+               - 若没有明确说话者，可根据上下文判断；若仍不明确，可使用最合理的群体称呼，如“百姓”“捕快”。
+            
+            6. **角色可见性原则**
+               - `character_ref_names` 只列出当前画面中实际可见的角色。
+               - 仅被提及、但未出现在画面中的角色，不要列入。
+               
+            7. **实体强约束**
+               - `scene_ref_name`、`character_ref_names`、`prop_ref_names` 必须严格使用已提取实体中的标准名称。
+               - 若文本里出现别称、关系称呼、职称、代称，必须自动对齐到实体标准名。
+               - 不允许输出未在实体表中的新名称，除非确实无法对齐且文本明确出现了新的独立实体。
+            
+            8. **同一人物称呼合并**
+               - 同一人物在不同称呼下必须识别为同一个角色。
+               - 例如：姓名、职称、关系称呼、代称，如果上下文明确指向同一人，必须统一映射到同一个角色实体。
+               - 不要因为称呼不同就拆成多个角色。
+            
+            9. **镜头粒度保持一致**
+               - 整个输出中的拆分粒度要前后一致。
+               - 不能有的分镜非常粗，有的又极细。
+               - 优先按“单一动作 + 单一视觉重点”拆分。
+            
+            10. **已有镜头信息可参考，但不受限**
+               - 如果原文已经给出了“全景/中景/特写/远景”等镜头信息，可以优先参考。
+               - 但如果原镜头内部包含多个独立动作，仍然必须继续细拆。
+               - 不能机械地一个“原镜头编号”只输出一个分镜帧。
+            
+            11. **景别、机位、运镜要服务叙事**
+               - `shot_size`、`camera_angle`、`camera_movement` 要根据画面内容合理选择。
+               - 优先使用清晰、稳定、适合生成的镜头语言。
+               - 避免无意义、过度炫技的运镜。
+            
+            12. **古风题材约束**
+               - 所有视觉表达必须符合古风正典美学与古代叙事语境。
+               - 禁止现代元素、现代执法表达、现代道具、现代建筑、现代台词氛围。
+               - 如果文本中存在偏现代的概括性表达，要自动转译为符合古风语境的可视画面。
+               - 例如“警戒线”应理解为“麻绳围挡、捕快把守、木桩圈界”等古代视觉表达，而不是现代警戒带。
+            
+            13. **氛围必须克制**
+               - 本项目整体风格为：古风正典、沉雅克制、悬疑但不惊悚。
+               - 不要把案件画面处理成血腥恐怖风。
+               - 要突出线索、秩序、人物关系与情绪张力，而不是猎奇感。
+            
+            14. **覆盖完整剧情**
+               - 必须覆盖用户文本中的所有关键剧情节点。
+               - 不得遗漏关键动作、关键道具、关键人物出场、关键对视、关键线索。
 
-# 剧本格式说明
-剧本遵循以下格式：
-- **场景标题行**: `1-1 地点名称 [时间] [内/外]` 
-- **人物行**: `人物： 角色名1，角色名2`
-- **动作描述**: 以 `△` 开头，描述画面中发生的动作
-- **对话**: `角色名（情绪）： 对话内容`，或 `角色名 (V.O.)：` 表示画外音
 
-# 已提取的实体上下文
-{entities_str}
+                        
+            # 输出格式
+            返回一个包含 `frames` 数组的 JSON 对象。不要包含 Markdown 格式标记（如 ```json）。
+            
+            {{
+                "frames": [
+                    {{
+                        "scene_ref_name": "卧室",
+                        "character_ref_names": ["叶墨"],
+                        "prop_ref_names": ["手机"],
+                        "visual_atmosphere": "昏暗的卧室，窗外透进冷色调月光",
+                        "action_description": "手机在床头柜上疯狂震动。叶墨眉头紧锁，烦躁地翻身，肩膀挤压枕头产生形变",
+                        "shot_size": "中景",
+                        "camera_angle": "俯视",
+                        "camera_movement": "静止",
+                        "dialogue": "妈，这才几点啊！",
+                        "speaker": "叶墨"
+                    }}
+                ]
+            }}
+            
+            # 剧本内容
+            {text}
+            """
 
-# 核心规则 (CRITICAL)
-1. **视觉节拍拆解 (VISUAL ATOMIZATION)**:
-   - 如果一行动作描述包含多个连续动作，**必须**将其拆分为多个分镜帧。
-   - 每个分镜只应包含一个清晰的主要动作，时长控制在 3-5 秒。
-2. **合并动作描述 (MERGE ACTION)**:
-   - **`action_description` 字段必须包含画面中发生的所有动态要素**。
-   - 包括：人物的神态/微表情 + 肢体动作 + 道具的物理运动（如手机震动、烟雾缭绕）。
-   - 不要遗漏非人物主体的动作（如“车门打开”、“杯子摔碎”）。
-3. **角色可见性**:
-   - `character_ref_names` 只列出**当前分镜画面中可见**的角色。
-4. **实体约束**: 
-   - 场景名、角色名、道具名必须严格匹配"已提取的实体"。
-5. **语言**: 所有输出必须使用简体中文。
-
-# 输出格式
-返回一个包含 `frames` 数组的 JSON 对象。不要包含 Markdown 格式标记（如 ```json）。
-
-{{
-    "frames": [
-        {{
-            "scene_ref_name": "卧室",
-            "character_ref_names": ["叶墨"],
-            "prop_ref_names": ["手机"],
-            "visual_atmosphere": "昏暗的卧室，窗外透进冷色调月光",
-            "action_description": "手机在床头柜上疯狂震动。叶墨眉头紧锁，烦躁地翻身，肩膀挤压枕头产生形变",
-            "shot_size": "中景",
-            "camera_angle": "俯视",
-            "camera_movement": "静止",
-            "dialogue": "妈，这才几点啊！",
-            "speaker": "叶墨"
-        }}
-    ]
-}}
-
-# 剧本内容
-{text}
-"""
         try:
             content = self.llm.chat(
                 messages=[
@@ -576,11 +658,11 @@ Props:
                     {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。"},
                 ],
             ).strip()
-            logger.debug("Storyboard Analysis Raw Response: %s...", content[:500])
+            logger.debug("分镜分析原始响应：%s...", content[:500])
             frames = self._parse_storyboard_json(content)
             if frames is not None:
                 return frames
-            logger.warning("Storyboard JSON parse failed, retrying with response_format=json_object...")
+            logger.warning("分镜结构化解析失败，改用结构化响应模式重试...")
             retry_content = self.llm.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -588,7 +670,7 @@ Props:
                 ],
                 response_format={"type": "json_object"},
             ).strip()
-            logger.debug("Storyboard Analysis Retry Response: %s...", retry_content[:500])
+            logger.debug("分镜分析重试响应：%s...", retry_content[:500])
             frames = self._parse_storyboard_json(retry_content)
             if frames is not None:
                 return frames
@@ -596,7 +678,7 @@ Props:
         except RuntimeError:
             raise
         except Exception as exc:
-            logger.error("Error in storyboard analysis: %s", exc, exc_info=True)
+            logger.error("分镜分析出错：%s", exc, exc_info=True)
             raise RuntimeError(f"分镜分析过程出错: {str(exc)}")
 
     def _parse_storyboard_json(self, content: str):
@@ -606,12 +688,12 @@ Props:
             result = json.loads(content.strip())
             frames = result.get("frames", [])
             if not frames:
-                logger.warning("Parsed JSON successfully but 'frames' array is empty")
+                logger.warning("结构化解析成功但分镜帧数组为空")
                 return None
-            logger.info("Storyboard Analysis generated %s frames", len(frames))
+            logger.info("分镜分析生成 %s 帧", len(frames))
             return frames
         except json.JSONDecodeError as exc:
-            logger.error("Failed to parse storyboard analysis JSON: %s", exc)
+            logger.error("解析分镜分析 JSON 失败：%s", exc)
             return None
 
     def _mock_storyboard_frames(self, text: str) -> List[Dict[str, Any]]:
@@ -667,13 +749,13 @@ Props:
                 result = json.loads(content.strip())
                 if "prompt_cn" in result and "prompt_en" in result:
                     return result
-                logger.warning("LLM response missing prompt_cn or prompt_en")
+                logger.warning("文本模型响应缺少中英文提示词字段")
                 return fallback_result
             except json.JSONDecodeError as exc:
-                logger.error("Failed to parse polish response JSON: %s", exc)
+                logger.error("解析润色响应 JSON 失败：%s", exc)
                 return fallback_result
         except Exception as exc:
-            logger.error("Error polishing prompt: %s", exc, exc_info=True)
+            logger.error("润色提示词时出错：%s", exc, exc_info=True)
             return fallback_result
 
     def polish_video_prompt(self, draft_prompt: str, feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
@@ -702,13 +784,13 @@ Props:
                 result = json.loads(content.strip())
                 if "prompt_cn" in result and "prompt_en" in result:
                     return result
-                logger.warning("Video polish missing bilingual keys")
+                logger.warning("视频润色结果缺少中英双语字段")
                 return fallback
             except json.JSONDecodeError as exc:
-                logger.error("Failed to parse video polish JSON: %s", exc)
+                logger.error("解析视频润色 JSON 失败：%s", exc)
                 return fallback
         except Exception:
-            logger.exception("Failed to polish video prompt")
+            logger.exception("润色视频提示词失败")
             return fallback
 
     def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
@@ -745,11 +827,11 @@ Props:
                 result = json.loads(content.strip())
                 if "prompt_cn" in result and "prompt_en" in result:
                     return result
-                logger.warning("R2V polish missing bilingual keys")
+                logger.warning("图生视频润色结果缺少中英双语字段")
                 return fallback
             except json.JSONDecodeError as exc:
-                logger.error("Failed to parse R2V polish JSON: %s", exc)
+                logger.error("解析图生视频润色 JSON 失败：%s", exc)
                 return fallback
         except Exception:
-            logger.exception("Failed to polish R2V prompt")
+            logger.exception("润色图生视频提示词失败")
             return fallback

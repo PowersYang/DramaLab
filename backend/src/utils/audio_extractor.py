@@ -87,7 +87,7 @@ class AudioExtractor:
             return output_path
             
         except subprocess.CalledProcessError as e:
-            logger.error(f"ffmpeg error: {e.stderr}")
+            logger.error(f"视频处理程序错误：{e.stderr}")
             raise RuntimeError(f"Failed to extract audio: {e.stderr}")
     
     @staticmethod
@@ -100,7 +100,7 @@ class AudioExtractor:
         results = []
         
         for i, video_path in enumerate(video_paths, 1):
-            logger.info(f"\n[{i}/{len(video_paths)}] Processing: {os.path.basename(video_path)}")
+            logger.info(f"\n[{i}/{len(video_paths)}] 正在处理：{os.path.basename(video_path)}")
             
             try:
                 audio_path = AudioExtractor.extract_audio(
@@ -114,7 +114,7 @@ class AudioExtractor:
                     'status': 'success'
                 })
             except Exception as e:
-                logger.error(f"❌ Failed: {e}")
+                logger.error(f"处理失败：{e}")
                 results.append({
                     'video': video_path,
                     'audio': None,

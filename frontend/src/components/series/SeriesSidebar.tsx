@@ -5,6 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Boxes,
+  Palette,
+  Settings,
   Sun,
   Moon,
   Plus,
@@ -18,6 +20,8 @@ import type { StudioTheme } from "@/components/studio/studioTheme";
 // ── Types ──
 
 export type SidebarItem =
+  | { kind: "series_settings" }
+  | { kind: "art_direction" }
   | { kind: "shared_assets" }
   | { kind: "episode"; episodeId: string };
 
@@ -77,7 +81,7 @@ export default function SeriesSidebar({
             <span className="truncate text-xs text-gray-500">DramaLab / 剧集控制台</span>
           </div>
 
-          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
+          <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
             <button
               type="button"
               onClick={() => onThemeChange("light")}
@@ -106,6 +110,68 @@ export default function SeriesSidebar({
 
       {/* ── Asset navigation ── */}
       <div className="p-3 space-y-1">
+        {/* 中文注释：剧集级默认模型属于全局配置，入口放在剧集导航一级，避免用户去资产页里猜测。 */}
+        <button
+          type="button"
+          onClick={() => onItemChange({ kind: "series_settings" })}
+          className={clsx(
+            "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
+            activeItem.kind === "series_settings"
+              ? "bg-white/10 text-gray-200"
+              : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+          )}
+        >
+          {activeItem.kind === "series_settings" && (
+            <motion.div
+              layoutId="series-active-pill"
+              className="absolute left-0 w-1 h-full bg-primary"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            />
+          )}
+          <Settings
+            size={18}
+            className={clsx(
+              "transition-colors",
+              activeItem.kind === "series_settings" ? "text-white" : "group-hover:text-gray-200"
+            )}
+          />
+          <div className="flex-1 text-left leading-tight">
+            <div className="text-sm font-semibold">剧集设置</div>
+            <div className="text-[11px] text-gray-500">默认模型 / 比例</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onItemChange({ kind: "art_direction" })}
+          className={clsx(
+            "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
+            activeItem.kind === "art_direction"
+              ? "bg-white/10 text-gray-200"
+              : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+          )}
+        >
+          {activeItem.kind === "art_direction" && (
+            <motion.div
+              layoutId="series-active-pill"
+              className="absolute left-0 w-1 h-full bg-primary"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            />
+          )}
+          <Palette
+            size={18}
+            className={clsx(
+              "transition-colors",
+              activeItem.kind === "art_direction" ? "text-white" : "group-hover:text-gray-200"
+            )}
+          />
+          <div className="flex-1 text-left leading-tight">
+            <div className="text-sm font-semibold">美术设定</div>
+            <div className="text-[11px] text-gray-500">剧集视觉标准</div>
+          </div>
+        </button>
+
         <button
           onClick={() => onItemChange({ kind: "shared_assets" })}
           className={clsx(
@@ -131,8 +197,8 @@ export default function SeriesSidebar({
             )}
           />
           <div className="flex-1 text-left leading-tight">
-            <div className="text-sm font-semibold">共享资产</div>
-            <div className="text-[11px] text-gray-500">角色 / 场景 / 道具</div>
+            <div className="text-sm font-semibold">资产制作</div>
+            <div className="text-[11px] text-gray-500">识别 / 新增 / 沉淀</div>
           </div>
           <span
             className={clsx(

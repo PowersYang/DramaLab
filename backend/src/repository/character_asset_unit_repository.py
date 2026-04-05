@@ -13,6 +13,16 @@ class CharacterAssetUnitRepository(BaseRepository[AssetUnit]):
         self.image_variant_repository = ImageVariantRepository()
         self.video_variant_repository = VideoVariantRepository()
 
+    def _normalize_unit_selection(self, unit: AssetUnit) -> AssetUnit:
+        # 中文注释：动作参考视频生成成功后，前端会直接读取 selected_video_id 作为当前预览真源。
+        # 如果调用方只补了 video_variants 没显式带 selected_video_id，这里统一兜底选中第一条，
+        # 避免出现“视频已入库，但角色卡片仍显示没有动态参考视频”的假象。
+        if not unit.selected_video_id and unit.video_variants:
+            first_variant = next((variant for variant in unit.video_variants if getattr(variant, "id", None)), None)
+            if first_variant is not None:
+                unit.selected_video_id = first_variant.id
+        return unit
+
     def get(self, owner_type: str, owner_id: str, character_id: str, unit_type: str, include_deleted: bool = False) -> AssetUnit | None:
         from .character_repository import CharacterRepository
 
@@ -27,6 +37,7 @@ class CharacterAssetUnitRepository(BaseRepository[AssetUnit]):
             character = active_session.get(CharacterRecord, character_id)
             if character is None or character.is_deleted:
                 raise ValueError(f"character {character_id} not found")
+            unit = self._normalize_unit_selection(unit)
             ctx = load_owner_context(active_session, "character", character_id)
             unit_id = f"{character_id}_{unit_type}"
             tenant = owner_tenant_kwargs(ctx)
@@ -103,6 +114,7 @@ class CharacterAssetUnitRepository(BaseRepository[AssetUnit]):
             now = utc_now()
             desired_unit_ids: set[str] = set()
             for unit_type, unit in units_by_type.items():
+                unit = self._normalize_unit_selection(unit)
                 unit_id = f"{character_id}_{unit_type}"
                 desired_unit_ids.add(unit_id)
                 active_session.merge(

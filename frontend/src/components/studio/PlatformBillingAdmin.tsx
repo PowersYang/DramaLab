@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, Save, X } from "lucide-react";
+import { Check, Loader2, Plus, Save, X } from "lucide-react";
 
 import {
   api,
@@ -912,7 +912,7 @@ export default function PlatformBillingAdmin() {
         {message && (
           <div className="animate-in fade-in slide-in-from-bottom-4 flex items-center gap-3 rounded-full bg-slate-900 px-6 py-3 text-sm font-medium text-white shadow-2xl backdrop-blur-xl pointer-events-auto">
             <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
-              <svg size={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <Check size={12} strokeWidth={3} />
             </div>
             {message}
           </div>

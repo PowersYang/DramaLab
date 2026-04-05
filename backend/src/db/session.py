@@ -154,6 +154,22 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
         else:
             statements.append("ALTER TABLE projects ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'pending'")
 
+    project_art_direction_additions = {
+        "art_direction_source": "VARCHAR(32) NOT NULL DEFAULT 'standalone'",
+        "art_direction_override": "JSONB" if engine.dialect.name == "postgresql" else "JSON",
+        "art_direction_resolved": "JSONB" if engine.dialect.name == "postgresql" else "JSON",
+        "art_direction_overridden_at": "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME",
+        "art_direction_overridden_by": "VARCHAR(64)",
+    }
+    for column_name, definition in project_art_direction_additions.items():
+        if column_name in project_columns:
+            continue
+        if engine.dialect.name == "postgresql":
+            target = f'"{schema}"."projects"' if schema else '"projects"'
+            statements.append(f"ALTER TABLE {target} ADD COLUMN {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE projects ADD COLUMN {column_name} {definition}")
+
     if "status" not in series_columns:
         # 中文注释：系列列表与工作台总览都依赖 series.status，旧库缺列时会在 ORM 查询阶段直接抛错。
         if engine.dialect.name == "postgresql":
@@ -161,6 +177,20 @@ def _ensure_incremental_columns(engine, schema: str | None = None) -> None:
             statements.append(f"ALTER TABLE {target} ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'")
         else:
             statements.append("ALTER TABLE series ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'")
+
+    series_art_direction_additions = {
+        "art_direction_updated_at": "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME",
+        "art_direction_updated_by": "VARCHAR(64)",
+        "asset_inbox_json": "JSONB NOT NULL DEFAULT '{}'::jsonb" if engine.dialect.name == "postgresql" else "JSON NOT NULL DEFAULT '{}'",
+    }
+    for column_name, definition in series_art_direction_additions.items():
+        if column_name in series_columns:
+            continue
+        if engine.dialect.name == "postgresql":
+            target = f'"{schema}"."series"' if schema else '"series"'
+            statements.append(f"ALTER TABLE {target} ADD COLUMN {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE series ADD COLUMN {column_name} {definition}")
 
     character_additions = {
         "canonical_name": "VARCHAR(255)",

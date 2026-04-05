@@ -109,6 +109,13 @@ export default function StudioShell({
         .filter((section) => section.items.length > 0),
     [visibleNavItems],
   );
+  const currentTagMeta = useMemo(
+    () => ({
+      title,
+      path: pathname,
+    }),
+    [pathname, title],
+  );
 
   useEffect(() => {
     // 中文注释：用户进入 Studio 后，后台预取可见导航页，避免第一次点击左侧导航时再临时加载路由资源。
@@ -294,7 +301,7 @@ export default function StudioShell({
         </header>
 
         {/* Tags View - vue-element-admin style */}
-        <TagsView currentMeta={{ title, path: pathname }} />
+        <TagsView currentMeta={currentTagMeta} />
 
         {/* Main Content Area - Scrollable */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">

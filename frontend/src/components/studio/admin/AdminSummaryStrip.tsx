@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
 
 interface AdminSummaryItem {
@@ -14,8 +15,12 @@ interface AdminSummaryStripProps {
 }
 
 export default function AdminSummaryStrip({ items }: AdminSummaryStripProps) {
+  const summaryStripStyle = {
+    "--admin-summary-columns": items.length,
+  } as CSSProperties;
+
   return (
-    <div className="admin-summary-strip">
+    <div className="admin-summary-strip" style={summaryStripStyle}>
       {items.map((item) => {
         const Icon = item.icon;
         return (

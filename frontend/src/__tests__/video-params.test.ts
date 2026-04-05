@@ -211,7 +211,7 @@ describe('GRID_COLS_CLASS', () => {
                 usedCounts.add(model.duration.options.length);
             }
         }
-        for (const count of usedCounts) {
+        for (const count of Array.from(usedCounts)) {
             expect(GRID_COLS_CLASS[count]).toBeDefined();
         }
     });

@@ -73,7 +73,7 @@ def get_current_user(
     if user is None or user.status != "active":
         raise HTTPException(status_code=401, detail="User is unavailable")
     logger.info(
-        "AUTH_DEP: get_current_user request_id=%s user_id=%s duration_ms=%.2f",
+        "认证依赖：获取当前用户 请求ID=%s 用户ID=%s 耗时毫秒=%.2f",
         request_id,
         user.id,
         (time.perf_counter() - started_at) * 1000,
@@ -103,7 +103,7 @@ def get_request_context(
     me = auth_service.build_auth_me(user, claims.workspace_id)
     build_duration_ms = (time.perf_counter() - build_started_at) * 1000
     logger.info(
-        "AUTH_DEP: get_request_context request_id=%s user_id=%s workspace_id=%s decode_ms=%.2f build_auth_me_ms=%.2f total_ms=%.2f capabilities=%s",
+        "认证依赖：构建请求上下文 请求ID=%s 用户ID=%s 工作区ID=%s 解码耗时毫秒=%.2f 构建用户信息耗时毫秒=%.2f 总耗时毫秒=%.2f 能力数量=%s",
         request_id,
         user.id,
         me.current_workspace_id,

@@ -22,6 +22,7 @@ from ...providers.text.default_prompts import (
     DEFAULT_VIDEO_POLISH_PROMPT,
 )
 from ...utils.datetime import utc_now
+from .art_direction_resolution_service import ArtDirectionResolutionService
 from .default_style_presets import DEFAULT_STYLE_PRESETS
 from .series_service import SeriesService
 
@@ -37,6 +38,7 @@ class SystemService:
         self.user_repository = UserRepository()
         self.user_art_style_repository = UserArtStyleRepository()
         self.text_provider = ScriptProcessor()
+        self.art_direction_resolution_service = ArtDirectionResolutionService()
 
     def preview_import(self, text: str, suggested_episodes: int):
         """把导入文本切成候选分集片段供预览。"""
@@ -100,6 +102,97 @@ class SystemService:
             raise ValueError("Script not found")
         return self.text_provider.analyze_script_for_styles(script_text)
 
+    def persist_art_direction_recommendations(self, script_id: str, recommendations: list[dict[str, Any]] | None) -> None:
+        script = self.project_repository.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+        recommendations = recommendations or []
+
+        if script.series_id:
+            for _ in range(2):
+                series = self.series_repository.get(script.series_id)
+                if not series:
+                    return
+
+                existing = series.art_direction
+                if not existing:
+                    if not recommendations:
+                        return
+                    first = recommendations[0]
+                    selected_style_id = str(first.get("id") or "").strip()
+                    if not selected_style_id:
+                        return
+                    next_art_direction = ArtDirection(
+                        selected_style_id=selected_style_id,
+                        style_config=first,
+                        custom_styles=[],
+                        ai_recommendations=recommendations,
+                    )
+                else:
+                    next_art_direction = ArtDirection(
+                        selected_style_id=existing.selected_style_id,
+                        style_config=existing.style_config,
+                        custom_styles=existing.custom_styles,
+                        ai_recommendations=recommendations,
+                    )
+
+                try:
+                    self.series_repository.patch_metadata(
+                        series.id,
+                        {
+                            "art_direction": next_art_direction.model_dump(mode="json"),
+                            "updated_at": utc_now(),
+                        },
+                        expected_version=series.version,
+                    )
+                    return
+                except ValueError as exc:
+                    if "version conflict" in str(exc):
+                        continue
+                    raise
+            return
+
+        for _ in range(2):
+            script = self.project_repository.get(script_id)
+            if not script:
+                raise ValueError("Script not found")
+            existing = script.art_direction
+            if not existing:
+                if not recommendations:
+                    return
+                first = recommendations[0]
+                selected_style_id = str(first.get("id") or "").strip()
+                if not selected_style_id:
+                    return
+                next_art_direction = ArtDirection(
+                    selected_style_id=selected_style_id,
+                    style_config=first,
+                    custom_styles=[],
+                    ai_recommendations=recommendations,
+                )
+            else:
+                next_art_direction = ArtDirection(
+                    selected_style_id=existing.selected_style_id,
+                    style_config=existing.style_config,
+                    custom_styles=existing.custom_styles,
+                    ai_recommendations=recommendations,
+                )
+
+            try:
+                self.project_repository.patch_metadata(
+                    script_id,
+                    {
+                        "art_direction": next_art_direction.model_dump(mode="json"),
+                        "updated_at": utc_now(),
+                    },
+                    expected_version=script.version,
+                )
+                return
+            except ValueError as exc:
+                if "version conflict" in str(exc):
+                    continue
+                raise
+
     def ensure_default_style_presets(self) -> None:
         """确保默认风格预设已经落到数据库中。
 
@@ -125,18 +218,34 @@ class SystemService:
         if not script:
             raise ValueError("Script not found")
 
+        if script.series_id:
+            return self.art_direction_resolution_service.save_project_override(
+                script_id,
+                selected_style_id=selected_style_id,
+                style_config=style_config,
+                updated_by=script.updated_by,
+            )
+
         script.art_direction = ArtDirection(
             selected_style_id=selected_style_id,
             style_config=style_config,
             custom_styles=custom_styles or [],
             ai_recommendations=ai_recommendations or [],
         )
-        self.project_repository.patch_metadata(
+        updated = self.project_repository.patch_metadata(
             script_id,
-            {"art_direction": script.art_direction.model_dump(mode="json"), "updated_at": utc_now()},
+            {
+                "art_direction": script.art_direction.model_dump(mode="json"),
+                "art_direction_source": "standalone",
+                "art_direction_override": None,
+                "art_direction_resolved": None,
+                "art_direction_overridden_at": None,
+                "art_direction_overridden_by": None,
+                "updated_at": utc_now(),
+            },
             expected_version=script.version,
         )
-        return self.project_repository.get(script_id)
+        return self.art_direction_resolution_service.apply_resolved_art_direction(updated)
 
     def list_user_art_styles(self, user_id: str) -> list[dict[str, Any]]:
         return [

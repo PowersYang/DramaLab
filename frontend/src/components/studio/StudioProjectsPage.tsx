@@ -6,8 +6,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   ChevronRight,
+  FileText,
   FileUp,
   FolderKanban,
+  Plus,
   Search,
   Sparkles,
   Trash2,
@@ -121,10 +123,10 @@ function SeriesLedgerRow({
 
         <td>
           <div className="admin-ledger-actions">
-            <button onClick={() => onToggleExpand(series.id)} className="studio-button studio-button-secondary !h-7 !px-2 text-[11px]">
+            <button onClick={() => onToggleExpand(series.id)} className="studio-button studio-button-secondary !h-8 !px-3 text-xs whitespace-nowrap">
               {expanded ? "收起" : "展开"}
             </button>
-            <Link href={`/studio/series/${series.id}`} className="studio-button studio-button-primary !h-7 !px-2 text-[11px]">
+            <Link href={`/studio/series/${series.id}`} className="studio-button studio-button-primary !h-8 !px-3 text-xs whitespace-nowrap">
               管理
             </Link>
             <button
@@ -133,9 +135,9 @@ function SeriesLedgerRow({
                   onDelete(series.id);
                 }
               }}
-              className="studio-button studio-button-danger !h-7 !w-7 !p-0"
+              className="studio-button studio-button-danger !h-8 !w-8 !p-0 ml-3 flex-shrink-0"
             >
-              <Trash2 size={14} />
+              <Trash2 size={15} />
             </button>
           </div>
         </td>
@@ -545,7 +547,7 @@ export default function StudioProjectsPage() {
                   <th style={{ width: "60px" }} className="admin-table-cell-center">道具</th>
                   <th style={{ width: "60px" }} className="admin-table-cell-center">分镜</th>
                   <th style={{ width: "120px" }} className="admin-table-cell-center">最后更新</th>
-                  <th style={{ width: "160px" }} className="admin-table-cell-right">操作</th>
+                  <th style={{ width: "180px" }} className="admin-table-cell-right">操作</th>
                 </tr>
               </thead>
               <tbody>

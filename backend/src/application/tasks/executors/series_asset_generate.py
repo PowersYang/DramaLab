@@ -22,6 +22,7 @@ class SeriesAssetGenerateExecutor:
             negative_prompt=payload.get("negative_prompt"),
             batch_size=payload.get("batch_size", 1),
             model_name=payload.get("model_name"),
+            resolved_art_direction=payload.get("resolved_art_direction"),
         )
         result = {
             "series_id": series.id,

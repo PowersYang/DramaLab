@@ -40,12 +40,12 @@ class MediaWorkflow:
 
     def get_available_voices(self):
         """向 API 层暴露当前可用的 TTS 音色列表。"""
-        logger.info("MEDIA_WORKFLOW: get_available_voices")
+        logger.info("媒体工作流：获取可用音色列表")
         return self.audio_provider.get_available_voices()
 
     def generate_video(self, script_id: str):
         """为尚未产出视频的分镜帧生成视频片段。"""
-        logger.info("MEDIA_WORKFLOW: generate_video script_id=%s", script_id)
+        logger.info("媒体工作流：生成视频开始 脚本ID=%s", script_id)
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.status == "completed" and frame.video_url:
@@ -54,12 +54,12 @@ class MediaWorkflow:
         for frame in project.frames:
             self.frame_repository.save(script_id, frame)
         updated_project = self._get_project(script_id)
-        logger.info("MEDIA_WORKFLOW: generate_video completed script_id=%s", script_id)
+        logger.info("媒体工作流：生成视频完成 脚本ID=%s", script_id)
         return updated_project
 
     def generate_audio(self, script_id: str):
         """为项目中每一帧生成对白、音效和背景音乐。"""
-        logger.info("MEDIA_WORKFLOW: generate_audio script_id=%s", script_id)
+        logger.info("媒体工作流：生成音频开始 脚本ID=%s", script_id)
         project = self._get_project(script_id)
         for frame in project.frames:
             if frame.dialogue and frame.character_ids:
@@ -80,16 +80,16 @@ class MediaWorkflow:
         for frame in project.frames:
             self.frame_repository.save(script_id, frame)
         updated_project = self._get_project(script_id)
-        logger.info("MEDIA_WORKFLOW: generate_audio completed script_id=%s", script_id)
+        logger.info("媒体工作流：生成音频完成 脚本ID=%s", script_id)
         return updated_project
 
     def process_video_task(self, script_id: str, task_id: str):
         """执行持久化视频任务，并把结果同步回项目聚合。"""
-        logger.info("MEDIA_WORKFLOW: process_video_task start script_id=%s task_id=%s", script_id, task_id)
+        logger.info("媒体工作流：处理视频任务开始 脚本ID=%s 任务ID=%s", script_id, task_id)
         project = self._get_project(script_id)
         task = self.video_task_repository.get(script_id, task_id)
         if not task:
-            logger.error("Task %s not found in script %s", task_id, script_id)
+            logger.error("媒体工作流：未找到任务 任务ID=%s 脚本ID=%s", task_id, script_id)
             return
 
         img_path = None
@@ -111,10 +111,10 @@ class MediaWorkflow:
             task.video_url = self._persist_output(output_path, "video/tasks")
             task.status = "completed"
             task.completed_at = utc_now()
-            logger.info("MEDIA_WORKFLOW: process_video_task completed script_id=%s task_id=%s", script_id, task_id)
+            logger.info("媒体工作流：处理视频任务完成 脚本ID=%s 任务ID=%s", script_id, task_id)
         except Exception as exc:
-            logger.exception("Failed to process video task")
-            logger.error("Video generation failed: %s", exc)
+            logger.exception("媒体工作流：处理视频任务失败")
+            logger.error("媒体工作流：视频生成失败：%s", exc)
             task.status = "failed"
             task.failed_reason = str(exc)
         finally:
@@ -125,7 +125,7 @@ class MediaWorkflow:
 
     def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float, pitch: float, volume: int):
         """按需为单个分镜帧生成对白音频。"""
-        logger.info("MEDIA_WORKFLOW: generate_dialogue_line script_id=%s frame_id=%s", script_id, frame_id)
+        logger.info("媒体工作流：生成对白音频 脚本ID=%s 分镜ID=%s", script_id, frame_id)
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -136,12 +136,12 @@ class MediaWorkflow:
                 self.audio_provider.generate_dialogue(frame, speaker, speed, pitch, volume)
         self.frame_repository.save(script_id, frame)
         updated_project = self._get_project(script_id)
-        logger.info("MEDIA_WORKFLOW: generate_dialogue_line completed script_id=%s frame_id=%s", script_id, frame_id)
+        logger.info("媒体工作流：生成对白音频完成 脚本ID=%s 分镜ID=%s", script_id, frame_id)
         return updated_project
 
     def merge_videos(self, script_id: str, final_mix_timeline: dict | None = None):
         """使用 FFmpeg 把已选中的分镜视频合并成单个输出。"""
-        logger.info("MEDIA_WORKFLOW: merge_videos script_id=%s", script_id)
+        logger.info("媒体工作流：合并视频 脚本ID=%s", script_id)
         validate_safe_id(script_id, "script_id")
         project = self._get_project(script_id)
         ffmpeg_path = get_ffmpeg_path()
@@ -156,12 +156,12 @@ class MediaWorkflow:
         try:
             subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=5)
         except Exception:
-            logger.warning("Could not get FFmpeg version")
+            logger.warning("无法获取合成程序版本")
 
         clip_specs = self._resolve_merge_clips(project, final_mix_timeline)
         if not clip_specs:
             raise ValueError("No videos selected to merge. Please select videos for each frame first.")
-        logger.info("MEDIA_WORKFLOW: merge_videos selected_clip_count=%s script_id=%s", len(clip_specs), script_id)
+        logger.info("媒体工作流：合并视频 已选片段数=%s 脚本ID=%s", len(clip_specs), script_id)
 
         with tempfile.TemporaryDirectory(prefix="dramalab-merge-") as temp_dir:
             list_path = os.path.join(temp_dir, f"merge_list_{script_id}.txt")
@@ -237,7 +237,7 @@ class MediaWorkflow:
                     {"merged_video_url": merged_video_url, "updated_at": utc_now()},
                     expected_version=project.version,
                 )
-                logger.info("MEDIA_WORKFLOW: merge_videos completed script_id=%s output=%s", script_id, merged_video_url)
+                logger.info("媒体工作流：合并视频完成 脚本ID=%s 输出地址=%s", script_id, merged_video_url)
                 return updated_project
             except subprocess.TimeoutExpired:
                 raise RuntimeError("FFmpeg timed out. The videos may be too large.")
@@ -247,23 +247,23 @@ class MediaWorkflow:
 
     def export_project(self, script_id: str, options: dict):
         """执行导出 provider，并持久化最终输出地址。"""
-        logger.info("MEDIA_WORKFLOW: export_project script_id=%s option_keys=%s", script_id, sorted(options.keys()))
+        logger.info("媒体工作流：导出项目开始 脚本ID=%s 选项字段=%s", script_id, sorted(options.keys()))
         project = self._get_project(script_id)
         final_mix_timeline = options.get("final_mix_timeline")
         if final_mix_timeline:
-            logger.info("MEDIA_WORKFLOW: export_project use_final_mix_timeline script_id=%s", script_id)
+            logger.info("媒体工作流：导出项目 使用最终混剪时间轴 脚本ID=%s", script_id)
             project = self.merge_videos(script_id, final_mix_timeline=final_mix_timeline)
             return {"url": project.merged_video_url}
         # 当前 export provider 仍是历史占位实现，会生成不可播放的 dummy 文件。
         # 这里统一回退到真实的合成成片：已有成片就直接复用，没有成片就即时执行一次 merge。
         # 这样至少保证导出的始终是可播放视频；分辨率/格式/字幕参数后续再接入真实导出管线。
         if project.merged_video_url:
-            logger.info("MEDIA_WORKFLOW: export_project reuse_merged_video script_id=%s", script_id)
+            logger.info("媒体工作流：导出项目 复用已有合成成片 脚本ID=%s", script_id)
             return {"url": project.merged_video_url}
 
-        logger.info("MEDIA_WORKFLOW: export_project fallback_to_merge script_id=%s", script_id)
+        logger.info("媒体工作流：导出项目 未找到成片，回退为即时合成 脚本ID=%s", script_id)
         project = self.merge_videos(script_id)
-        logger.info("MEDIA_WORKFLOW: export_project completed_via_merge script_id=%s url=%s", script_id, project.merged_video_url)
+        logger.info("媒体工作流：导出项目完成（即时合成） 脚本ID=%s 地址=%s", script_id, project.merged_video_url)
         return {"url": project.merged_video_url}
 
     def _resolve_merge_clips(self, project, final_mix_timeline: dict | None = None) -> list[dict]:
@@ -671,7 +671,7 @@ class MediaWorkflow:
                 if object_key:
                     return object_key
         except Exception as exc:
-            logger.error("Failed to upload output %s to OSS: %s", local_path, exc)
+            logger.error("媒体工作流：上传导出结果失败 本地路径=%s 错误=%s", local_path, exc)
         raise RuntimeError(f"Failed to upload output {local_path} to OSS.")
 
     def _download_to_local(self, source: str, local_path: str) -> bool:

@@ -95,10 +95,10 @@ class ProjectSeriesCastingServiceTest(unittest.TestCase):
             "series_char_existing_1",
         )
 
-    def test_reparse_series_project_writes_series_characters_and_links_without_creating_project_characters(self):
+    def test_reparse_series_project_writes_all_extracted_entities_into_series_inbox(self):
         from src.application.services.project_service import ProjectService
         from src.repository import CharacterRepository, ProjectCharacterLinkRepository, ProjectRepository, SeriesRepository
-        from src.schemas.models import Character, Script, Series
+        from src.schemas.models import Character, Prop, Scene, Script, Series
 
         now = utc_now()
         SeriesRepository().create(
@@ -136,8 +136,8 @@ class ProjectSeriesCastingServiceTest(unittest.TestCase):
                     title=title,
                     original_text=text,
                     characters=[Character(id="series_new_char_1", name="小满", description="新角色")],
-                    scenes=[],
-                    props=[],
+                    scenes=[Scene(id="series_new_scene_1", name="客厅", description="角色家里的客厅")],
+                    props=[Prop(id="series_new_prop_1", name="玩具熊", description="角色从小带着的玩具")],
                     frames=[],
                     video_tasks=[],
                     created_at=now,
@@ -151,8 +151,16 @@ class ProjectSeriesCastingServiceTest(unittest.TestCase):
         self.assertEqual(reparsed.series_id, "series_reparse_1")
         self.assertEqual(reparsed.original_text, "new text")
         self.assertEqual(CharacterRepository().list_by_owner("project", "project_reparse_series_1"), [])
-        self.assertEqual(len(ProjectCharacterLinkRepository().list_by_project("project_reparse_series_1")), 1)
-        self.assertEqual(SeriesRepository().get("series_reparse_1").characters[0].name, "小满")
+        self.assertEqual(len(ProjectCharacterLinkRepository().list_by_project("project_reparse_series_1")), 0)
+        series_repository = SeriesRepository()
+        self.assertEqual(series_repository.get("series_reparse_1").characters, [])
+        inbox = series_repository.get_asset_inbox("series_reparse_1")
+        self.assertEqual(len(inbox["characters"]), 1)
+        self.assertEqual(len(inbox["scenes"]), 1)
+        self.assertEqual(len(inbox["props"]), 1)
+        self.assertEqual(inbox["characters"][0]["name"], "小满")
+        self.assertEqual(inbox["scenes"][0]["name"], "客厅")
+        self.assertEqual(inbox["props"][0]["name"], "玩具熊")
 
 
 if __name__ == "__main__":

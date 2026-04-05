@@ -24,6 +24,23 @@ TEXT_PROVIDER_FALLBACK_MODELS = {
     "DASHSCOPE": "qwen3.5-plus",
     "OPENAI": "gpt-4.1",
 }
+MODEL_REQUIRED_SETTINGS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("wan2.6-t2i", "t2i"): ("request_path",),
+    ("wan2.6-image", "i2i"): ("create_path", "poll_path_template"),
+    ("wan2.6-i2v", "i2v"): ("submit_path", "poll_path_template"),
+    ("vidu-q1", "i2v"): ("submit_path", "poll_path_template"),
+    ("vidu-2.0", "i2v"): ("submit_path", "poll_path_template"),
+    ("kling-v1", "i2v"): ("submit_path", "poll_path_template"),
+    ("kling-v1-6", "i2v"): ("submit_path", "poll_path_template"),
+    ("kling-v2-1", "i2v"): ("submit_path", "poll_path_template"),
+    ("kling-v2-1-master", "i2v"): ("submit_path", "poll_path_template"),
+    ("kling-v3", "i2v"): ("submit_path", "poll_path_template"),
+}
+SAFE_MODEL_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "t2i": ("wan2.5-t2i-preview", "wan2.2-t2i-plus", "wan2.2-t2i-flash"),
+    "i2i": ("wan2.5-i2i-preview",),
+    "i2v": ("wan2.5-i2v-preview",),
+}
 
 
 class ModelProviderService:
@@ -235,6 +252,13 @@ class ModelProviderService:
             provider = providers.get(item.provider_key)
             if provider is None or not provider.enabled or not item.enabled or not item.is_public:
                 continue
+            if not self.model_is_runtime_ready(item.model_id, item.task_type):
+                logger.warning(
+                    "模型目录：跳过未完成运行时配置的模型 model_id=%s task_type=%s",
+                    item.model_id,
+                    item.task_type,
+                )
+                continue
             grouped.setdefault(item.task_type, []).append(item)
         return AvailableModelCatalog(
             t2i=grouped.get("t2i", []),
@@ -256,6 +280,76 @@ class ModelProviderService:
         if not item.enabled:
             raise ValueError(f"Model has been disabled by administrator: {normalized}")
         return item
+
+    def get_required_model_settings(self, model_id: str, task_type: str | None = None) -> tuple[str, ...]:
+        """返回模型执行前必须具备的运行时设置键。"""
+        normalized = MODEL_ID_ALIASES.get(model_id, model_id)
+        return MODEL_REQUIRED_SETTINGS.get((normalized, task_type or ""), ())
+
+    def model_is_runtime_ready(self, model_id: str, task_type: str | None = None) -> bool:
+        """判断模型是否已经具备运行所需的关键设置。"""
+        for setting_key in self.get_required_model_settings(model_id, task_type):
+            value = self.get_model_setting(model_id, setting_key, task_type=task_type, default=None)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                return False
+        return True
+
+    def ensure_model_runtime_ready(self, model_id: str, task_type: str | None = None) -> None:
+        """在保存模型设置或执行任务前，显式校验模型运行时必填项。"""
+        for setting_key in self.get_required_model_settings(model_id, task_type):
+            self.require_model_setting(model_id, setting_key, task_type=task_type)
+
+    def resolve_model_execution_plan(self, preferred_model_id: str | None, task_type: str) -> dict[str, str | None]:
+        """返回模型执行计划，便于任务结果向前端解释是否发生过回退。"""
+        requested_model = MODEL_ID_ALIASES.get(preferred_model_id, preferred_model_id) if preferred_model_id else None
+        resolved_model = self.resolve_model_for_execution(preferred_model_id, task_type)
+        fallback_reason = None
+        if requested_model and requested_model != resolved_model:
+            fallback_reason = f"模型 {requested_model} 当前不可用，系统已回退到可运行模型 {resolved_model}"
+        return {
+            "requested_model": requested_model or resolved_model,
+            "resolved_model": resolved_model,
+            "fallback_reason": fallback_reason,
+        }
+
+    def resolve_model_for_execution(self, preferred_model_id: str | None, task_type: str) -> str:
+        """返回当前任务真正可执行的模型；首选用户配置，缺配置时回退到同类型安全模型。"""
+        if preferred_model_id:
+            try:
+                self.require_model_enabled(preferred_model_id, task_type)
+                self.ensure_model_runtime_ready(preferred_model_id, task_type)
+                return MODEL_ID_ALIASES.get(preferred_model_id, preferred_model_id)
+            except ValueError as exc:
+                logger.warning(
+                    "模型路由：首选模型不可执行，将尝试回退 preferred_model=%s task_type=%s reason=%s",
+                    preferred_model_id,
+                    task_type,
+                    exc,
+                )
+
+        for candidate in SAFE_MODEL_FALLBACKS.get(task_type, ()):
+            try:
+                self.require_model_enabled(candidate, task_type)
+                self.ensure_model_runtime_ready(candidate, task_type)
+                logger.info(
+                    "模型路由：已回退到安全模型 fallback_model=%s task_type=%s preferred_model=%s",
+                    candidate,
+                    task_type,
+                    preferred_model_id,
+                )
+                return candidate
+            except ValueError:
+                continue
+
+        for item in self.list_available_models().model_dump().get(task_type, []):
+            candidate = item.get("model_id")
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+
+        normalized = MODEL_ID_ALIASES.get(preferred_model_id, preferred_model_id) if preferred_model_id else None
+        if normalized:
+            raise ValueError(f"Model {normalized} does not have a runnable configuration for task type {task_type}")
+        raise ValueError(f"No runnable model is available for task type {task_type}")
 
     def get_provider_config(self, provider_key: str) -> ModelProviderConfig:
         config = self.provider_repository.get(provider_key)
@@ -341,6 +435,7 @@ class ModelProviderService:
                 f"Model {model_id}{task_type_label} is missing required setting: default_settings_json.{setting_key}"
             )
         return value
+
 
     def _list_text_provider_bindings(self) -> list[dict[str, object]]:
         """收集当前可用于文本能力路由的 provider 绑定信息。"""
@@ -482,3 +577,4 @@ class ModelProviderService:
             model_id = settings_updates.get(field_name)
             if model_id:
                 self.require_model_enabled(model_id, task_type)
+                self.ensure_model_runtime_ready(model_id, task_type)

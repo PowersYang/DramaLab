@@ -43,7 +43,7 @@ class AudioGenerator:
             self._tts = TTSProcessor()
         except Exception as exc:
             self._tts_init_failed = True
-            logger.warning("Failed to initialize TTS Processor on demand: %s. Using mock mode.", exc)
+            logger.warning("按需初始化语音合成处理器失败：%s，将使用模拟模式", exc)
             return None
         return self._tts
 
@@ -51,7 +51,7 @@ class AudioGenerator:
         """返回当前 TTS 厂商支持的语音列表。"""
         provider_key = self.get_active_tts_provider_key()
         if provider_key != "DASHSCOPE":
-            logger.warning("TTS provider %s is not implemented yet; returning empty voice catalog", provider_key)
+            logger.warning("语音合成供应商尚未实现：%s，将返回空音色列表", provider_key)
             return []
 
         voices_dict = self._get_provider_voice_catalog(provider_key)
@@ -124,7 +124,7 @@ class AudioGenerator:
         frame.status = GenerationStatus.PROCESSING
         text = frame.dialogue
         logger.info(
-            "Generating dialogue for %s: %s (Speed: %s, Pitch: %s, Volume: %s)",
+            "生成对白：角色=%s 文本=%s 语速=%s 音高=%s 音量=%s",
             character.name,
             text,
             speed,
@@ -135,19 +135,19 @@ class AudioGenerator:
         if not self.tts:
             frame.status = GenerationStatus.FAILED
             frame.audio_error = "TTS service not available. Configure the corresponding provider in platform model settings."
-            logger.warning("TTS not initialized, cannot generate audio for frame %s", frame.id)
+            logger.warning("语音合成未初始化，无法为分镜帧生成音频：帧编号=%s", frame.id)
             return frame
 
         if not character.voice_id:
             frame.status = GenerationStatus.FAILED
             frame.audio_error = f"No voice assigned to character '{character.name}'. Please assign a voice first."
-            logger.warning("No voice_id for character %s, cannot generate audio", character.name)
+            logger.warning("角色未配置音色，无法生成音频：角色=%s", character.name)
             return frame
 
         if not TTSProcessor.is_supported_voice(character.voice_id):
             frame.status = GenerationStatus.FAILED
             frame.audio_error = f"Voice '{character.voice_id}' is not supported by current TTS provider."
-            logger.warning("Unsupported voice_id=%s for character %s", character.voice_id, character.name)
+            logger.warning("音色不受支持：音色编号=%s 角色=%s", character.voice_id, character.name)
             return frame
 
         return self._real_generate_dialogue(frame, character, text, speed, pitch, volume)
@@ -160,7 +160,7 @@ class AudioGenerator:
             frame.audio_url = self._persist_media(output_path, "audio/dialogue")
             frame.status = GenerationStatus.COMPLETED
         except Exception as exc:
-            logger.error("TTS generation failed for frame %s: %s", frame.id, exc)
+            logger.error("生成对白音频失败：帧编号=%s 错误=%s", frame.id, exc)
             frame.status = GenerationStatus.FAILED
             frame.audio_error = f"TTS generation failed: {str(exc)}"
         finally:
@@ -172,13 +172,13 @@ class AudioGenerator:
         frame.status = GenerationStatus.PROCESSING
         output_path = create_temp_file_path(prefix=f"dramalab-sfx-{frame.id}-", suffix=".mp3")
         try:
-            logger.info("Generating SFX for: %s", frame.action_description)
+            logger.info("生成音效：%s", frame.action_description)
             with open(output_path, "wb") as file_obj:
                 file_obj.write(b"dummy sfx content")
             frame.sfx_url = self._persist_media(output_path, "audio/sfx")
             frame.status = GenerationStatus.COMPLETED
         except Exception as exc:
-            logger.error("Failed to generate SFX for frame %s: %s", frame.id, exc)
+            logger.error("生成音效失败：帧编号=%s 错误=%s", frame.id, exc)
             frame.status = GenerationStatus.FAILED
         finally:
             remove_temp_file(output_path)
@@ -188,7 +188,7 @@ class AudioGenerator:
         """基于视频内容生成音效。"""
         if not frame.video_url:
             return frame
-        logger.info("Generating SFX from video for frame %s", frame.id)
+        logger.info("从视频提取音效：帧编号=%s", frame.id)
         # 这里暂时仍是占位实现，但 workflow 契约已经稳定，后续可以直接替换底层 provider。
         time.sleep(1)
         output_path = create_temp_file_path(prefix=f"dramalab-sfx-v2a-{frame.id}-", suffix=".mp3")
@@ -202,7 +202,7 @@ class AudioGenerator:
 
     def generate_bgm(self, frame: StoryboardFrame) -> StoryboardFrame:
         """基于分镜上下文生成背景音乐。"""
-        logger.info("Generating BGM for frame %s", frame.id)
+        logger.info("生成背景音乐：帧编号=%s", frame.id)
         # 这里暂时仍是占位实现，但输出路径约定保持真实，便于下游导出逻辑继续复用。
         time.sleep(1)
         output_path = create_temp_file_path(prefix=f"dramalab-bgm-{frame.id}-", suffix=".mp3")
@@ -226,7 +226,7 @@ class AudioGenerator:
                 if object_key:
                     return object_key
         except Exception as exc:
-            logger.error("Failed to upload media %s to OSS: %s", output_path, exc)
+            logger.error("上传媒体到对象存储失败：本地路径=%s 错误=%s", output_path, exc)
         raise RuntimeError(f"Failed to upload media {output_path} to OSS.")
 
     def get_active_tts_provider_key(self) -> str:
@@ -239,7 +239,7 @@ class AudioGenerator:
             if provider.enabled:
                 return "DASHSCOPE"
         except Exception as exc:
-            logger.warning("Failed to resolve active TTS provider from model provider config: %s", exc)
+            logger.warning("解析可用语音合成供应商失败：%s", exc)
         return "DASHSCOPE"
 
     def _get_provider_voice_catalog(self, provider_key: str) -> Dict[str, Dict[str, Any]]:

@@ -46,7 +46,7 @@ def cleanup_old_variants(image_asset: ImageAsset) -> None:
         removed = non_favorited[:to_remove]
         non_favorited = non_favorited[to_remove:]
         for variant in removed:
-            logger.info("Auto-removed old variant: %s (created_at: %s)", variant.id, variant.created_at)
+            logger.info("已自动清理旧版本：版本编号=%s 创建时间=%s", variant.id, variant.created_at)
 
     non_favorited.reverse()
     image_asset.variants = favorited + non_favorited
@@ -98,6 +98,7 @@ class AssetGenerator:
 
         try:
             if generation_type in ["all", "full_body"]:
+                full_body_batch_id = str(uuid.uuid4())
                 if not prompt:
                     base_prompt = f"Full body character design of {character.name}, concept art. {character.description}. Standing pose, neutral expression, no emotion, looking at viewer. Clean white background, isolated, no other objects, no scenery, simple background, high quality, masterpiece."
                 else:
@@ -164,6 +165,7 @@ class AssetGenerator:
                                 id=variant_id,
                                 url=object_key,
                                 created_at=utc_now(),
+                                batch_id=full_body_batch_id,
                                 prompt_used=generation_prompt,
                             )
                             if not character.full_body:
@@ -187,7 +189,7 @@ class AssetGenerator:
                             time.sleep(1)
                     except Exception as exc:
                         last_generation_error = exc
-                        logger.error("Failed to generate full body variant %s/%s: %s", index + 1, batch_size, exc)
+                        logger.error("生成全身版本失败 %s/%s：%s", index + 1, batch_size, exc)
                         continue
 
                 character.full_body_updated_at = utc_now()
@@ -228,6 +230,7 @@ class AssetGenerator:
                 raise ValueError("Reference image is unavailable. Please use an OSS-hosted image or regenerate the source image first.")
 
             if generation_type in ["all", "three_view"]:
+                three_view_batch_id = str(uuid.uuid4())
                 if not prompt or generation_type == "all":
                     base_prompt = f"Character Reference Sheet for {character.name}. {character.description}. Three-view character design: Front view, Side view, and Back view. STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, and clothing as the reference image. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background, clean lines, studio lighting, high quality."
                 else:
@@ -256,7 +259,13 @@ class AssetGenerator:
                             object_key = uploader.upload_file(sheet_path, sub_path="assets/characters") if uploader.is_configured else None
                             if not object_key:
                                 raise RuntimeError("Failed to upload three view variant to OSS.")
-                            variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
+                            variant = ImageVariant(
+                                id=variant_id,
+                                url=object_key,
+                                created_at=utc_now(),
+                                batch_id=three_view_batch_id,
+                                prompt_used=generation_prompt,
+                            )
                             character.three_view_asset.variants.insert(0, variant)
                             character.three_views.image_variants.insert(0, variant.model_copy(deep=True))
                             character.three_views.image_prompt = base_prompt
@@ -275,7 +284,7 @@ class AssetGenerator:
                             time.sleep(1)
                     except Exception as exc:
                         last_generation_error = exc
-                        logger.error("Failed to generate three view variant %s/%s: %s", index + 1, batch_size, exc)
+                        logger.error("生成三视图版本失败 %s/%s：%s", index + 1, batch_size, exc)
                         continue
 
                 character.three_view_updated_at = utc_now()
@@ -283,6 +292,7 @@ class AssetGenerator:
                     self._raise_generation_failure("三视图", last_generation_error)
 
             if generation_type in ["all", "headshot"]:
+                headshot_batch_id = str(uuid.uuid4())
                 if not prompt or generation_type == "all":
                     base_prompt = f"Close-up portrait of the SAME character {character.name}. {character.description}. STRICTLY MAINTAIN the SAME face, hairstyle, skin tone, and facial features as the reference image. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece."
                 else:
@@ -310,7 +320,13 @@ class AssetGenerator:
                             object_key = uploader.upload_file(avatar_path, sub_path="assets/characters") if uploader.is_configured else None
                             if not object_key:
                                 raise RuntimeError("Failed to upload headshot variant to OSS.")
-                            variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=generation_prompt)
+                            variant = ImageVariant(
+                                id=variant_id,
+                                url=object_key,
+                                created_at=utc_now(),
+                                batch_id=headshot_batch_id,
+                                prompt_used=generation_prompt,
+                            )
                             character.headshot_asset.variants.insert(0, variant)
                             character.head_shot.image_variants.insert(0, variant.model_copy(deep=True))
                             character.head_shot.image_prompt = base_prompt
@@ -329,7 +345,7 @@ class AssetGenerator:
                             time.sleep(1)
                     except Exception as exc:
                         last_generation_error = exc
-                        logger.error("Failed to generate headshot variant %s/%s: %s", index + 1, batch_size, exc)
+                        logger.error("生成头像版本失败 %s/%s：%s", index + 1, batch_size, exc)
                         continue
 
                 character.headshot_updated_at = utc_now()
@@ -343,26 +359,37 @@ class AssetGenerator:
 
             character.status = GenerationStatus.COMPLETED
         except Exception as exc:
-            logger.error("Failed to generate character %s: %s", character.name, exc)
+            logger.error("生成角色失败：角色=%s 错误=%s", character.name, exc)
             character.status = GenerationStatus.FAILED
             raise
 
         return character
 
-    def generate_scene(self, scene: Scene, positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, size: str = None) -> Scene:
+    def generate_scene(
+        self,
+        scene: Scene,
+        prompt: str | None = None,
+        positive_prompt: str | None = None,
+        negative_prompt: str = "",
+        batch_size: int = 1,
+        model_name: str | None = None,
+        size: str | None = None,
+    ) -> Scene:
         """为场景资产生成图片候选。"""
         scene.status = GenerationStatus.PROCESSING
         if positive_prompt is None:
             positive_prompt = "cinematic lighting, movie still, 8k, highly detailed, realistic"
         effective_size = size or "1024*576"
-        prompt = f"Scene Concept Art: {scene.name}. {scene.description}. High quality, detailed. {positive_prompt}"
+        base_prompt = prompt or f"Scene Concept Art: {scene.name}. {scene.description}. High quality, detailed."
+        generation_prompt = f"{base_prompt} {positive_prompt}".strip()
 
         try:
+            scene_batch_id = str(uuid.uuid4())
             for _ in range(batch_size):
                 variant_id = str(uuid.uuid4())
                 output_path = create_temp_file_path(prefix=f"dramalab-scene-{scene.id}-{variant_id}-", suffix=".png")
                 try:
-                    self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+                    self.model.generate(generation_prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
                     self._remember_model_metrics(
                         resource={"asset_type": "scene", "asset_id": scene.id, "generation_type": "scene"},
                         artifacts={"variant_kind": "scene"},
@@ -373,7 +400,13 @@ class AssetGenerator:
                     object_key = uploader.upload_file(output_path, sub_path="assets/scenes") if uploader.is_configured else None
                     if not object_key:
                         raise RuntimeError("Failed to upload scene variant to OSS.")
-                    variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=prompt)
+                    variant = ImageVariant(
+                        id=variant_id,
+                        url=object_key,
+                        created_at=utc_now(),
+                        batch_id=scene_batch_id,
+                        prompt_used=generation_prompt,
+                    )
                     scene.image_asset.variants.insert(0, variant)
                     if not scene.image_asset.selected_id or batch_size == 1:
                         scene.image_asset.selected_id = variant_id
@@ -382,25 +415,36 @@ class AssetGenerator:
                     remove_temp_file(output_path)
             scene.status = GenerationStatus.COMPLETED
         except Exception as exc:
-            logger.error("Failed to generate scene %s: %s", scene.name, exc)
+            logger.error("生成场景失败：场景=%s 错误=%s", scene.name, exc)
             scene.status = GenerationStatus.FAILED
             raise
         return scene
 
-    def generate_prop(self, prop: Prop, positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, size: str = None) -> Prop:
+    def generate_prop(
+        self,
+        prop: Prop,
+        prompt: str | None = None,
+        positive_prompt: str | None = None,
+        negative_prompt: str = "",
+        batch_size: int = 1,
+        model_name: str | None = None,
+        size: str | None = None,
+    ) -> Prop:
         """为道具资产生成图片候选。"""
         prop.status = GenerationStatus.PROCESSING
         if positive_prompt is None:
             positive_prompt = "cinematic lighting, movie still, 8k, highly detailed, realistic"
         effective_size = size or "1024*1024"
-        prompt = f"Prop Design: {prop.name}. {prop.description}. Isolated on white background, high quality, detailed. {positive_prompt}"
+        base_prompt = prompt or f"Prop Design: {prop.name}. {prop.description}. Isolated on white background, high quality, detailed."
+        generation_prompt = f"{base_prompt} {positive_prompt}".strip()
 
         try:
+            prop_batch_id = str(uuid.uuid4())
             for _ in range(batch_size):
                 variant_id = str(uuid.uuid4())
                 output_path = create_temp_file_path(prefix=f"dramalab-prop-{prop.id}-{variant_id}-", suffix=".png")
                 try:
-                    self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+                    self.model.generate(generation_prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
                     self._remember_model_metrics(
                         resource={"asset_type": "prop", "asset_id": prop.id, "generation_type": "prop"},
                         artifacts={"variant_kind": "prop"},
@@ -411,7 +455,13 @@ class AssetGenerator:
                     object_key = uploader.upload_file(output_path, sub_path="assets/props") if uploader.is_configured else None
                     if not object_key:
                         raise RuntimeError("Failed to upload prop variant to OSS.")
-                    variant = ImageVariant(id=variant_id, url=object_key, created_at=utc_now(), prompt_used=prompt)
+                    variant = ImageVariant(
+                        id=variant_id,
+                        url=object_key,
+                        created_at=utc_now(),
+                        batch_id=prop_batch_id,
+                        prompt_used=generation_prompt,
+                    )
                     prop.image_asset.variants.insert(0, variant)
                     if not prop.image_asset.selected_id or batch_size == 1:
                         prop.image_asset.selected_id = variant_id
@@ -420,7 +470,7 @@ class AssetGenerator:
                     remove_temp_file(output_path)
             prop.status = GenerationStatus.COMPLETED
         except Exception as exc:
-            logger.error("Failed to generate prop %s: %s", prop.name, exc)
+            logger.error("生成道具失败：道具=%s 错误=%s", prop.name, exc)
             prop.status = GenerationStatus.FAILED
             raise
         return prop

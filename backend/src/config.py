@@ -33,7 +33,7 @@ class Config:
         content = pattern.sub(replace_env, content)
         
         self.config = yaml.safe_load(content)
-        logger.info(f"Loaded config from {path}")
+        logger.info(f"已加载配置文件：{path}")
 
     def merge_args(self, args: argparse.Namespace):
         """把命令行参数覆盖进配置对象。"""

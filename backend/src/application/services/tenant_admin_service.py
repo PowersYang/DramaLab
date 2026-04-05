@@ -52,7 +52,7 @@ class TenantAdminService:
             created_at=now,
             updated_at=now,
         )
-        logger.info("TENANT_ADMIN_SERVICE: create_organization organization_id=%s slug=%s", organization.id, slug)
+        logger.info("平台管理服务：创建组织 组织ID=%s 标识=%s", organization.id, slug)
         return self.organization_repository.create(organization)
 
     def update_organization(self, organization_id: str, updates: dict):
@@ -66,7 +66,7 @@ class TenantAdminService:
             if existing and existing.id != organization_id:
                 raise ValueError(f"Organization slug already exists: {slug}")
         logger.info(
-            "TENANT_ADMIN_SERVICE: update_organization organization_id=%s fields=%s",
+            "平台管理服务：更新组织 组织ID=%s 字段=%s",
             organization_id,
             sorted(updates.keys()),
         )
@@ -80,7 +80,7 @@ class TenantAdminService:
         if self.organization_repository.has_dependents(organization_id):
             raise ValueError("Organization still has dependent workspaces, memberships, billing accounts, projects, or series")
         self.organization_repository.delete(organization_id)
-        logger.info("TENANT_ADMIN_SERVICE: delete_organization organization_id=%s", organization_id)
+        logger.info("平台管理服务：删除组织 组织ID=%s", organization_id)
         return {"status": "deleted", "id": organization_id, "name": organization.name}
 
     def list_workspaces(self, organization_id: str | None = None):
@@ -112,7 +112,7 @@ class TenantAdminService:
             updated_at=now,
         )
         logger.info(
-            "TENANT_ADMIN_SERVICE: create_workspace workspace_id=%s organization_id=%s",
+            "平台管理服务：创建工作区 工作区ID=%s 组织ID=%s",
             workspace.id,
             organization_id,
         )
@@ -129,7 +129,7 @@ class TenantAdminService:
         if "organization_id" in updates and organization_id != workspace.organization_id and self.workspace_repository.has_dependents(workspace_id):
             raise ValueError("Workspace organization cannot be changed while dependent memberships, projects, or series still exist")
         logger.info(
-            "TENANT_ADMIN_SERVICE: update_workspace workspace_id=%s fields=%s",
+            "平台管理服务：更新工作区 工作区ID=%s 字段=%s",
             workspace_id,
             sorted(updates.keys()),
         )
@@ -143,7 +143,7 @@ class TenantAdminService:
         if self.workspace_repository.has_dependents(workspace_id):
             raise ValueError("Workspace still has dependent memberships, projects, or series")
         self.workspace_repository.delete(workspace_id)
-        logger.info("TENANT_ADMIN_SERVICE: delete_workspace workspace_id=%s", workspace_id)
+        logger.info("平台管理服务：删除工作区 工作区ID=%s", workspace_id)
         return {"status": "deleted", "id": workspace_id, "name": workspace.name}
 
     def list_users(self):
@@ -167,7 +167,7 @@ class TenantAdminService:
             created_at=now,
             updated_at=now,
         )
-        logger.info("TENANT_ADMIN_SERVICE: create_user user_id=%s email=%s", user.id, email)
+        logger.info("平台管理服务：创建用户 用户ID=%s 邮箱=%s", user.id, email)
         return self.user_repository.create(user)
 
     def update_user(self, user_id: str, updates: dict):
@@ -180,7 +180,7 @@ class TenantAdminService:
             existing = self.user_repository.get_by_email(email)
             if existing and existing.id != user_id:
                 raise ValueError(f"User email already exists: {email}")
-        logger.info("TENANT_ADMIN_SERVICE: update_user user_id=%s fields=%s", user_id, sorted(updates.keys()))
+        logger.info("平台管理服务：更新用户 用户ID=%s 字段=%s", user_id, sorted(updates.keys()))
         return self.user_repository.update(user_id, updates)
 
     def delete_user(self, user_id: str):
@@ -191,7 +191,7 @@ class TenantAdminService:
         if self.user_repository.has_memberships(user_id):
             raise ValueError("User still has dependent memberships")
         self.user_repository.delete(user_id)
-        logger.info("TENANT_ADMIN_SERVICE: delete_user user_id=%s", user_id)
+        logger.info("平台管理服务：删除用户 用户ID=%s", user_id)
         return {"status": "deleted", "id": user_id, "display_name": user.display_name}
 
     def list_roles(self):
@@ -216,7 +216,7 @@ class TenantAdminService:
             created_at=now,
             updated_at=now,
         )
-        logger.info("TENANT_ADMIN_SERVICE: create_role role_id=%s code=%s", role.id, code)
+        logger.info("平台管理服务：创建角色 角色ID=%s 代码=%s", role.id, code)
         return self.role_repository.create(role)
 
     def update_role(self, role_id: str, updates: dict):
@@ -229,7 +229,7 @@ class TenantAdminService:
             existing = self.role_repository.get_by_code(code)
             if existing and existing.id != role_id:
                 raise ValueError(f"Role code already exists: {code}")
-        logger.info("TENANT_ADMIN_SERVICE: update_role role_id=%s fields=%s", role_id, sorted(updates.keys()))
+        logger.info("平台管理服务：更新角色 角色ID=%s 字段=%s", role_id, sorted(updates.keys()))
         return self.role_repository.update(role_id, updates)
 
     def delete_role(self, role_id: str):
@@ -242,7 +242,7 @@ class TenantAdminService:
         if self.role_repository.has_memberships(role_id):
             raise ValueError("Role still has dependent memberships")
         self.role_repository.delete(role_id)
-        logger.info("TENANT_ADMIN_SERVICE: delete_role role_id=%s", role_id)
+        logger.info("平台管理服务：删除角色 角色ID=%s", role_id)
         return {"status": "deleted", "id": role_id, "code": role.code}
 
     def list_model_providers(self):
@@ -255,14 +255,14 @@ class TenantAdminService:
         """创建模型供应商配置。"""
         from .model_provider_service import ModelProviderService
 
-        logger.info("TENANT_ADMIN_SERVICE: create_model_provider provider_key=%s", payload.get("provider_key"))
+        logger.info("平台管理服务：创建模型供应商 标识=%s", payload.get("provider_key"))
         return ModelProviderService().create_provider(payload)
 
     def update_model_provider(self, provider_key: str, payload: dict):
         """更新模型供应商配置。"""
         from .model_provider_service import ModelProviderService
 
-        logger.info("TENANT_ADMIN_SERVICE: update_model_provider provider_key=%s fields=%s", provider_key, sorted(payload.keys()))
+        logger.info("平台管理服务：更新模型供应商 标识=%s 字段=%s", provider_key, sorted(payload.keys()))
         return ModelProviderService().update_provider(
             provider_key=provider_key,
             display_name=payload.get("display_name"),
@@ -277,7 +277,7 @@ class TenantAdminService:
         """删除模型供应商配置。"""
         from .model_provider_service import ModelProviderService
 
-        logger.info("TENANT_ADMIN_SERVICE: delete_model_provider provider_key=%s", provider_key)
+        logger.info("平台管理服务：删除模型供应商 标识=%s", provider_key)
         return ModelProviderService().delete_provider(provider_key)
 
     def list_model_catalog(self, task_type: str | None = None):
@@ -290,21 +290,21 @@ class TenantAdminService:
         """创建模型目录项。"""
         from .model_provider_service import ModelProviderService
 
-        logger.info("TENANT_ADMIN_SERVICE: create_model_catalog_entry model_id=%s", payload.get("model_id"))
+        logger.info("平台管理服务：创建模型目录项 模型ID=%s", payload.get("model_id"))
         return ModelProviderService().create_model_catalog_entry(payload)
 
     def update_model_catalog_entry(self, model_id: str, payload: dict):
         """更新模型目录项。"""
         from .model_provider_service import ModelProviderService
 
-        logger.info("TENANT_ADMIN_SERVICE: update_model_catalog_entry model_id=%s fields=%s", model_id, sorted(payload.keys()))
+        logger.info("平台管理服务：更新模型目录项 模型ID=%s 字段=%s", model_id, sorted(payload.keys()))
         return ModelProviderService().update_model_catalog_entry(model_id, payload)
 
     def delete_model_catalog_entry(self, model_id: str):
         """删除模型目录项。"""
         from .model_provider_service import ModelProviderService
 
-        logger.info("TENANT_ADMIN_SERVICE: delete_model_catalog_entry model_id=%s", model_id)
+        logger.info("平台管理服务：删除模型目录项 模型ID=%s", model_id)
         return ModelProviderService().delete_model_catalog_entry(model_id)
 
     def list_task_concurrency_task_types(self):
@@ -324,7 +324,7 @@ class TenantAdminService:
         from .task_concurrency_service import TaskConcurrencyService
 
         logger.info(
-            "TENANT_ADMIN_SERVICE: upsert_task_concurrency_limit organization_id=%s task_type=%s max_concurrency=%s",
+            "平台管理服务：保存任务并发限制 组织ID=%s 任务类型=%s 最大并发=%s",
             payload.get("organization_id"),
             payload.get("task_type"),
             payload.get("max_concurrency"),
@@ -340,7 +340,7 @@ class TenantAdminService:
         from .task_concurrency_service import TaskConcurrencyService
 
         logger.info(
-            "TENANT_ADMIN_SERVICE: delete_task_concurrency_limit organization_id=%s task_type=%s",
+            "平台管理服务：删除任务并发限制 组织ID=%s 任务类型=%s",
             organization_id,
             task_type,
         )
@@ -363,7 +363,7 @@ class TenantAdminService:
         from .billing_service import BillingService
 
         logger.info(
-            "TENANT_ADMIN_SERVICE: upsert_billing_pricing_rule organization_id=%s task_type=%s price_credits=%s",
+            "平台管理服务：保存计费定价规则 组织ID=%s 任务类型=%s 单价算力豆=%s",
             payload.get("organization_id"),
             payload.get("task_type"),
             payload.get("price_credits"),
@@ -393,7 +393,7 @@ class TenantAdminService:
         from .billing_service import BillingService
 
         logger.info(
-            "TENANT_ADMIN_SERVICE: upsert_billing_recharge_bonus_rule organization_id=%s min_recharge_cents=%s bonus_credits=%s",
+            "平台管理服务：保存充值赠送规则 组织ID=%s 最小充值分=%s 赠送算力豆=%s",
             payload.get("organization_id"),
             payload.get("min_recharge_cents"),
             payload.get("bonus_credits"),
@@ -413,7 +413,7 @@ class TenantAdminService:
         from .billing_service import BillingService
 
         logger.info(
-            "TENANT_ADMIN_SERVICE: manual_recharge_billing_account organization_id=%s amount_cents=%s",
+            "平台管理服务：手工充值 组织ID=%s 金额分=%s",
             payload.get("organization_id"),
             payload.get("amount_cents"),
         )
@@ -473,7 +473,7 @@ class TenantAdminService:
             updated_at=now,
         )
         logger.info(
-            "TENANT_ADMIN_SERVICE: create_membership membership_id=%s user_id=%s organization_id=%s workspace_id=%s role_id=%s",
+            "平台管理服务：创建成员关系 关系ID=%s 用户ID=%s 组织ID=%s 工作区ID=%s 角色ID=%s",
             membership.id,
             user_id,
             organization_id,
@@ -505,7 +505,7 @@ class TenantAdminService:
         ):
             raise ValueError("Membership already exists for the same user, scope, and role")
         logger.info(
-            "TENANT_ADMIN_SERVICE: update_membership membership_id=%s fields=%s",
+            "平台管理服务：更新成员关系 关系ID=%s 字段=%s",
             membership_id,
             sorted(updates.keys()),
         )
@@ -517,7 +517,7 @@ class TenantAdminService:
         if membership is None:
             raise ValueError("Membership not found")
         self.membership_repository.delete(membership_id)
-        logger.info("TENANT_ADMIN_SERVICE: delete_membership membership_id=%s", membership_id)
+        logger.info("平台管理服务：删除成员关系 关系ID=%s", membership_id)
         return {"status": "deleted", "id": membership_id}
 
     def _validate_membership_dependencies(

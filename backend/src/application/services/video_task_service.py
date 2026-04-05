@@ -49,7 +49,7 @@ class VideoTaskService:
     ) -> list[VideoTask]:
         """为项目创建一个或多个持久化视频任务占位记录。"""
         logger.info(
-            "VIDEO_TASK_SERVICE: create_tasks script_id=%s batch_size=%s model=%s generation_mode=%s frame_id=%s",
+            "视频任务服务：创建任务占位 脚本ID=%s 批量数量=%s 模型=%s 生成模式=%s 分镜ID=%s",
             script_id,
             batch_size,
             model,
@@ -58,7 +58,7 @@ class VideoTaskService:
         )
         project = self.project_repository.get(script_id)
         if not project:
-            logger.warning("VIDEO_TASK_SERVICE: create_tasks project_missing script_id=%s", script_id)
+            logger.warning("视频任务服务：创建任务占位失败 项目不存在 脚本ID=%s", script_id)
             raise ValueError("Script not found")
         self.model_provider_service.require_model_enabled(model, "i2v")
 
@@ -94,7 +94,7 @@ class VideoTaskService:
             self.video_task_repository.save(task)
             tasks.append(task)
 
-        logger.info("VIDEO_TASK_SERVICE: create_tasks completed script_id=%s task_count=%s", script_id, len(tasks))
+        logger.info("视频任务服务：创建任务占位完成 脚本ID=%s 任务数量=%s", script_id, len(tasks))
         return tasks
 
     def create_video_generation_jobs(
@@ -140,7 +140,7 @@ class VideoTaskService:
                 existing_receipts.append(self.task_service._to_receipt(existing))
             if existing_receipts:
                 logger.info(
-                    "VIDEO_TASK_SERVICE: create_video_generation_jobs reuse_existing script_id=%s batch_size=%s",
+                    "视频任务服务：创建视频生成任务 复用已有任务 脚本ID=%s 批量数量=%s",
                     script_id,
                     batch_size,
                 )
@@ -184,10 +184,11 @@ class VideoTaskService:
                 resource_type=resource_type,
                 resource_id=resource_id,
                 idempotency_key=f"{idempotency_key}:{index}" if idempotency_key else None,
+                requested_model=model,
             )
             receipts.append(receipt)
         logger.info(
-            "VIDEO_TASK_SERVICE: create_video_generation_jobs script_id=%s task_type=%s receipt_count=%s",
+            "视频任务服务：创建视频生成任务 脚本ID=%s 任务类型=%s 回执数量=%s",
             script_id,
             resolved_task_type,
             len(receipts),
@@ -196,12 +197,12 @@ class VideoTaskService:
 
     def bind_voice(self, script_id: str, char_id: str, voice_id: str, voice_name: str):
         """把语音绑定请求转交给角色服务。"""
-        logger.info("VIDEO_TASK_SERVICE: bind_voice script_id=%s char_id=%s voice_id=%s", script_id, char_id, voice_id)
+        logger.info("视频任务服务：绑定音色 脚本ID=%s 角色ID=%s 音色ID=%s", script_id, char_id, voice_id)
         return CharacterService().bind_voice(script_id, char_id, voice_id, voice_name)
 
     def update_voice_params(self, script_id: str, char_id: str, speed: float, pitch: float, volume: int):
         """把语音参数更新请求转交给角色服务。"""
-        logger.info("VIDEO_TASK_SERVICE: update_voice_params script_id=%s char_id=%s", script_id, char_id)
+        logger.info("视频任务服务：更新音色参数 脚本ID=%s 角色ID=%s", script_id, char_id)
         return CharacterService().update_voice_params(script_id, char_id, speed, pitch, volume)
 
     def _snapshot_input_image(self, task_id: str, image_url: str) -> str:
@@ -221,8 +222,8 @@ class VideoTaskService:
                     )
                     if object_key:
                         snapshot_url = object_key
-                        logger.info("VIDEO_TASK_SERVICE: snapshot_input_image task_id=%s snapshot_url=%s", task_id, snapshot_url)
+                        logger.info("视频任务服务：固化输入图片完成 任务ID=%s 固化地址=%s", task_id, snapshot_url)
         except Exception:
-            logger.exception("VIDEO_TASK_SERVICE: snapshot_input_image failed task_id=%s", task_id)
+            logger.exception("视频任务服务：固化输入图片失败 任务ID=%s", task_id)
             snapshot_url = image_url
         return snapshot_url

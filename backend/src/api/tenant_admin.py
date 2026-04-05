@@ -33,9 +33,14 @@ tenant_admin_service = TenantAdminService()
 def _raise_http_error(exc: ValueError) -> None:
     """把应用层校验错误映射到合适的 HTTP 状态码。"""
     message = str(exc)
-    if "not found" in message.lower():
+    if "not found" in message.lower() or "不存在" in message:
         raise HTTPException(status_code=404, detail=message)
-    if "already exists" in message.lower() or "conflict" in message.lower():
+    if (
+        "already exists" in message.lower()
+        or "conflict" in message.lower()
+        or "已存在" in message
+        or "冲突" in message
+    ):
         raise HTTPException(status_code=409, detail=message)
     raise HTTPException(status_code=400, detail=message)
 
@@ -44,7 +49,7 @@ def _raise_http_error(exc: ValueError) -> None:
 async def create_organization(request: CreateOrganizationRequest):
     """创建组织。"""
     try:
-        logger.info("TENANT_ADMIN_API: create_organization name=%s slug=%s", request.name, request.slug)
+        logger.info("租户管理接口：创建组织 名称=%s slug=%s", request.name, request.slug)
         return signed_response(
             tenant_admin_service.create_organization(
                 name=request.name,
@@ -60,7 +65,7 @@ async def create_organization(request: CreateOrganizationRequest):
 async def list_organizations():
     """列出组织。"""
     organizations = tenant_admin_service.list_organizations()
-    logger.info("TENANT_ADMIN_API: list_organizations count=%s", len(organizations))
+    logger.info("租户管理接口：列出组织 数量=%s", len(organizations))
     return signed_response(organizations)
 
 
@@ -69,7 +74,7 @@ async def get_organization(organization_id: str):
     """读取单个组织。"""
     organization = tenant_admin_service.get_organization(organization_id)
     if organization is None:
-        raise HTTPException(status_code=404, detail="Organization not found")
+        raise HTTPException(status_code=404, detail="组织不存在")
     return signed_response(organization)
 
 
@@ -78,7 +83,7 @@ async def update_organization(organization_id: str, request: UpdateOrganizationR
     """更新组织。"""
     try:
         updates = request.model_dump(exclude_unset=True)
-        logger.info("TENANT_ADMIN_API: update_organization organization_id=%s fields=%s", organization_id, sorted(updates.keys()))
+        logger.info("租户管理接口：更新组织 组织ID=%s 字段=%s", organization_id, sorted(updates.keys()))
         return signed_response(tenant_admin_service.update_organization(organization_id, updates))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -88,7 +93,7 @@ async def update_organization(organization_id: str, request: UpdateOrganizationR
 async def delete_organization(organization_id: str):
     """删除组织。"""
     try:
-        logger.info("TENANT_ADMIN_API: delete_organization organization_id=%s", organization_id)
+        logger.info("租户管理接口：删除组织 组织ID=%s", organization_id)
         return signed_response(tenant_admin_service.delete_organization(organization_id))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -98,7 +103,7 @@ async def delete_organization(organization_id: str):
 async def create_workspace(request: CreateWorkspaceRequest):
     """创建工作区。"""
     try:
-        logger.info("TENANT_ADMIN_API: create_workspace name=%s organization_id=%s", request.name, request.organization_id)
+        logger.info("租户管理接口：创建工作区 名称=%s 组织ID=%s", request.name, request.organization_id)
         return signed_response(
             tenant_admin_service.create_workspace(
                 name=request.name,
@@ -115,7 +120,7 @@ async def create_workspace(request: CreateWorkspaceRequest):
 async def list_workspaces(organization_id: str | None = Query(default=None)):
     """列出工作区，可按组织过滤。"""
     workspaces = tenant_admin_service.list_workspaces(organization_id=organization_id)
-    logger.info("TENANT_ADMIN_API: list_workspaces organization_id=%s count=%s", organization_id, len(workspaces))
+    logger.info("租户管理接口：列出工作区 组织ID=%s 数量=%s", organization_id, len(workspaces))
     return signed_response(workspaces)
 
 
@@ -124,7 +129,7 @@ async def get_workspace(workspace_id: str):
     """读取单个工作区。"""
     workspace = tenant_admin_service.get_workspace(workspace_id)
     if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="工作区不存在")
     return signed_response(workspace)
 
 
@@ -133,7 +138,7 @@ async def update_workspace(workspace_id: str, request: UpdateWorkspaceRequest):
     """更新工作区。"""
     try:
         updates = request.model_dump(exclude_unset=True)
-        logger.info("TENANT_ADMIN_API: update_workspace workspace_id=%s fields=%s", workspace_id, sorted(updates.keys()))
+        logger.info("租户管理接口：更新工作区 工作区ID=%s 字段=%s", workspace_id, sorted(updates.keys()))
         return signed_response(tenant_admin_service.update_workspace(workspace_id, updates))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -143,7 +148,7 @@ async def update_workspace(workspace_id: str, request: UpdateWorkspaceRequest):
 async def delete_workspace(workspace_id: str):
     """删除工作区。"""
     try:
-        logger.info("TENANT_ADMIN_API: delete_workspace workspace_id=%s", workspace_id)
+        logger.info("租户管理接口：删除工作区 工作区ID=%s", workspace_id)
         return signed_response(tenant_admin_service.delete_workspace(workspace_id))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -153,7 +158,7 @@ async def delete_workspace(workspace_id: str):
 async def create_user(request: CreateUserRequest):
     """创建用户。"""
     try:
-        logger.info("TENANT_ADMIN_API: create_user email=%s", request.email)
+        logger.info("租户管理接口：创建用户 邮箱=%s", request.email)
         return signed_response(
             tenant_admin_service.create_user(
                 email=request.email,
@@ -169,7 +174,7 @@ async def create_user(request: CreateUserRequest):
 async def list_users():
     """列出用户。"""
     users = tenant_admin_service.list_users()
-    logger.info("TENANT_ADMIN_API: list_users count=%s", len(users))
+    logger.info("租户管理接口：列出用户 数量=%s", len(users))
     return signed_response(users)
 
 
@@ -178,7 +183,7 @@ async def get_user(user_id: str):
     """读取单个用户。"""
     user = tenant_admin_service.get_user(user_id)
     if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="用户不存在")
     return signed_response(user)
 
 
@@ -187,7 +192,7 @@ async def update_user(user_id: str, request: UpdateUserRequest):
     """更新用户。"""
     try:
         updates = request.model_dump(exclude_unset=True)
-        logger.info("TENANT_ADMIN_API: update_user user_id=%s fields=%s", user_id, sorted(updates.keys()))
+        logger.info("租户管理接口：更新用户 用户ID=%s 字段=%s", user_id, sorted(updates.keys()))
         return signed_response(tenant_admin_service.update_user(user_id, updates))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -197,7 +202,7 @@ async def update_user(user_id: str, request: UpdateUserRequest):
 async def delete_user(user_id: str):
     """删除用户。"""
     try:
-        logger.info("TENANT_ADMIN_API: delete_user user_id=%s", user_id)
+        logger.info("租户管理接口：删除用户 用户ID=%s", user_id)
         return signed_response(tenant_admin_service.delete_user(user_id))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -207,7 +212,7 @@ async def delete_user(user_id: str):
 async def create_role(request: CreateRoleRequest):
     """创建角色。"""
     try:
-        logger.info("TENANT_ADMIN_API: create_role code=%s", request.code)
+        logger.info("租户管理接口：创建角色 代码=%s", request.code)
         return signed_response(
             tenant_admin_service.create_role(
                 code=request.code,
@@ -224,7 +229,7 @@ async def create_role(request: CreateRoleRequest):
 async def list_roles():
     """列出角色。"""
     roles = tenant_admin_service.list_roles()
-    logger.info("TENANT_ADMIN_API: list_roles count=%s", len(roles))
+    logger.info("租户管理接口：列出角色 数量=%s", len(roles))
     return signed_response(roles)
 
 
@@ -233,7 +238,7 @@ async def get_role(role_id: str):
     """读取单个角色。"""
     role = tenant_admin_service.get_role(role_id)
     if role is None:
-        raise HTTPException(status_code=404, detail="Role not found")
+        raise HTTPException(status_code=404, detail="角色不存在")
     return signed_response(role)
 
 
@@ -242,7 +247,7 @@ async def update_role(role_id: str, request: UpdateRoleRequest):
     """更新角色。"""
     try:
         updates = request.model_dump(exclude_unset=True)
-        logger.info("TENANT_ADMIN_API: update_role role_id=%s fields=%s", role_id, sorted(updates.keys()))
+        logger.info("租户管理接口：更新角色 角色ID=%s 字段=%s", role_id, sorted(updates.keys()))
         return signed_response(tenant_admin_service.update_role(role_id, updates))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -252,7 +257,7 @@ async def update_role(role_id: str, request: UpdateRoleRequest):
 async def delete_role(role_id: str):
     """删除角色。"""
     try:
-        logger.info("TENANT_ADMIN_API: delete_role role_id=%s", role_id)
+        logger.info("租户管理接口：删除角色 角色ID=%s", role_id)
         return signed_response(tenant_admin_service.delete_role(role_id))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -263,7 +268,7 @@ async def create_membership(request: CreateMembershipRequest):
     """创建成员关系。"""
     try:
         logger.info(
-            "TENANT_ADMIN_API: create_membership user_id=%s organization_id=%s workspace_id=%s role_id=%s",
+            "租户管理接口：创建成员关系 用户ID=%s 组织ID=%s 工作区ID=%s 角色ID=%s",
             request.user_id,
             request.organization_id,
             request.workspace_id,
@@ -297,7 +302,7 @@ async def list_memberships(
         role_id=role_id,
     )
     logger.info(
-        "TENANT_ADMIN_API: list_memberships organization_id=%s workspace_id=%s user_id=%s role_id=%s count=%s",
+        "租户管理接口：列出成员关系 组织ID=%s 工作区ID=%s 用户ID=%s 角色ID=%s 数量=%s",
         organization_id,
         workspace_id,
         user_id,
@@ -312,7 +317,7 @@ async def get_membership(membership_id: str):
     """读取单个成员关系。"""
     membership = tenant_admin_service.get_membership(membership_id)
     if membership is None:
-        raise HTTPException(status_code=404, detail="Membership not found")
+        raise HTTPException(status_code=404, detail="成员关系不存在")
     return signed_response(membership)
 
 
@@ -321,7 +326,7 @@ async def update_membership(membership_id: str, request: UpdateMembershipRequest
     """更新成员关系。"""
     try:
         updates = request.model_dump(exclude_unset=True)
-        logger.info("TENANT_ADMIN_API: update_membership membership_id=%s fields=%s", membership_id, sorted(updates.keys()))
+        logger.info("租户管理接口：更新成员关系 成员关系ID=%s 字段=%s", membership_id, sorted(updates.keys()))
         return signed_response(tenant_admin_service.update_membership(membership_id, updates))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -331,7 +336,7 @@ async def update_membership(membership_id: str, request: UpdateMembershipRequest
 async def delete_membership(membership_id: str):
     """删除成员关系。"""
     try:
-        logger.info("TENANT_ADMIN_API: delete_membership membership_id=%s", membership_id)
+        logger.info("租户管理接口：删除成员关系 成员关系ID=%s", membership_id)
         return signed_response(tenant_admin_service.delete_membership(membership_id))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -341,7 +346,7 @@ async def delete_membership(membership_id: str):
 async def list_model_providers():
     """列出平台级模型供应商配置摘要。"""
     providers = tenant_admin_service.list_model_providers()
-    logger.info("TENANT_ADMIN_API: list_model_providers count=%s", len(providers))
+    logger.info("租户管理接口：列出模型供应商 数量=%s", len(providers))
     return signed_response(providers)
 
 
@@ -349,7 +354,7 @@ async def list_model_providers():
 async def create_model_provider(request: CreateModelProviderRequest):
     """新增模型供应商配置。"""
     try:
-        logger.info("TENANT_ADMIN_API: create_model_provider provider_key=%s", request.provider_key)
+        logger.info("租户管理接口：创建模型供应商 provider_key=%s", request.provider_key)
         return signed_response(tenant_admin_service.create_model_provider(request.model_dump()))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -359,7 +364,7 @@ async def create_model_provider(request: CreateModelProviderRequest):
 async def update_model_provider(provider_key: str, request: UpdateModelProviderRequest):
     """更新模型供应商配置。"""
     try:
-        logger.info("TENANT_ADMIN_API: update_model_provider provider_key=%s", provider_key)
+        logger.info("租户管理接口：更新模型供应商 provider_key=%s", provider_key)
         return signed_response(
             tenant_admin_service.update_model_provider(
                 provider_key=provider_key,
@@ -374,7 +379,7 @@ async def update_model_provider(provider_key: str, request: UpdateModelProviderR
 async def delete_model_provider(provider_key: str):
     """删除模型供应商配置。"""
     try:
-        logger.info("TENANT_ADMIN_API: delete_model_provider provider_key=%s", provider_key)
+        logger.info("租户管理接口：删除模型供应商 provider_key=%s", provider_key)
         return signed_response(tenant_admin_service.delete_model_provider(provider_key))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -384,7 +389,7 @@ async def delete_model_provider(provider_key: str):
 async def list_model_catalog(task_type: str | None = Query(default=None)):
     """列出平台模型目录。"""
     catalog = tenant_admin_service.list_model_catalog(task_type=task_type)
-    logger.info("TENANT_ADMIN_API: list_model_catalog task_type=%s count=%s", task_type, len(catalog))
+    logger.info("租户管理接口：列出模型目录 task_type=%s 数量=%s", task_type, len(catalog))
     return signed_response(catalog)
 
 
@@ -392,7 +397,7 @@ async def list_model_catalog(task_type: str | None = Query(default=None)):
 async def create_model_catalog_entry(request: CreateModelCatalogEntryRequest):
     """新增模型目录项。"""
     try:
-        logger.info("TENANT_ADMIN_API: create_model_catalog_entry model_id=%s", request.model_id)
+        logger.info("租户管理接口：创建模型目录项 model_id=%s", request.model_id)
         return signed_response(tenant_admin_service.create_model_catalog_entry(request.model_dump()))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -402,7 +407,7 @@ async def create_model_catalog_entry(request: CreateModelCatalogEntryRequest):
 async def update_model_catalog_entry(model_id: str, request: UpdateModelCatalogEntryRequest):
     """更新模型目录项。"""
     try:
-        logger.info("TENANT_ADMIN_API: update_model_catalog_entry model_id=%s", model_id)
+        logger.info("租户管理接口：更新模型目录项 model_id=%s", model_id)
         return signed_response(tenant_admin_service.update_model_catalog_entry(model_id, request.model_dump(exclude_unset=True)))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -412,7 +417,7 @@ async def update_model_catalog_entry(model_id: str, request: UpdateModelCatalogE
 async def delete_model_catalog_entry(model_id: str):
     """删除模型目录项。"""
     try:
-        logger.info("TENANT_ADMIN_API: delete_model_catalog_entry model_id=%s", model_id)
+        logger.info("租户管理接口：删除模型目录项 model_id=%s", model_id)
         return signed_response(tenant_admin_service.delete_model_catalog_entry(model_id))
     except ValueError as exc:
         _raise_http_error(exc)
@@ -422,7 +427,7 @@ async def delete_model_catalog_entry(model_id: str):
 async def list_task_concurrency_task_types():
     """列出可配置并发限制的任务类型选项。"""
     options = tenant_admin_service.list_task_concurrency_task_types()
-    logger.info("TENANT_ADMIN_API: list_task_concurrency_task_types count=%s", len(options))
+    logger.info("租户管理接口：列出并发限制任务类型选项 数量=%s", len(options))
     return signed_response(options)
 
 
@@ -430,7 +435,7 @@ async def list_task_concurrency_task_types():
 async def list_task_concurrency_limits():
     """列出所有组织级任务并发限制。"""
     limits = tenant_admin_service.list_task_concurrency_limits()
-    logger.info("TENANT_ADMIN_API: list_task_concurrency_limits count=%s", len(limits))
+    logger.info("租户管理接口：列出任务并发限制 数量=%s", len(limits))
     return signed_response(limits)
 
 

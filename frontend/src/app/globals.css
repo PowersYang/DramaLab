@@ -149,6 +149,11 @@ body {
   position: relative;
 }
 
+.studio-modal-backdrop {
+  background: var(--studio-modal-backdrop);
+  backdrop-filter: blur(14px);
+}
+
 .studio-theme-root {
   --studio-surface-solid: #ffffff;
   --studio-panel-solid: #f8fafc;
@@ -181,6 +186,7 @@ body {
   --video-workspace-success-soft: rgba(36, 106, 79, 0.12);
   --video-workspace-warning-soft: rgba(183, 106, 29, 0.12);
   --video-workspace-danger-soft: rgba(180, 56, 56, 0.12);
+  --studio-modal-backdrop: rgba(15, 23, 42, 0.34);
 }
 
 /* 浅色模式通过统一 token 覆盖深色工作台常用类，避免逐个模块硬改。 */
@@ -247,6 +253,7 @@ body {
   --admin-radius-sm: 10px;
   --admin-radius-md: 16px;
   --admin-radius-lg: 20px;
+  --studio-modal-backdrop: rgba(15, 23, 42, 0.34);
 }
 
 .pipeline-theme-root[data-studio-theme="dark"] {
@@ -304,6 +311,7 @@ body {
   --video-workspace-success-soft: rgba(68, 179, 126, 0.14);
   --video-workspace-warning-soft: rgba(210, 137, 51, 0.16);
   --video-workspace-danger-soft: rgba(211, 88, 88, 0.16);
+  --studio-modal-backdrop: rgba(2, 6, 23, 0.72);
 }
 
 .studio-theme-root .bg-black { background-color: var(--studio-surface-solid) !important; }
@@ -715,6 +723,104 @@ body {
 .studio-theme-root .video-inline-button:hover {
   color: var(--studio-text-strong);
   background: color-mix(in srgb, var(--video-workspace-panel-soft) 84%, transparent);
+}
+
+/* 中文注释：剧集控制台与视频工作区共用这一组按钮 token，避免浅深色下再各写一套按钮视觉。 */
+.studio-theme-root .studio-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 1rem;
+  border: 1px solid var(--video-workspace-border);
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--studio-text-strong);
+  background: color-mix(in srgb, var(--video-workspace-panel-strong) 92%, transparent);
+  box-shadow: var(--video-workspace-shadow-soft);
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+.studio-theme-root .studio-action-button:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--video-workspace-panel) 96%, transparent);
+}
+
+.studio-theme-root .studio-action-button:disabled {
+  transform: none;
+  opacity: 0.6;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.studio-theme-root .studio-action-button-ghost {
+  color: var(--studio-text-soft);
+  background: color-mix(in srgb, var(--video-workspace-panel-soft) 88%, transparent);
+}
+
+.studio-theme-root .studio-action-button-accent,
+.studio-theme-root .studio-action-button-primary {
+  color: #ffffff;
+  border-color: color-mix(in srgb, var(--video-workspace-accent) 26%, transparent);
+  background: linear-gradient(135deg, var(--video-workspace-accent) 0%, var(--video-workspace-accent-strong) 100%);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--video-workspace-accent) 22%, transparent);
+}
+
+.studio-theme-root .studio-action-button-accent:hover,
+.studio-theme-root .studio-action-button-primary:hover {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--video-workspace-accent) 0%, var(--video-workspace-accent-strong) 100%);
+  box-shadow: 0 18px 34px color-mix(in srgb, var(--video-workspace-accent) 28%, transparent);
+}
+
+.studio-theme-root .studio-action-button-warm {
+  color: var(--studio-shell-warning);
+  border-color: color-mix(in srgb, var(--studio-shell-warning) 24%, var(--video-workspace-border));
+  background: var(--video-workspace-warning-soft);
+}
+
+.studio-theme-root .studio-action-button-warm:hover {
+  color: var(--studio-shell-warning);
+  background: color-mix(in srgb, var(--video-workspace-warning-soft) 88%, var(--video-workspace-panel));
+}
+
+.studio-theme-root .studio-action-button-success {
+  color: #246a4f;
+  border-color: rgba(36, 106, 79, 0.24);
+  background: var(--video-workspace-success-soft);
+}
+
+.studio-theme-root .studio-action-button-success:hover {
+  color: #246a4f;
+  background: color-mix(in srgb, var(--video-workspace-success-soft) 88%, var(--video-workspace-panel));
+}
+
+.studio-theme-root .studio-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  border: 1px solid var(--video-workspace-border);
+  color: var(--studio-text-muted);
+  background: color-mix(in srgb, var(--video-workspace-panel-strong) 92%, transparent);
+  box-shadow: var(--video-workspace-shadow-soft);
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease;
+}
+
+.studio-theme-root .studio-icon-button:hover {
+  transform: translateY(-1px);
+  color: var(--studio-text-strong);
+  background: color-mix(in srgb, var(--video-workspace-panel) 96%, transparent);
 }
 
 .studio-theme-root .video-toggle {
@@ -1668,7 +1774,7 @@ body {
 
 @media (min-width: 1280px) {
   .admin-summary-strip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--admin-summary-columns, 4), minmax(0, 1fr));
   }
 
   .admin-workbench-grid {
@@ -1677,6 +1783,10 @@ body {
 }
 
 @media (min-width: 1024px) {
+  .admin-summary-strip {
+    grid-template-columns: repeat(var(--admin-summary-columns, 4), minmax(0, 1fr));
+  }
+
   .admin-page-header-main {
     flex-direction: row;
     align-items: flex-start;
@@ -1827,9 +1937,12 @@ body {
 }
 
 .studio-theme-root .variant-selector-hint,
-.studio-theme-root .variant-selector-loading,
 .studio-theme-root .variant-selector-favorite {
   background-color: var(--studio-surface-60);
+}
+
+.studio-theme-root .variant-selector-loading {
+  background-color: color-mix(in srgb, var(--studio-panel-solid) 42%, transparent);
 }
 
 .studio-theme-root .variant-selector-batch {

@@ -26,7 +26,7 @@ class DoubaoModel(VideoGenModel):
         self.model_name = config.get('params', {}).get('model_name', provider.settings_json.get('default_video_model', 'doubao-seedance-1-0-pro-fast-251015'))
         
         if not self.api_key:
-            logger.warning("ARK provider credential is missing in platform model settings.")
+            logger.warning("平台模型配置缺少 ARK 凭证")
             
         if Ark:
             self.client = Ark(
@@ -35,7 +35,7 @@ class DoubaoModel(VideoGenModel):
             )
         else:
             self.client = None
-            logger.error("volcenginesdkarkruntime not installed.")
+            logger.error("未安装 volcenginesdkarkruntime，无法调用 ARK 客户端")
 
     def _encode_image_to_base64(self, image_path: str) -> str:
         with open(image_path, "rb") as image_file:
@@ -62,7 +62,7 @@ class DoubaoModel(VideoGenModel):
         else:
             final_image_url = img_url
 
-        logger.info(f"Calling Doubao {self.model_name} with prompt: {prompt}")
+        logger.info("正在调用豆包模型生成视频：模型=%s 提示词=%s", self.model_name, prompt)
         start_time = time.time()
 
         try:
@@ -84,7 +84,7 @@ class DoubaoModel(VideoGenModel):
             )
             
             task_id = create_result.id
-            logger.info(f"Doubao Task ID: {task_id}")
+            logger.info("豆包任务编号=%s", task_id)
 
             # 轮询等待结果
             while True:
@@ -92,7 +92,7 @@ class DoubaoModel(VideoGenModel):
                 status = get_result.status
                 
                 if status == "succeeded":
-                    logger.info("Doubao task succeeded.")
+                    logger.info("豆包任务已成功完成")
                     # 从返回结果里取出视频地址
                     video_url = None
                     if hasattr(get_result, 'content') and get_result.content:
@@ -100,7 +100,7 @@ class DoubaoModel(VideoGenModel):
                             video_url = get_result.content.video_url
                     
                     if not video_url:
-                        logger.warning(f"Could not parse video URL from result: {get_result}")
+                        logger.warning("无法从返回结果解析视频链接：%s", get_result)
                         raise ValueError("No video URL found in response")
 
                     # 拉取成品视频到本地
@@ -108,23 +108,23 @@ class DoubaoModel(VideoGenModel):
                     break
                     
                 elif status == "failed":
-                    logger.error(f"Doubao task failed: {get_result.error}")
+                    logger.error("豆包任务失败：%s", get_result.error)
                     raise RuntimeError(f"Doubao generation failed: {get_result.error}")
                 else:
                     time.sleep(2)
                     
         except Exception as e:
-            logger.error(f"Error calling Doubao API: {e}")
+            logger.error("调用豆包接口失败：%s", e)
             raise
 
         api_duration = time.time() - start_time
         return output_path, api_duration
 
     def _download_video(self, url: str, output_path: str):
-        logger.info(f"Downloading video from {url} to {output_path}...")
+        logger.info("正在下载视频：来源=%s 目标=%s", url, output_path)
         response = requests.get(url, stream=True)
         response.raise_for_status()
         with open(output_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-        logger.info("Download complete.")
+        logger.info("下载完成")

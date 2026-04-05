@@ -17,7 +17,7 @@ class AnnouncementApiTest(unittest.TestCase):
         from src.auth.dependencies import RequestContext, get_request_context
         from src.settings.env_settings import override_env_path_for_tests
         from src.db.session import get_engine, get_session_factory, init_database
-        from src.schemas.models import User
+        from src.schemas.models import AuthMeResponse, User
         from src.utils.datetime import utc_now
 
         override_env_path_for_tests(self.env_path)
@@ -29,16 +29,39 @@ class AnnouncementApiTest(unittest.TestCase):
 
         from src.api.announcement import router as announcement_router
 
+        admin_user = User(
+            id="user_admin",
+            email="admin@example.com",
+            display_name="Admin",
+            auth_provider="email_otp",
+            platform_role="platform_super_admin",
+            status="active",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        member_user = User(
+            id="user_member",
+            email="member@example.com",
+            display_name="Member",
+            auth_provider="email_otp",
+            platform_role="platform_member",
+            status="active",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+
         self.admin_context = RequestContext(
-            user=User(
-                id="user_admin",
-                email="admin@example.com",
-                display_name="Admin",
-                auth_provider="email_otp",
-                platform_role="platform_super_admin",
-                status="active",
-                created_at=utc_now(),
-                updated_at=utc_now(),
+            user=admin_user,
+            me=AuthMeResponse(
+                user=admin_user,
+                current_workspace_id=None,
+                current_organization_id=None,
+                current_role_code=None,
+                current_role_name=None,
+                is_platform_super_admin=True,
+                capabilities=["platform.manage"],
+                workspaces=[],
+                memberships=[],
             ),
             current_workspace_id=None,
             current_organization_id=None,
@@ -47,15 +70,17 @@ class AnnouncementApiTest(unittest.TestCase):
             refresh_token=None,
         )
         self.member_context = RequestContext(
-            user=User(
-                id="user_member",
-                email="member@example.com",
-                display_name="Member",
-                auth_provider="email_otp",
-                platform_role="platform_member",
-                status="active",
-                created_at=utc_now(),
-                updated_at=utc_now(),
+            user=member_user,
+            me=AuthMeResponse(
+                user=member_user,
+                current_workspace_id=None,
+                current_organization_id=None,
+                current_role_code=None,
+                current_role_name=None,
+                is_platform_super_admin=False,
+                capabilities=[],
+                workspaces=[],
+                memberships=[],
             ),
             current_workspace_id=None,
             current_organization_id=None,

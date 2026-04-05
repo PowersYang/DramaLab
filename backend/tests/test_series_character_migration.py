@@ -179,7 +179,69 @@ class SeriesCharacterMigrationServiceTest(unittest.TestCase):
         self.assertEqual(audit["frame_character_reference_count"], 1)
         self.assertEqual(audit["duplicate_candidate_group_count"], 1)
         self.assertEqual(audit["duplicate_candidates"][0]["normalized_name"], "沈清辞")
+        self.assertEqual(audit["project_series_shadow_candidate_count"], 2)
+        self.assertEqual({item["project_id"] for item in audit["project_series_shadow_candidates"]}, {"series_project_3", "series_project_4"})
+        self.assertEqual({item["name"] for item in audit["project_series_shadow_candidates"]}, {"沈清辞"})
         self.assertEqual(len(audit["projects"]), 2)
+
+    def test_build_series_audit_ignores_series_shared_characters_in_project_fallback_view(self):
+        from src.application.services.series_character_migration_service import SeriesCharacterMigrationService
+        from src.repository import ProjectRepository, SeriesRepository
+        from src.schemas.models import Character, Script, Series
+
+        now = utc_now()
+        SeriesRepository().create(
+            Series(
+                id="series_migration_3",
+                title="Audit Shared Characters",
+                description="desc",
+                characters=[
+                    Character(id="series_shared_char_1", name="柳若烟", description="系列共享角色"),
+                ],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        ProjectRepository().create(
+            Script(
+                id="series_project_5",
+                title="Ep5",
+                original_text="text",
+                series_id="series_migration_3",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        ProjectRepository().create(
+            Script(
+                id="series_project_6",
+                title="Ep6",
+                original_text="text",
+                series_id="series_migration_3",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        audit = SeriesCharacterMigrationService().build_series_audit("series_migration_3")
+
+        self.assertEqual(audit["series_character_count"], 1)
+        self.assertEqual(audit["project_character_count"], 0)
+        self.assertEqual(audit["duplicate_candidate_group_count"], 0)
+        self.assertEqual(audit["duplicate_candidates"], [])
+        self.assertEqual(audit["project_series_shadow_candidate_count"], 0)
+        self.assertEqual(audit["project_series_shadow_candidates"], [])
+        self.assertEqual([item["character_count"] for item in audit["projects"]], [0, 0])
 
 
 if __name__ == "__main__":

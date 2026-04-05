@@ -38,10 +38,10 @@ class TaskWorker:
         self._last_recovery_check = 0.0
 
     def run_forever(self):
-        logger.info("TASK_WORKER: start worker_id=%s queues=%s poll_interval=%s", self.worker_id, self.queues, self.poll_interval)
+        logger.info("任务工作线程：启动 工作线程ID=%s 队列=%s 轮询间隔=%s", self.worker_id, self.queues, self.poll_interval)
         recovered = self.task_service.recover_stale_jobs(stale_after_seconds=self.stale_after_seconds)
         if recovered:
-            logger.warning("TASK_WORKER: recovered_stale_jobs worker_id=%s count=%s", self.worker_id, len(recovered))
+            logger.warning("任务工作线程：已回收僵尸任务 工作线程ID=%s 数量=%s", self.worker_id, len(recovered))
         self._last_recovery_check = time.monotonic()
         while not self._stop_event.is_set():
             self._recover_stale_jobs_if_needed()
@@ -52,7 +52,7 @@ class TaskWorker:
                     worker_id=self.worker_id,
                 )
             except Exception:
-                logger.exception("TASK_WORKER: polling_failed worker_id=%s", self.worker_id)
+                logger.exception("任务工作线程：轮询失败 工作线程ID=%s", self.worker_id)
                 self._stop_event.wait(self.poll_interval)
                 continue
             if not jobs:
@@ -62,23 +62,23 @@ class TaskWorker:
                 if self._stop_event.is_set():
                     break
                 self._run_job(job.id)
-        logger.info("TASK_WORKER: stopped worker_id=%s", self.worker_id)
+        logger.info("任务工作线程：已停止 工作线程ID=%s", self.worker_id)
 
     def start_in_thread(self, name: str = "dramalab-task-worker"):
         if self._thread and self._thread.is_alive():
-            logger.info("TASK_WORKER: thread already running worker_id=%s", self.worker_id)
+            logger.info("任务工作线程：线程已在运行 工作线程ID=%s", self.worker_id)
             return self._thread
         self._stop_event.clear()
         self._thread = threading.Thread(target=self.run_forever, name=name, daemon=True)
         self._thread.start()
-        logger.info("TASK_WORKER: thread_started worker_id=%s thread_name=%s", self.worker_id, name)
+        logger.info("任务工作线程：线程已启动 工作线程ID=%s 线程名=%s", self.worker_id, name)
         return self._thread
 
     def stop(self, timeout: float = 5.0):
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=timeout)
-        logger.info("TASK_WORKER: stop_requested worker_id=%s", self.worker_id)
+        logger.info("任务工作线程：已发出停止请求 工作线程ID=%s", self.worker_id)
 
     def _recover_stale_jobs_if_needed(self):
         """定期回收已停止心跳的任务，避免长时间卡在 running。"""
@@ -93,16 +93,16 @@ class TaskWorker:
         try:
             recovered = self.task_service.recover_stale_jobs(stale_after_seconds=self.stale_after_seconds)
             if recovered:
-                logger.warning("TASK_WORKER: recovered_stale_jobs worker_id=%s count=%s", self.worker_id, len(recovered))
+                logger.warning("任务工作线程：已回收僵尸任务 工作线程ID=%s 数量=%s", self.worker_id, len(recovered))
         except Exception:
-            logger.exception("TASK_WORKER: recover_stale_jobs_failed worker_id=%s", self.worker_id)
+            logger.exception("任务工作线程：回收僵尸任务失败 工作线程ID=%s", self.worker_id)
 
     def _run_job(self, job_id: str):
         job = self.task_service.get_job(job_id)
         if not job:
             return
         if job.status == "cancel_requested":
-            self.task_service.mark_job_cancelled(job_id, "Task cancelled before execution")
+            self.task_service.mark_job_cancelled(job_id, "任务在执行前已被取消")
             return
         attempt = self.task_service.create_attempt(job, self.worker_id)
         running_job = self.task_service.mark_job_running(job_id, self.worker_id)
@@ -171,7 +171,7 @@ class TaskWorker:
                 try:
                     self.task_service.heartbeat_job(job_id)
                 except Exception:
-                    logger.exception("TASK_WORKER: heartbeat_failed worker_id=%s job_id=%s", self.worker_id, job_id)
+                    logger.exception("任务工作线程：心跳更新失败 工作线程ID=%s 任务ID=%s", self.worker_id, job_id)
                     with suppress(Exception):
                         stop_event.set()
                     return

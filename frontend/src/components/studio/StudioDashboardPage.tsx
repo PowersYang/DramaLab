@@ -150,6 +150,7 @@ export default function StudioDashboardPage() {
     () => [
       { label: "剧集总数", value: seriesList.length, icon: Boxes },
       { label: "制作项目", value: projects.length, icon: FolderKanban },
+      { label: "进行中项目", value: projects.filter((item) => item.status === "processing").length, icon: Clapperboard },
       { label: "已完结项目", value: projects.filter((item) => item.status === "completed").length, icon: CheckCheck },
       { label: "进行中任务", value: runningTasks, icon: Workflow },
     ],

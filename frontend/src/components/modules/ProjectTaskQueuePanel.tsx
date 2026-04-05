@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2, Loader2, Tag } from "lucide-react";
 
 import { TaskJob } from "@/lib/api";
 import { getEffectiveProjectCharacters } from "@/lib/projectAssets";
+import { formatTaskModelSummary, getTaskModelInfo } from "@/lib/taskModelInfo";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 
@@ -393,7 +394,9 @@ function buildAssetJobDisplayInfo(job: TaskJob, project: any): QueueJobDisplayIn
     const generationLabel = getAssetGenerationLabel(job);
     const taskLabel = TASK_TYPE_LABELS[job.task_type] || "资产任务";
     const badges = [assetTypeLabel, generationLabel].filter(Boolean);
-    const detailParts = [asset?.description || null, formatAttemptDetail(job)].filter(Boolean);
+    const modelSummary = formatTaskModelSummary(job);
+    const fallbackReason = getTaskModelInfo(job).fallbackReason;
+    const detailParts = [asset?.description || null, modelSummary, fallbackReason, formatAttemptDetail(job)].filter(Boolean);
 
     return {
         title: `${assetName} · ${generationLabel}`,

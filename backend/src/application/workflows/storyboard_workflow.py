@@ -40,7 +40,7 @@ class StoryboardWorkflow:
 
     def analyze_to_storyboard(self, script_id: str, text: str):
         """根据剧本文本生成结构化分镜帧。"""
-        logger.info("STORYBOARD_WORKFLOW: analyze_to_storyboard script_id=%s text_length=%s", script_id, len(text or ""))
+        logger.info("分镜工作流：解析剧本到分镜开始 脚本ID=%s 文本长度=%s", script_id, len(text or ""))
         project = self._get_project(script_id)
         resolved = self._resolve_episode_assets(project)
         entities_json = {
@@ -76,12 +76,12 @@ class StoryboardWorkflow:
             )
 
         updated_project = self.project_command_service.sync_frames(script_id, project.version, new_frames)
-        logger.info("STORYBOARD_WORKFLOW: analyze_to_storyboard completed script_id=%s frame_count=%s", script_id, len(new_frames))
+        logger.info("分镜工作流：解析剧本到分镜完成 脚本ID=%s 分镜数量=%s", script_id, len(new_frames))
         return updated_project
 
     def refine_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: list, feedback: str = ""):
         """结合可选系列级覆写，对分镜帧图片提示词进行润色。"""
-        logger.info("STORYBOARD_WORKFLOW: refine_prompt script_id=%s frame_id=%s asset_count=%s", script_id, frame_id, len(assets))
+        logger.info("分镜工作流：润色提示词开始 脚本ID=%s 分镜ID=%s 参考素材数量=%s", script_id, frame_id, len(assets))
         project = self._get_project(script_id)
         series = self.series_repository.get(project.series_id) if project.series_id else None
         custom_prompt = self._get_effective_prompt("storyboard_polish", project, series)
@@ -107,7 +107,7 @@ class StoryboardWorkflow:
 
         if frame_found:
             self.frame_repository.save(script_id, frame)
-        logger.info("STORYBOARD_WORKFLOW: refine_prompt completed script_id=%s frame_id=%s frame_updated=%s", script_id, frame_id, frame_found)
+        logger.info("分镜工作流：润色提示词完成 脚本ID=%s 分镜ID=%s 是否更新=%s", script_id, frame_id, frame_found)
 
         return {
             "prompt_cn": result.get("prompt_cn"),
@@ -117,13 +117,13 @@ class StoryboardWorkflow:
 
     def generate_storyboard(self, script_id: str):
         """为项目分镜中所有待处理帧批量渲染图片。"""
-        logger.info("STORYBOARD_WORKFLOW: generate_storyboard script_id=%s", script_id)
+        logger.info("分镜工作流：生成分镜开始 脚本ID=%s", script_id)
         project = self._get_project(script_id)
         self.image_provider.generate_storyboard(project)
         for frame in project.frames:
             self.frame_repository.save(script_id, frame)
         updated_project = self._get_project(script_id)
-        logger.info("STORYBOARD_WORKFLOW: generate_storyboard completed script_id=%s", script_id)
+        logger.info("分镜工作流：生成分镜完成 脚本ID=%s", script_id)
         return updated_project
 
     def prepare_generate_storyboard(self, script_id: str):
@@ -132,7 +132,7 @@ class StoryboardWorkflow:
 
     def render_frame(self, script_id: str, frame_id: str, composition_data, prompt: str, batch_size: int = 1):
         """使用显式构图输入渲染单个分镜帧。"""
-        logger.info("STORYBOARD_WORKFLOW: render_frame script_id=%s frame_id=%s batch_size=%s", script_id, frame_id, batch_size)
+        logger.info("分镜工作流：渲染分镜帧开始 脚本ID=%s 分镜ID=%s 批量数量=%s", script_id, frame_id, batch_size)
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -185,17 +185,17 @@ class StoryboardWorkflow:
             )
             self.frame_repository.save(script_id, frame)
             updated_project = self._get_project(script_id)
-            logger.info("STORYBOARD_WORKFLOW: render_frame completed script_id=%s frame_id=%s", script_id, frame_id)
+            logger.info("分镜工作流：渲染分镜帧完成 脚本ID=%s 分镜ID=%s", script_id, frame_id)
             return updated_project
         except Exception:
             frame.status = GenerationStatus.FAILED
             self.frame_repository.save(script_id, frame)
-            logger.exception("STORYBOARD_WORKFLOW: render_frame failed script_id=%s frame_id=%s", script_id, frame_id)
+            logger.exception("分镜工作流：渲染分镜帧失败 脚本ID=%s 分镜ID=%s", script_id, frame_id)
             raise
 
     def extract_last_frame(self, script_id: str, frame_id: str, video_task_id: str):
         """提取视频最后一帧，并把它挂成分镜候选图。"""
-        logger.info("STORYBOARD_WORKFLOW: extract_last_frame script_id=%s frame_id=%s video_task_id=%s", script_id, frame_id, video_task_id)
+        logger.info("分镜工作流：抽取视频末帧开始 脚本ID=%s 分镜ID=%s 视频任务ID=%s", script_id, frame_id, video_task_id)
         project = self._get_project(script_id)
         frame = next((item for item in project.frames if item.id == frame_id), None)
         if not frame:
@@ -267,7 +267,7 @@ class StoryboardWorkflow:
         frame.image_url = image_url
         frame.updated_at = utc_now()
         self.frame_repository.save(script_id, frame)
-        logger.info("STORYBOARD_WORKFLOW: extract_last_frame completed script_id=%s frame_id=%s image_url=%s", script_id, frame_id, image_url)
+        logger.info("分镜工作流：抽取视频末帧完成 脚本ID=%s 分镜ID=%s 图片地址=%s", script_id, frame_id, image_url)
         return self._get_project(script_id)
 
     def _resolve_episode_assets(self, episode):

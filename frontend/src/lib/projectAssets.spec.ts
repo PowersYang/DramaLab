@@ -4,7 +4,7 @@ import type { Project } from "@/store/projectStore";
 import { getEffectiveProjectCharacterCount, getEffectiveProjectCharacters, getProjectCharacterSourceHint } from "./projectAssets";
 
 describe("projectAssets helpers", () => {
-  it("prefers series character links for series projects", () => {
+  it("merges series character links with project characters for series projects", () => {
     const project: Project = {
       id: "project-series-1",
       title: "系列分集",
@@ -31,9 +31,9 @@ describe("projectAssets helpers", () => {
       series_id: "series-1",
     };
 
-    expect(getEffectiveProjectCharacters(project).map((item) => item.id)).toEqual(["series-char-1"]);
-    expect(getEffectiveProjectCharacterCount(project)).toBe(1);
-    expect(getProjectCharacterSourceHint(project)).toContain("系列角色主档");
+    expect(getEffectiveProjectCharacters(project).map((item) => item.id)).toEqual(["series-char-1", "project-char-1"]);
+    expect(getEffectiveProjectCharacterCount(project)).toBe(2);
+    expect(getProjectCharacterSourceHint(project)).toBeNull();
   });
 
   it("keeps standalone project characters unchanged", () => {
@@ -55,5 +55,36 @@ describe("projectAssets helpers", () => {
     expect(getEffectiveProjectCharacters(project).map((item) => item.id)).toEqual(["project-char-1"]);
     expect(getEffectiveProjectCharacterCount(project)).toBe(1);
     expect(getProjectCharacterSourceHint(project)).toBeNull();
+  });
+
+  it("dedupes same-name characters by preferring linked series character in series projects", () => {
+    const project: Project = {
+      id: "project-series-2",
+      title: "系列分集-重名",
+      originalText: "",
+      characters: [
+        { id: "project-char-duplicate-1", name: "柳若烟" },
+      ],
+      series_character_links: [
+        {
+          id: "link-duplicate-1",
+          project_id: "project-series-2",
+          series_id: "series-2",
+          character_id: "series-char-1",
+          match_status: "auto_matched",
+          character: { id: "series-char-1", name: "柳若烟" },
+        },
+      ],
+      scenes: [],
+      props: [],
+      frames: [],
+      status: "pending",
+      createdAt: "",
+      updatedAt: "",
+      series_id: "series-2",
+    };
+
+    expect(getEffectiveProjectCharacters(project).map((item) => item.id)).toEqual(["series-char-1"]);
+    expect(getEffectiveProjectCharacterCount(project)).toBe(1);
   });
 });

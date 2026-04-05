@@ -11,6 +11,7 @@ from .executors.project_export import ProjectExportExecutor
 from .executors.project_reparse import ProjectReparseExecutor
 from .executors.project_sync_descriptions import ProjectSyncDescriptionsExecutor
 from .executors.series_asset_generate import SeriesAssetGenerateExecutor
+from .executors.series_assets_extract import SeriesAssetsExtractExecutor
 from .executors.series_import_assets import SeriesImportAssetsExecutor
 from .executors.series_import_confirm import SeriesImportConfirmExecutor
 from .executors.series_import_preview import SeriesImportPreviewExecutor
@@ -42,6 +43,7 @@ class TaskExecutorRegistry:
             "project.reparse": ProjectReparseExecutor(),
             "project.sync_descriptions": ProjectSyncDescriptionsExecutor(),
             "series.asset.generate": SeriesAssetGenerateExecutor(),
+            "series.assets.extract": SeriesAssetsExtractExecutor(),
             "series.assets.import": SeriesImportAssetsExecutor(),
             "series.import.confirm": SeriesImportConfirmExecutor(),
             "series.import.preview": SeriesImportPreviewExecutor(),

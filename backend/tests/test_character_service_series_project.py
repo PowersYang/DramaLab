@@ -36,6 +36,8 @@ class CharacterServiceSeriesProjectTest(unittest.TestCase):
 
     def test_create_character_on_series_project_creates_series_master_and_link(self):
         from src.application.services.character_service import CharacterService
+        from src.db.models import CharacterRecord
+        from src.db.session import session_scope
         from src.repository import CharacterRepository, ProjectCharacterLinkRepository, ProjectRepository, SeriesRepository
         from src.schemas.models import Script, Series
 
@@ -59,7 +61,17 @@ class CharacterServiceSeriesProjectTest(unittest.TestCase):
 
         updated_project = CharacterService().create_character("project_char_create_1", "新角色", "系列项目新角色")
 
-        self.assertEqual(CharacterRepository().list_by_owner("project", "project_char_create_1"), [])
+        with session_scope() as session:
+            project_owned_rows = (
+                session.query(CharacterRecord)
+                .filter(
+                    CharacterRecord.owner_type == "project",
+                    CharacterRecord.owner_id == "project_char_create_1",
+                    CharacterRecord.is_deleted.is_(False),
+                )
+                .all()
+            )
+            self.assertEqual(project_owned_rows, [])
         self.assertEqual(len(CharacterRepository().list_by_owner("series", "series_char_create_1")), 1)
         self.assertEqual(len(ProjectCharacterLinkRepository().list_by_project("project_char_create_1")), 1)
         self.assertEqual(len(updated_project.series_character_links), 1)
@@ -173,6 +185,46 @@ class CharacterServiceSeriesProjectTest(unittest.TestCase):
         self.assertIsNotNone(updated_character)
         self.assertEqual(updated_character.voice_id, "voice-1")
         self.assertEqual(updated_character.voice_name, "主播一号")
+
+    def test_bind_voice_on_series_project_falls_back_to_series_owner_without_link(self):
+        from src.application.services.character_service import CharacterService
+        from src.repository import CharacterRepository, ProjectRepository, SeriesRepository
+        from src.schemas.models import Character, Script, Series
+
+        now = utc_now()
+        SeriesRepository().create(
+            Series(
+                id="series_char_voice_2",
+                title="Series",
+                description="",
+                characters=[Character(id="series_char_voice_target_2", name="小满", canonical_name="小满", description="主角")],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        ProjectRepository().create(
+            Script(
+                id="project_char_voice_2",
+                title="Episode",
+                original_text="text",
+                series_id="series_char_voice_2",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        # 中文注释：覆盖“角色在系列主档里存在，但当前分集尚未建角色链接”的收件箱确认过渡态。
+        CharacterService().bind_voice("project_char_voice_2", "series_char_voice_target_2", "voice-2", "主播二号")
+
+        updated_character = CharacterRepository().get("series", "series_char_voice_2", "series_char_voice_target_2")
+        self.assertIsNotNone(updated_character)
+        self.assertEqual(updated_character.voice_id, "voice-2")
+        self.assertEqual(updated_character.voice_name, "主播二号")
 
 
 if __name__ == "__main__":

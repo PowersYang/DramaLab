@@ -15,6 +15,7 @@ from ...providers.image.asset_image_provider import ASPECT_RATIO_TO_SIZE
 from ...repository import CharacterRepository, ProjectRepository, PropRepository, SceneRepository, SeriesRepository, VideoTaskRepository
 from ...schemas.models import AssetUnit, GenerationStatus, VideoTask, VideoVariant
 from ...utils.datetime import utc_now
+from ..services.model_provider_service import ModelProviderService
 
 
 # 这里先保留进程内任务表，只用于过渡期的异步编排。
@@ -36,10 +37,12 @@ class AssetWorkflow:
         self.video_task_repository = VideoTaskRepository()
         self.image_provider = AssetGenerator()
         self.video_provider = VideoModelProvider()
+        self.model_provider_service = ModelProviderService()
+        self.last_model_resolution: dict[str, str | None] | None = None
 
     def generate_assets(self, script_id: str):
         """为项目中的角色、场景和道具批量生成资产。"""
-        logger.info("ASSET_WORKFLOW: generate_assets script_id=%s", script_id)
+        logger.info("资产工作流：批量生成素材 脚本ID=%s", script_id)
         project = self._get_project(script_id)
         ordered_characters = sorted(
             project.characters,
@@ -56,7 +59,7 @@ class AssetWorkflow:
             self._generate_project_asset(project, prop.id, "prop")
             project = self._get_project(script_id)
 
-        logger.info("ASSET_WORKFLOW: generate_assets completed script_id=%s", script_id)
+        logger.info("资产工作流：批量生成素材完成 脚本ID=%s", script_id)
         return self._get_project(script_id)
 
     def prepare_generate_assets(self, script_id: str):
@@ -90,6 +93,7 @@ class AssetWorkflow:
         negative_prompt: str | None = None,
         batch_size: int = 1,
         model_name: str | None = None,
+        resolved_art_direction: dict | None = None,
     ):
         """统一任务系统下的项目素材生成入口。"""
         project = self._get_project(script_id)
@@ -106,6 +110,7 @@ class AssetWorkflow:
             negative_prompt=negative_prompt,
             batch_size=batch_size,
             model_name=model_name,
+            resolved_art_direction=resolved_art_direction,
         )
 
     def create_asset_generation_task(
@@ -124,7 +129,12 @@ class AssetWorkflow:
         model_name: str | None = None,
     ):
         """把项目资产生成请求登记到过渡期任务表。"""
-        logger.info("ASSET_WORKFLOW: create_asset_generation_task script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
+        logger.info(
+            "资产工作流：创建素材生成任务 script_id=%s asset_id=%s asset_type=%s",
+            script_id,
+            asset_id,
+            asset_type,
+        )
         project = self._get_project(script_id)
         asset = self._find_asset(project, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
@@ -153,7 +163,7 @@ class AssetWorkflow:
                 "model_name": model_name,
             },
         }
-        logger.info("ASSET_WORKFLOW: create_asset_generation_task completed task_id=%s", task_id)
+        logger.info("资产工作流：创建素材生成任务完成 任务ID=%s", task_id)
         return self._get_project(script_id), task_id
 
     def create_series_asset_generation_task(
@@ -172,7 +182,12 @@ class AssetWorkflow:
         model_name: str | None = None,
     ):
         """把系列共享资产生成请求登记到过渡期任务表。"""
-        logger.info("ASSET_WORKFLOW: create_series_asset_generation_task series_id=%s asset_id=%s asset_type=%s", series_id, asset_id, asset_type)
+        logger.info(
+            "资产工作流：创建系列素材生成任务 series_id=%s asset_id=%s asset_type=%s",
+            series_id,
+            asset_id,
+            asset_type,
+        )
         series = self._get_series(series_id)
         asset = self._find_asset(series, asset_id, asset_type)
         asset.status = GenerationStatus.PROCESSING
@@ -201,7 +216,7 @@ class AssetWorkflow:
                 "model_name": model_name,
             },
         }
-        logger.info("ASSET_WORKFLOW: create_series_asset_generation_task completed task_id=%s", task_id)
+        logger.info("资产工作流：创建系列素材生成任务完成 任务ID=%s", task_id)
         return self._get_series(series_id), task_id
 
     def prepare_series_asset_generation(
@@ -230,6 +245,7 @@ class AssetWorkflow:
         negative_prompt: str | None = None,
         batch_size: int = 1,
         model_name: str | None = None,
+        resolved_art_direction: dict | None = None,
     ):
         series = self._get_series(series_id)
         return self._generate_series_asset(
@@ -245,16 +261,21 @@ class AssetWorkflow:
             negative_prompt=negative_prompt,
             batch_size=batch_size,
             model_name=model_name,
+            resolved_art_direction=resolved_art_direction,
         )
 
     def process_asset_generation_task(self, task_id: str):
         """执行已登记的资产生成任务。"""
         task = _ASSET_TASKS.get(task_id)
         if not task:
-            logger.warning("ASSET_WORKFLOW: process_asset_generation_task task_missing task_id=%s", task_id)
+            logger.warning("资产工作流：处理素材生成任务 任务不存在 任务ID=%s", task_id)
             return
 
-        logger.info("ASSET_WORKFLOW: process_asset_generation_task start task_id=%s owner_kind=%s", task_id, task["owner_kind"])
+        logger.info(
+            "资产工作流：处理素材生成任务开始 task_id=%s owner_kind=%s",
+            task_id,
+            task["owner_kind"],
+        )
         task["status"] = "processing"
         try:
             if task["owner_kind"] == "series":
@@ -275,11 +296,11 @@ class AssetWorkflow:
                 )
             task["status"] = "completed"
             task["progress"] = 100
-            logger.info("ASSET_WORKFLOW: process_asset_generation_task completed task_id=%s", task_id)
+            logger.info("资产工作流：处理素材生成任务完成 任务ID=%s", task_id)
         except Exception as exc:
             task["status"] = "failed"
             task["error"] = str(exc)
-            logger.exception("ASSET_WORKFLOW: process_asset_generation_task failed task_id=%s", task_id)
+            logger.exception("资产工作流：处理素材生成任务失败 任务ID=%s", task_id)
             raise
 
     def get_task_status(self, task_id: str):
@@ -309,7 +330,12 @@ class AssetWorkflow:
         batch_size: int = 1,
     ):
         """为资产登记一个动作参考生成任务。"""
-        logger.info("ASSET_WORKFLOW: generate_motion_ref_task script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
+        logger.info(
+            "资产工作流：生成动作参考任务 script_id=%s asset_id=%s asset_type=%s",
+            script_id,
+            asset_id,
+            asset_type,
+        )
         project = self._get_project(script_id)
         task_id = str(uuid.uuid4())
         _MOTION_REF_TASKS[task_id] = {
@@ -328,17 +354,17 @@ class AssetWorkflow:
                 "batch_size": batch_size,
             },
         }
-        logger.info("ASSET_WORKFLOW: generate_motion_ref_task completed task_id=%s", task_id)
+        logger.info("资产工作流：生成动作参考任务完成 任务ID=%s", task_id)
         return project, task_id
 
     def process_motion_ref_task(self, script_id: str, task_id: str):
         """执行动作参考生成任务。"""
         task = _MOTION_REF_TASKS.get(task_id)
         if not task:
-            logger.warning("ASSET_WORKFLOW: process_motion_ref_task task_missing task_id=%s", task_id)
+            logger.warning("资产工作流：处理动作参考任务 任务不存在 任务ID=%s", task_id)
             return
 
-        logger.info("ASSET_WORKFLOW: process_motion_ref_task start script_id=%s task_id=%s", script_id, task_id)
+        logger.info("资产工作流：处理动作参考任务开始 脚本ID=%s 任务ID=%s", script_id, task_id)
         task["status"] = "processing"
         try:
             project = self._get_project(script_id)
@@ -355,11 +381,11 @@ class AssetWorkflow:
             )
             task["status"] = "completed"
             task["progress"] = 100
-            logger.info("ASSET_WORKFLOW: process_motion_ref_task completed script_id=%s task_id=%s", script_id, task_id)
+            logger.info("资产工作流：处理动作参考任务完成 脚本ID=%s 任务ID=%s", script_id, task_id)
         except Exception as exc:
             task["status"] = "failed"
             task["error"] = str(exc)
-            logger.exception("ASSET_WORKFLOW: process_motion_ref_task failed script_id=%s task_id=%s", script_id, task_id)
+            logger.exception("资产工作流：处理动作参考任务失败 脚本ID=%s 任务ID=%s", script_id, task_id)
             raise
 
     def prepare_motion_ref_generation(self, script_id: str, asset_id: str, asset_type: str):
@@ -367,6 +393,12 @@ class AssetWorkflow:
         project = self._get_project(script_id)
         self._find_asset(project, asset_id, asset_type)
         return project
+
+    def prepare_series_motion_ref_generation(self, series_id: str, asset_id: str, asset_type: str):
+        """入队前校验系列角色动作参考生成目标存在。"""
+        series = self._get_series(series_id)
+        self._find_asset(series, asset_id, asset_type)
+        return series
 
     def execute_motion_ref_generation(
         self,
@@ -394,6 +426,32 @@ class AssetWorkflow:
         )
         return self._get_project(script_id)
 
+    def execute_series_motion_ref_generation(
+        self,
+        series_id: str,
+        asset_id: str,
+        asset_type: str,
+        prompt: str | None = None,
+        audio_url: str | None = None,
+        negative_prompt: str | None = None,
+        duration: int = 5,
+        batch_size: int = 1,
+    ):
+        """统一任务系统下的系列角色动作参考生成入口。"""
+        series = self._get_series(series_id)
+        asset = self._find_asset(series, asset_id, asset_type)
+        self._generate_series_motion_ref(
+            series=series,
+            asset=asset,
+            asset_type=asset_type,
+            prompt=prompt,
+            audio_url=audio_url,
+            negative_prompt=negative_prompt,
+            duration=duration,
+            batch_size=batch_size,
+        )
+        return self._get_series(series_id)
+
     def create_asset_video_task(
         self,
         script_id: str,
@@ -404,7 +462,12 @@ class AssetWorkflow:
         aspect_ratio: str | None = None,
     ):
         """基于已有资产图片创建一个持久化视频任务占位记录。"""
-        logger.info("ASSET_WORKFLOW: create_asset_video_task script_id=%s asset_id=%s asset_type=%s", script_id, asset_id, asset_type)
+        logger.info(
+            "资产工作流：创建素材视频任务 script_id=%s asset_id=%s asset_type=%s",
+            script_id,
+            asset_id,
+            asset_type,
+        )
         _ = aspect_ratio
         project = self._get_project(script_id)
         target_asset = self._find_asset(project, asset_id, asset_type)
@@ -442,12 +505,17 @@ class AssetWorkflow:
         )
 
         self.video_task_repository.save(task)
-        logger.info("ASSET_WORKFLOW: create_asset_video_task completed script_id=%s task_id=%s", script_id, task_id)
+        logger.info("资产工作流：创建素材视频任务完成 脚本ID=%s 任务ID=%s", script_id, task_id)
         return self._get_project(script_id), task
 
     def _generate_project_asset(self, project, asset_id: str, asset_type: str, **params):
         """生成单个项目资产并持久化更新后的聚合。"""
-        logger.info("ASSET_WORKFLOW: _generate_project_asset project_id=%s asset_id=%s asset_type=%s", project.id, asset_id, asset_type)
+        logger.info(
+            "资产工作流：生成项目素材 project_id=%s asset_id=%s asset_type=%s",
+            project.id,
+            asset_id,
+            asset_type,
+        )
         self._generate_asset_common(project, asset_id, asset_type, **params)
         asset = self._find_asset(project, asset_id, asset_type)
         self._save_project_asset(project.id, asset_type, asset)
@@ -455,7 +523,12 @@ class AssetWorkflow:
 
     def _generate_series_asset(self, series, asset_id: str, asset_type: str, **params):
         """生成单个系列资产并持久化更新后的聚合。"""
-        logger.info("ASSET_WORKFLOW: _generate_series_asset series_id=%s asset_id=%s asset_type=%s", series.id, asset_id, asset_type)
+        logger.info(
+            "资产工作流：生成系列素材 series_id=%s asset_id=%s asset_type=%s",
+            series.id,
+            asset_id,
+            asset_type,
+        )
         self._generate_asset_common(series, asset_id, asset_type, **params)
         asset = self._find_asset(series, asset_id, asset_type)
         self._save_series_asset(series.id, asset_type, asset)
@@ -475,11 +548,16 @@ class AssetWorkflow:
         negative_prompt: str | None = None,
         batch_size: int = 1,
         model_name: str | None = None,
+        resolved_art_direction: dict | None = None,
     ):
         """结合 owner 级风格与模型配置生成单个资产。"""
         _ = reference_image_url
         asset = self._find_asset(owner, asset_id, asset_type)
-        t2i_model = model_name or owner.model_settings.t2i_model
+        preferred_t2i_model = model_name or owner.model_settings.t2i_model
+        # 中文注释：系列/项目可能保留了历史默认模型，但当前环境未必补齐了该模型的运行时配置。
+        # 这里在真正调起生成前统一做一次可执行模型解析，避免任务跑到 provider 层才因 request_path 等缺失而失败。
+        self.last_model_resolution = self.model_provider_service.resolve_model_execution_plan(preferred_t2i_model, "t2i")
+        t2i_model = str(self.last_model_resolution.get("resolved_model") or preferred_t2i_model or "")
         i2i_model = owner.model_settings.i2i_model
         effective_size = self._get_asset_size(owner, asset_type)
         positive_prompt, effective_negative_prompt = self._build_style_prompts(
@@ -488,6 +566,7 @@ class AssetWorkflow:
             style_prompt,
             apply_style,
             negative_prompt,
+            resolved_art_direction,
         )
 
         asset.status = GenerationStatus.PROCESSING
@@ -506,18 +585,20 @@ class AssetWorkflow:
                 )
             elif asset_type == "scene":
                 self.image_provider.generate_scene(
-                    asset,
-                    positive_prompt,
-                    effective_negative_prompt,
+                    scene=asset,
+                    prompt=prompt,
+                    positive_prompt=positive_prompt,
+                    negative_prompt=effective_negative_prompt,
                     batch_size=batch_size,
                     model_name=t2i_model,
                     size=effective_size,
                 )
             elif asset_type == "prop":
                 self.image_provider.generate_prop(
-                    asset,
-                    positive_prompt,
-                    effective_negative_prompt,
+                    prop=asset,
+                    prompt=prompt,
+                    positive_prompt=positive_prompt,
+                    negative_prompt=effective_negative_prompt,
                     batch_size=batch_size,
                     model_name=t2i_model,
                     size=effective_size,
@@ -620,6 +701,66 @@ class AssetWorkflow:
             generated_videos=generated_videos,
         )
 
+    def _generate_series_motion_ref(
+        self,
+        series,
+        asset,
+        asset_type: str,
+        prompt: str | None = None,
+        audio_url: str | None = None,
+        negative_prompt: str | None = None,
+        duration: int = 5,
+        batch_size: int = 1,
+    ):
+        """为系列角色生成动作参考视频并落回系列角色资产单元。"""
+        if asset_type not in ["full_body", "head_shot"]:
+            raise ValueError("Series motion reference generation currently only supports character assets")
+
+        generated_videos: list[VideoVariant] = []
+        source_image_url = self._resolve_character_motion_source_image(asset, asset_type)
+        if not prompt:
+            prompt = f"{asset_type.replace('_', ' ').title()} character reference video. {asset.description}. Looking around, breathing, slight movement, subtle gestures. Stable camera, high quality, 4k."
+        if not source_image_url:
+            raise ValueError(f"No source image available for {asset_type}. Please generate a static image first.")
+
+        for _ in range(batch_size):
+            result = self.video_provider.generate_i2v(
+                image_url=source_image_url,
+                prompt=prompt,
+                duration=duration,
+                audio_url=audio_url,
+                negative_prompt=negative_prompt,
+            )
+            if not result or not result.get("video_url"):
+                continue
+            asset_unit = getattr(asset, asset_type, None)
+            if asset_unit is None:
+                raise ValueError(f"Character asset unit {asset_type} not found")
+            variant = VideoVariant(
+                id=f"video_{uuid.uuid4().hex[:8]}",
+                url=result["video_url"],
+                prompt_used=prompt,
+                audio_url=audio_url,
+                source_image_id=None,
+            )
+            asset_unit.video_variants.append(variant)
+            if not asset_unit.selected_video_id:
+                asset_unit.selected_video_id = variant.id
+            asset_unit.video_prompt = prompt
+            asset_unit.video_updated_at = utc_now()
+            generated_videos.append(variant)
+
+        if batch_size > 0 and not generated_videos:
+            raise RuntimeError(f"Failed to generate any motion reference videos for {asset_type}")
+
+        self._persist_series_motion_ref_results(
+            series_id=series.id,
+            asset_id=asset.id,
+            asset_type=asset_type,
+            prompt=prompt,
+            generated_videos=generated_videos,
+        )
+
     def _persist_motion_ref_results(
         self,
         *,
@@ -676,9 +817,40 @@ class AssetWorkflow:
                 continue
             self.video_task_repository.save(task)
 
+    def _persist_series_motion_ref_results(
+        self,
+        *,
+        series_id: str,
+        asset_id: str,
+        asset_type: str,
+        prompt: str | None,
+        generated_videos: list[VideoVariant],
+    ) -> None:
+        """把系列角色动作参考结果合并回最新系列快照，避免并发任务互相覆盖。"""
+        fresh_series = self._get_series(series_id)
+        fresh_asset = self._find_asset(fresh_series, asset_id, asset_type)
+        unit = getattr(fresh_asset, asset_type, None)
+        if unit is None:
+            unit = AssetUnit()
+            setattr(fresh_asset, asset_type, unit)
+
+        existing_variant_ids = {item.id for item in unit.video_variants}
+        for variant in generated_videos:
+            if variant.id in existing_variant_ids:
+                continue
+            unit.video_variants.append(variant.model_copy(deep=True))
+            existing_variant_ids.add(variant.id)
+        if generated_videos and not unit.selected_video_id:
+            unit.selected_video_id = generated_videos[0].id
+        unit.video_prompt = prompt
+        unit.video_updated_at = utc_now()
+        self._save_series_asset(series_id, "character", fresh_asset)
+
     def _save_project_asset(self, project_id: str, asset_type: str, asset) -> None:
+        project = self._get_project(project_id)
         repository = self._asset_repository(asset_type)
-        repository.save("project", project_id, asset)
+        owner_type, owner_id = self._resolve_asset_owner(project, asset_type, asset.id)
+        repository.save(owner_type, owner_id, asset)
 
     def _save_series_asset(self, series_id: str, asset_type: str, asset) -> None:
         repository = self._asset_repository(asset_type)
@@ -715,6 +887,7 @@ class AssetWorkflow:
         style_prompt: str | None,
         apply_style: bool,
         negative_prompt: str | None,
+        resolved_art_direction: dict | None = None,
     ):
         """解析生成时实际生效的正向与反向风格提示词。"""
         positive_prompt = ""
@@ -723,7 +896,14 @@ class AssetWorkflow:
         if not apply_style:
             return positive_prompt, effective_negative_prompt
 
-        if owner.art_direction and owner.art_direction.style_config:
+        if resolved_art_direction and resolved_art_direction.get("style_config"):
+            positive_prompt = resolved_art_direction["style_config"].get("positive_prompt", "")
+            global_neg = resolved_art_direction["style_config"].get("negative_prompt", "")
+            if global_neg:
+                effective_negative_prompt = (
+                    f"{effective_negative_prompt}, {global_neg}" if effective_negative_prompt else global_neg
+                )
+        elif owner.art_direction and owner.art_direction.style_config:
             positive_prompt = owner.art_direction.style_config.get("positive_prompt", "")
             global_neg = owner.art_direction.style_config.get("negative_prompt", "")
             if global_neg:
@@ -770,6 +950,30 @@ class AssetWorkflow:
         if not target:
             raise ValueError(f"Asset {asset_id} of type {asset_type} not found")
         return target
+
+    def _resolve_asset_owner(self, project, asset_type: str, asset_id: str) -> tuple[str, str]:
+        """解析项目上下文里的素材归属，系列共享素材应写回 series owner。"""
+        if not project.series_id:
+            return ("project", project.id)
+
+        if asset_type in ("character", "full_body", "head_shot"):
+            link = next((item for item in (project.series_character_links or []) if item.character_id == asset_id), None)
+            if link:
+                return ("series", project.series_id)
+            # 中文注释：系列角色采用收件箱确认后，分集未必立即带角色链接；
+            # 只要角色已存在系列主档，就按系列归属执行生成与写回。
+            series = self._get_series(project.series_id)
+            if any(item.id == asset_id for item in (series.characters or [])):
+                return ("series", project.series_id)
+            return ("project", project.id)
+
+        if asset_type in {"scene", "prop"}:
+            series = self._get_series(project.series_id)
+            if asset_type == "scene" and any(item.id == asset_id for item in (series.scenes or [])):
+                return ("series", project.series_id)
+            if asset_type == "prop" and any(item.id == asset_id for item in (series.props or [])):
+                return ("series", project.series_id)
+        return ("project", project.id)
 
     def _get_project(self, script_id: str):
         """加载项目聚合，缺失时抛出未找到错误。"""

@@ -6,7 +6,7 @@
 
 import uuid
 
-from ...repository import CharacterRepository, ProjectCharacterLinkRepository, ProjectRepository
+from ...repository import CharacterRepository, ProjectCharacterLinkRepository, ProjectRepository, SeriesRepository
 from .project_command_service import ProjectCommandService
 from .project_series_casting_service import ProjectSeriesCastingService
 from ...schemas.models import Character, GenerationStatus
@@ -20,6 +20,7 @@ class CharacterService:
         self.character_repository = CharacterRepository()
         self.project_character_link_repository = ProjectCharacterLinkRepository()
         self.project_repository = ProjectRepository()
+        self.series_repository = SeriesRepository()
         self.project_command_service = ProjectCommandService()
         self.project_series_casting_service = ProjectSeriesCastingService()
 
@@ -101,7 +102,12 @@ class CharacterService:
         """根据项目类型解析角色真实归属。"""
         if not project.series_id:
             return ("project", project.id)
-        link = next((item for item in project.series_character_links if item.character_id == character_id), None)
+        link = next((item for item in (project.series_character_links or []) if item.character_id == character_id), None)
         if link:
+            return ("series", project.series_id)
+        # 中文注释：角色收件箱模式下，分集可能暂时没有 project_character_links；
+        # 只要角色已经在系列主档存在，也应按系列归属落库，避免误写到分集私有角色表。
+        series = self.series_repository.get(project.series_id)
+        if series and any(item.id == character_id for item in (series.characters or [])):
             return ("series", project.series_id)
         return ("project", project.id)

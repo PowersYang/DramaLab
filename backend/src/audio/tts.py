@@ -122,8 +122,8 @@ class TTSProcessor:
         # 如果这个音色在注册表里，就自动切换到它对应的正确模型
         model = self._resolve_model_for_voice(voice)
 
-        logger.info(f"Synthesizing with model={model}, voice='{voice}' (rate={speech_rate}, pitch={pitch_rate}, vol={volume})...")
-        logger.info(f"Text: {text[:100]}{'...' if len(text) > 100 else ''}")
+        logger.info(f"正在合成语音：模型={model} 音色={voice}（语速={speech_rate} 音高={pitch_rate} 音量={volume}）...")
+        logger.info(f"文本：{text[:100]}{'...' if len(text) > 100 else ''}")
 
         # 按官方限制把参数夹到合法范围内
         speech_rate = max(0.5, min(2.0, speech_rate))
@@ -151,7 +151,9 @@ class TTSProcessor:
             f.write(audio_data)
 
         duration = time.time() - start_time
-        logger.info(f"Audio synthesized: request_id={request_id}, delay={first_package_delay}ms, total={duration:.2f}s -> {output_path}")
+        logger.info(
+            f"语音合成完成：请求编号={request_id} 首包延迟={first_package_delay}毫秒 总耗时={duration:.2f}秒 输出路径={output_path}"
+        )
 
         return output_path, first_package_delay, request_id
 

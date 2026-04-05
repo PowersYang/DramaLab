@@ -132,11 +132,18 @@ class OSSImageUploader:
         self.base_path = get_oss_base_path()
         
         # 启动时把关键状态打印出来，便于桌面端排查配置问题
-        print(f"DEBUG: OSS init - ID={'***' if self.access_key_id else 'None'}, Secret={'***' if self.access_key_secret else 'None'}, Endpoint={self.endpoint}, Bucket={self.bucket_name}, Base={self.base_path}")
+        logger.debug(
+            "调试：对象存储初始化 - 账号=%s, 密钥=%s, 端点=%s, 桶=%s, 根路径=%s",
+            "***" if self.access_key_id else "无",
+            "***" if self.access_key_secret else "无",
+            self.endpoint,
+            self.bucket_name,
+            self.base_path,
+        )
         
         if not all([self.access_key_id, self.access_key_secret, self.endpoint, self.bucket_name]):
-            logger.warning("OSS credentials not fully configured. OSS upload will be disabled.")
-            print("DEBUG: OSS init - FAILED: missing credentials")
+            logger.warning("对象存储凭证未完整配置，对象存储上传将被禁用")
+            logger.debug("调试：对象存储初始化失败：缺少凭证")
             self.bucket = None
         else:
             try:
@@ -148,11 +155,11 @@ class OSSImageUploader:
                     self.bucket_name,
                     connect_timeout=5  # 5 seconds connection timeout
                 )
-                logger.info(f"OSS initialized: bucket={self.bucket_name}, base_path={self.base_path}")
-                print(f"DEBUG: OSS init - SUCCESS: bucket={self.bucket_name}")
+                logger.info("对象存储初始化完成：桶=%s 路径前缀=%s", self.bucket_name, self.base_path)
+                logger.debug("调试：对象存储初始化成功：桶=%s", self.bucket_name)
             except Exception as e:
-                logger.error(f"Failed to initialize OSS bucket: {e}")
-                print(f"DEBUG: OSS init - ERROR: {e}")
+                logger.error("初始化对象存储失败：%s", e)
+                logger.debug("调试：对象存储初始化错误：%s", e)
                 self.bucket = None
         
         self._initialized = True
@@ -179,37 +186,37 @@ class OSSImageUploader:
     def upload_file(self, local_path: str, sub_path: str = "", custom_filename: str = None) -> Optional[str]:
         """上传文件到 OSS，并返回对象键。"""
         if not self.bucket:
-            logger.warning("OSS not configured, cannot upload file.")
+            logger.warning("对象存储未配置，无法上传文件")
             return None
         
         if not os.path.exists(local_path):
-            logger.error(f"File not found: {local_path}")
+            logger.error("文件不存在：%s", local_path)
             return None
         
         try:
             filename = custom_filename or os.path.basename(local_path)
             object_key = self._build_object_key(sub_path, filename)
             
-            logger.info(f"Uploading to OSS: {local_path} -> {object_key}")
+            logger.info("开始上传：本地路径=%s 对象键=%s", local_path, object_key)
             
             with open(local_path, 'rb') as f:
                 result = self.bucket.put_object(object_key, f)
             
             if result.status == 200:
-                logger.info(f"Upload success: {object_key}")
+                logger.info("上传成功：对象键=%s", object_key)
                 return object_key
             else:
-                logger.error(f"Upload failed with status: {result.status}")
+                logger.error("上传失败：状态码=%s", result.status)
                 return None
                 
         except Exception as e:
-            logger.error(f"OSS upload error: {e}")
+            logger.error("上传异常：%s", e)
             return None
     
     def generate_signed_url(self, object_key: str, expires: int = SIGN_URL_EXPIRES_DISPLAY) -> str:
         """为私有 OSS 对象生成带时效的签名地址。"""
         if not self.bucket:
-            logger.warning("OSS not configured, cannot generate signed URL.")
+            logger.warning("对象存储未配置，无法生成签名链接")
             return ""
         
         try:
@@ -232,13 +239,13 @@ class OSSImageUploader:
             self._url_cache[cache_key] = (url, now)
             return url
         except Exception as e:
-            logger.error(f"Failed to generate signed URL for {object_key}: {e}")
+            logger.error("生成签名链接失败：对象键=%s 错误=%s", object_key, e)
             return ""
     
     def sign_url_for_display(self, object_key: str) -> str:
         """生成给前端展示用的签名地址。"""
         signed_url = self.generate_signed_url(object_key, SIGN_URL_EXPIRES_DISPLAY)
-        # print(f"DEBUG: sign_url_for_display('{object_key}') -> '{signed_url}'")
+        # logger.debug("调试：sign_url_for_display('%s') -> '%s'", object_key, signed_url)
         return signed_url
 
 
@@ -255,7 +262,7 @@ class OSSImageUploader:
         """
         base_url = get_oss_public_base_url()
         if not base_url:
-            logger.warning("OSS public base URL is not configured, cannot build stable display URL.")
+            logger.warning("未配置对象存储公网前缀，无法构造稳定展示链接")
             return ""
         return f"{base_url}/{quote(object_key, safe='/')}"
     
@@ -282,7 +289,7 @@ class OSSImageUploader:
         try:
             if is_object_key(source):
                 if not self.bucket:
-                    logger.warning("OSS not configured, cannot download object: %s", source)
+                    logger.warning("对象存储未配置，无法下载对象：%s", source)
                     return False
                 self.bucket.get_object_to_file(source, local_path)
                 return True
@@ -296,7 +303,7 @@ class OSSImageUploader:
                             f.write(chunk)
                 return True
         except Exception as e:
-            logger.error(f"Failed to download source {source} to {local_path}: {e}")
+            logger.error("下载资源失败：来源=%s 本地路径=%s 错误=%s", source, local_path, e)
 
         return False
     

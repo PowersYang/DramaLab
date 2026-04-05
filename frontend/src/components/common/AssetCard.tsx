@@ -39,7 +39,7 @@ export default function AssetCard({ asset, type }: AssetCardProps) {
   const imageUrl = getImageUrl(asset, type);
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/10">
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-none border border-slate-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/10">
       {/* ── 图片容器 ── */}
       <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-50">
         {imageUrl ? (
@@ -69,17 +69,17 @@ export default function AssetCard({ asset, type }: AssetCardProps) {
         </div>
         
         {asset.description ? (
-          <p className="line-clamp-2 text-[11px] leading-relaxed text-slate-400">
+          <p className="line-clamp-2 min-h-[36px] text-[11px] leading-relaxed text-slate-400">
             {asset.description}
           </p>
         ) : (
-          <p className="text-[11px] italic text-slate-300">暂无描述</p>
+          <p className="min-h-[36px] text-[11px] italic leading-relaxed text-slate-300">暂无描述</p>
         )}
       </div>
 
       {/* ── 快速操作按钮 (仅在悬停时显示) ── */}
       <div className="absolute right-2 top-2 translate-y-1 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
-        <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-slate-600 shadow-sm backdrop-blur-sm hover:bg-indigo-500 hover:text-white transition-all">
+        <button className="flex h-8 w-8 items-center justify-center rounded-none bg-white/90 text-slate-600 shadow-sm backdrop-blur-sm hover:bg-indigo-500 hover:text-white transition-all">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
         </button>
       </div>

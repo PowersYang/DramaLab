@@ -27,14 +27,14 @@ def _build_request_summary(request_id: str, request: Request, payload: Any) -> s
     client = request.client.host if request.client else "-"
     headers = _extract_safe_headers(request)
     return (
-        f"id={request_id} "
-        f"client={client} "
-        f"method={request.method} "
-        f"path={request.url.path} "
-        f"query={_compact_json(query_params)} "
-        f"path_params={_compact_json(path_params)} "
-        f"headers={_compact_json(headers)} "
-        f"payload={_compact_json(payload)}"
+        f"请求ID={request_id} "
+        f"来源IP={client} "
+        f"方法={request.method} "
+        f"路径={request.url.path} "
+        f"查询参数={_compact_json(query_params)} "
+        f"路径参数={_compact_json(path_params)} "
+        f"请求头={_compact_json(headers)} "
+        f"请求体={_compact_json(payload)}"
     )
 
 
@@ -68,15 +68,15 @@ def _parse_request_payload(request: Request, body: bytes) -> Any:
 
     if "multipart/form-data" in content_type:
         return {
-            "content_type": content_type,
-            "content_length": request.headers.get("content-length", "unknown"),
-            "note": "multipart body omitted",
+            "内容类型": content_type,
+            "内容长度": request.headers.get("content-length", "未知"),
+            "说明": "multipart 请求体已省略",
         }
 
     return {
-        "content_type": content_type or "unknown",
-        "content_length": request.headers.get("content-length", str(len(body))),
-        "raw_body": body.decode("utf-8", errors="replace")[:_MAX_BODY_LENGTH],
+        "内容类型": content_type or "未知",
+        "内容长度": request.headers.get("content-length", str(len(body))),
+        "原始内容": body.decode("utf-8", errors="replace")[:_MAX_BODY_LENGTH],
     }
 
 
@@ -101,20 +101,20 @@ async def log_request_response(request: Request, call_next):
     body = await request.body()
     payload = _parse_request_payload(request, body)
     request_summary = _build_request_summary(request_id, request, payload)
-    logger.info("START %s", request_summary)
+    logger.info("开始 %s", request_summary)
 
     try:
         response = await call_next(request)
     except Exception:
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
-        logger.exception("FAIL  %s duration_ms=%.2f", request_summary, duration_ms)
+        logger.exception("失败 %s 耗时ms=%.2f", request_summary, duration_ms)
         raise
 
     duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
     # 把请求 ID 回传给调用方，方便排查跨服务或跨端问题。
     response.headers["X-Request-ID"] = request_id
     logger.info(
-        "END   %s status=%s duration_ms=%.2f",
+        "结束 %s 状态=%s 耗时ms=%.2f",
         request_summary,
         response.status_code,
         duration_ms,

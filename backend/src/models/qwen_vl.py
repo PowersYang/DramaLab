@@ -51,7 +51,7 @@ class QwenVLModel:
     def api_key(self):
         api_key = ModelProviderService().get_provider_credential("DASHSCOPE", "api_key")
         if not api_key:
-            logger.warning("Dashscope API Key not configured in provider management.")
+            logger.warning("供应商管理未配置 Dashscope 访问密钥")
         return api_key
 
     def _get_client(self):
@@ -90,7 +90,7 @@ class QwenVLModel:
 
         system_prompt = I2V_OPTIMIZATION_PROMPT.format(original_prompt=original_prompt)
 
-        logger.info(f"Calling Qwen-VL {self.model_name} for prompt optimization...")
+        logger.info("正在调用 Qwen-VL 润色提示词：模型=%s", self.model_name)
         client = self._get_client()
         response = client.chat.completions.create(
             model=self.model_name,
@@ -105,5 +105,5 @@ class QwenVLModel:
 
         optimized_prompt = response.choices[0].message.content
         duration = time.time() - start_time
-        logger.info(f"Optimized prompt: {optimized_prompt[:100]}...")
+        logger.info("提示词润色完成：结果预览=%s...", optimized_prompt[:100])
         return optimized_prompt, duration

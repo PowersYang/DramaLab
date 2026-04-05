@@ -20,6 +20,7 @@ class ImageVariant(BaseModel):
     id: str = Field(..., description="这张候选图的唯一标识")
     url: str = Field(..., description="图片地址")
     created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    batch_id: Optional[str] = Field(None, description="所属生成批次 ID；同一次批量生成的候选图共享该值")
     prompt_used: Optional[str] = Field(None, description="生成这张图时使用的提示词")
     is_favorited: bool = Field(False, description="这张图是否已收藏或置顶；置顶后不会被自动删除")
     # 新增：上传来源标记
@@ -247,7 +248,9 @@ class StoryboardFrame(BaseModel):
 
 class ModelSettings(BaseModel):
     """不同生成阶段对应的模型配置。"""
-    t2i_model: str = Field("wan2.6-t2i", description="素材生成使用的文生图模型")
+    # 中文注释：当前线上/本地环境对 wan2.6-t2i 的 HTTP 路由配置并不总是齐全，
+    # 默认值先与前端项目/系列设置弹窗保持一致，回退到更稳的 2.5 文生图模型。
+    t2i_model: str = Field("wan2.5-t2i-preview", description="素材生成使用的文生图模型")
     i2i_model: str = Field("wan2.6-image", description="分镜生成使用的图生图模型")
     i2v_model: str = Field("wan2.6-i2v", description="动作生成使用的图生视频模型")
     character_aspect_ratio: str = Field("9:16", description="角色素材的宽高比（9:16、16:9、1:1）")
@@ -401,6 +404,11 @@ class Script(BaseModel):
     
     # 美术指导配置（新方案）
     art_direction: Optional[ArtDirection] = Field(None, description="全局视觉风格配置")
+    art_direction_source: str = Field("standalone", description="美术设定来源：standalone/series_default/project_override")
+    art_direction_override: Dict[str, Any] = Field(default_factory=dict, description="项目级相对剧集的美术差异补丁")
+    art_direction_resolved: Optional[ArtDirection] = Field(None, description="解析后的当前有效美术配置")
+    art_direction_overridden_at: Optional[datetime] = Field(None, description="最近一次项目级覆写时间")
+    art_direction_overridden_by: Optional[str] = Field(None, description="最近一次项目级覆写操作者")
     
     # 各生成阶段的模型设置
     model_settings: ModelSettings = Field(default_factory=ModelSettings, description="T2I/I2I/I2V 的模型选择配置")
@@ -465,6 +473,8 @@ class Series(BaseModel):
 
     # 统一视觉风格
     art_direction: Optional[ArtDirection] = Field(None, description="系列级别的美术指导配置")
+    art_direction_updated_at: Optional[datetime] = Field(None, description="最近一次剧集美术主档更新时间")
+    art_direction_updated_by: Optional[str] = Field(None, description="最近一次剧集美术主档更新人")
 
     # 系列级提示词配置
     prompt_config: PromptConfig = Field(default_factory=PromptConfig, description="系列级别的自定义提示词")
@@ -857,6 +867,27 @@ class TaskConcurrencyLimitSummary(TaskConcurrencyLimit):
     """带组织名称的并发限制视图。"""
 
     organization_name: Optional[str] = Field(None, description="组织名称")
+
+
+class AssetPromptState(BaseModel):
+    """资产生成提示词真源记录。"""
+
+    id: str = Field(..., description="提示词状态记录 ID")
+    owner_scope: str = Field(..., description="归属范围：project/series")
+    owner_id: str = Field(..., description="归属对象 ID（project_id 或 series_id）")
+    asset_type: str = Field(..., description="资产类型：character/scene/prop")
+    asset_id: str = Field(..., description="资产 ID")
+    output_type: str = Field(..., description="输出类型：image/motion")
+    slot_type: str = Field("default", description="分面类型：full_body/three_view/headshot/head_shot/default")
+    positive_prompt: str = Field("", description="正向提示词")
+    negative_prompt: str = Field("", description="负向提示词")
+    source: str = Field("user_input", description="提示词来源：system_default/user_input/last_used")
+    organization_id: Optional[str] = Field(None, description="所属组织 ID")
+    workspace_id: Optional[str] = Field(None, description="所属工作区 ID")
+    created_by: Optional[str] = Field(None, description="创建人 ID")
+    updated_by: Optional[str] = Field(None, description="更新人 ID")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
 
 
 class VerificationCode(BaseModel):

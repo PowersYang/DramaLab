@@ -146,7 +146,7 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.05 }}
-                        className="break-inside-avoid group relative rounded-xl overflow-hidden bg-white/5 border border-white/5 hover:border-primary/50 transition-all duration-300"
+                        className="break-inside-avoid group relative rounded-none overflow-hidden bg-white/5 border border-white/5 hover:border-primary/50 transition-all duration-300"
                     >
                         {asset.url ? (
                             <img
@@ -163,8 +163,8 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
                             <h3 className="text-sm font-bold text-white">{asset.title}</h3>
                             <div className="flex items-center justify-between mt-2">
-                                <span className="text-[10px] font-mono bg-white/10 px-2 py-1 rounded">{asset.type.toUpperCase()}</span>
-                                <button className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
+                                <span className="text-[10px] font-mono bg-white/10 px-2 py-1 rounded-none">{asset.type.toUpperCase()}</span>
+                                <button className="p-1.5 rounded-none bg-white/10 hover:bg-white/20 text-white transition-colors">
                                     <Download size={12} />
                                 </button>
                             </div>

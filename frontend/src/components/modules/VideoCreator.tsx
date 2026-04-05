@@ -11,6 +11,7 @@ import {
     Film
 } from "lucide-react";
 import BillingActionButton from "@/components/billing/BillingActionButton";
+import RuntimeModelSelector from "@/components/common/RuntimeModelSelector";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 
 
@@ -19,9 +20,12 @@ import { useBillingGuard } from "@/hooks/useBillingGuard";
 
 import { useProjectStore } from "@/store/projectStore";
 import { api, TaskReceipt, VideoTask } from "@/lib/api";
+import { useAvailableModelCatalog } from "@/lib/modelCatalog";
+import { formatRequestFailureMessage } from "@/lib/taskFeedback";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
-import { getEffectiveProjectCharacters, getProjectCharacterSourceHint, isSeriesProject } from "@/lib/projectAssets";
+import { getEffectiveProjectCharacters, isSeriesProject } from "@/lib/projectAssets";
+import ProjectCharacterSourceHintBanner from "@/components/common/ProjectCharacterSourceHintBanner";
 import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder";
 import type { VideoParams } from "@/store/projectStore";
 
@@ -41,6 +45,15 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
     const waitForJob = useTaskStore((state) => state.waitForJob);
     const { account, getTaskPrice, canAffordTask } = useBillingGuard();
     const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
+    const { catalog: availableModelCatalog } = useAvailableModelCatalog({ i2v: params.model });
+    const availableVideoModelOptions = availableModelCatalog.i2v.map((model) => ({
+        id: model.id,
+        name: model.name,
+        description: model.description,
+    }));
+    const videoModelSourceHint = isSeriesProject(currentProject)
+        ? "默认来自项目设置；系列项目可在项目设置中覆盖系列默认视频模型。"
+        : "默认来自项目设置。";
 
     const sortedFrames = useMemo(() => {
         if (!currentProject?.frames) {
@@ -440,7 +453,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             // setSelectedImages([]); // Keep selection for iterative generation
         } catch (error) {
             console.error("Failed to submit task:", error);
-            alert("提交失败");
+            alert(formatRequestFailureMessage(error, "提交失败"));
             // Refresh to remove optimistic updates
             void refreshProjectSnapshot(currentProject.id).catch((refreshError) => {
                 console.error("Failed to refresh project after submit error:", refreshError);
@@ -542,9 +555,7 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
             <div className="video-scroll-frame flex-1 overflow-y-auto p-6 custom-scrollbar min-h-0 md:p-8">
                 <div className="video-header-block mb-6 rounded-[1.75rem] px-5 py-5 md:px-6">
                     {isSeriesProject(currentProject) && (
-                        <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
-                            {getProjectCharacterSourceHint(currentProject)}
-                        </div>
+                        <ProjectCharacterSourceHintBanner project={currentProject} className="mb-4" />
                     )}
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                         <span className="video-header-kicker">AI Video Workspace</span>
@@ -598,6 +609,28 @@ export default function VideoCreator({ onTaskCreated, onJobCreated, remixData, o
                             </button>
                         </div>
                     </div>
+
+                    {generationMode === "i2v" && availableVideoModelOptions.length > 0 && (
+                        <RuntimeModelSelector
+                            label="本次视频模型"
+                            value={params.model}
+                            options={availableVideoModelOptions}
+                            onChange={(modelId) => onParamsChange({ model: modelId })}
+                            sourceHint={videoModelSourceHint}
+                            helperText="仅影响本次视频生成任务；不会自动修改项目默认视频模型。"
+                        />
+                    )}
+
+                    {generationMode === "r2v" && (
+                        <RuntimeModelSelector
+                            label="本次视频模型"
+                            value="wan2.6-i2v"
+                            options={[{ id: "wan2.6-i2v", name: "Wan 2.6 I2V", description: "角色驱动当前固定模型" }]}
+                            disabled={true}
+                            sourceHint="角色驱动（R2V）当前固定走专用模型链路。"
+                            helperText="这条链路暂不支持像首帧驱动那样临时切换视频模型。"
+                        />
+                    )}
                     {/* === I2V MODE: Source Selector === */}
                     {generationMode === 'i2v' && (
                         <div className="video-card rounded-[1.6rem] p-5 space-y-4">

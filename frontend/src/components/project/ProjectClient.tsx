@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, Sun, Moon } from "lucide-react";
+import { Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, Sun, Moon } from "lucide-react";
 import clsx from "clsx";
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
@@ -11,7 +11,6 @@ import ScriptProcessor from "@/components/modules/ScriptProcessor";
 import VideoGenerator from "@/components/modules/VideoGenerator";
 import VideoAssembly from "@/components/modules/VideoAssembly";
 import ConsistencyVault from "@/components/modules/ConsistencyVault";
-import ArtDirection from "@/components/modules/ArtDirection";
 import StoryboardComposer from "@/components/modules/StoryboardComposer";
 import VoiceActingStudio from "@/components/modules/VoiceActingStudio";
 import FinalMixStudio from "@/components/modules/FinalMixStudio";
@@ -26,7 +25,6 @@ const PROJECT_STEP_STORAGE_KEY_PREFIX = "dramalab-project-active-step";
 const LEGACY_PROJECT_STEP_STORAGE_KEY_PREFIX = "lumenx-project-active-step";
 const PROJECT_STEP_IDS = [
     "script",
-    "art_direction",
     "assets",
     "storyboard",
     "motion",
@@ -53,7 +51,6 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
 
     const steps = [
         { id: "script", label: "剧本处理", icon: BookOpen },
-        { id: "art_direction", label: "美术设定", icon: Palette },
         { id: "assets", label: "资产制作", icon: Users },
         { id: "storyboard", label: "分镜设计", icon: Layout },
         { id: "motion", label: "视频生成", icon: Video },
@@ -225,18 +222,21 @@ export default function ProjectClient({ id, breadcrumbSegments, homeHref = "/stu
 
                 <div className="flex-1 flex overflow-hidden relative z-10">
                     <div className="flex-1 overflow-hidden relative">
-                        {activeStep === "script" && <ScriptProcessor />}
-                        {activeStep === "art_direction" && <ArtDirection />}
-                        {activeStep === "assets" && <ConsistencyVault />}
-                        {activeStep === "storyboard" && <StoryboardComposer />}
-                        {activeStep === "motion" && <VideoGenerator />}
-                        {activeStep === "assembly" && <VideoAssembly />}
-                        {activeStep === "audio" && <VoiceActingStudio />}
-                        {activeStep === "mix" && <FinalMixStudio />}
-                        {activeStep === "export" && <ExportStudio />}
+                        <div className="flex h-full flex-col gap-4 overflow-hidden p-4">
+                            <div className="flex-1 overflow-hidden relative rounded-3xl">
+                                {activeStep === "script" && <ScriptProcessor />}
+                                {activeStep === "assets" && <ConsistencyVault />}
+                                {activeStep === "storyboard" && <StoryboardComposer />}
+                                {activeStep === "motion" && <VideoGenerator />}
+                                {activeStep === "assembly" && <VideoAssembly />}
+                                {activeStep === "audio" && <VoiceActingStudio />}
+                                {activeStep === "mix" && <FinalMixStudio />}
+                                {activeStep === "export" && <ExportStudio />}
+                            </div>
+                        </div>
                     </div>
 
-                    {activeStep !== "assembly" && activeStep !== "art_direction" && activeStep !== "mix" && <ProjectRightSidebar activeStep={activeStep} />}
+                    {activeStep !== "assembly" && activeStep !== "mix" && <ProjectRightSidebar activeStep={activeStep} />}
                 </div>
             </main>
         </StudioOverlaysProvider>

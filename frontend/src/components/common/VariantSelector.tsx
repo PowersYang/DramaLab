@@ -3,6 +3,7 @@ import { ImageAsset } from '@/store/projectStore';
 import { Trash2, Check, Layers, X, Maximize2, Star, Sparkles, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
 import BillingActionButton from '@/components/billing/BillingActionButton';
 import { getAssetUrl } from '@/lib/utils';
+import { getLatestVariantBatch } from '@/lib/variantBatches';
 
 interface VariantSelectorProps {
     asset: ImageAsset | undefined;
@@ -13,6 +14,7 @@ interface VariantSelectorProps {
     onGenerate: (batchSize: number) => void;
     isGenerating: boolean;
     generatingBatchSize?: number; // Persisted batch size from parent/store
+    generationLabel?: string;
     className?: string;
     aspectRatio?: string; // e.g., "9:16", "16:9", "1:1"
     showGenerateControls?: boolean;
@@ -22,6 +24,7 @@ interface VariantSelectorProps {
     generateDisabledReason?: string;
     generatePriceCredits?: number | null;
     generateBalanceCredits?: number;
+    allowDelete?: boolean;
 }
 
 export const VariantSelector: React.FC<VariantSelectorProps> = ({
@@ -33,6 +36,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
     onGenerate,
     isGenerating,
     generatingBatchSize: propGeneratingBatchSize,
+    generationLabel = "正在生成",
     className = "",
     aspectRatio = "9:16",
     showGenerateControls = true,
@@ -42,6 +46,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
     generateDisabledReason,
     generatePriceCredits = null,
     generateBalanceCredits = 0,
+    allowDelete = true,
 }) => {
     const [batchSize, setBatchSize] = useState(1);
     const [localGeneratingBatchSize, setLocalGeneratingBatchSize] = useState(1); // Track the batch size when generation started locally
@@ -62,7 +67,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
     // Use prop if provided (for persistence), otherwise use local state
     const displayGeneratingBatchSize = propGeneratingBatchSize || localGeneratingBatchSize;
 
-    const variants = asset?.variants || [];
+    const variants = getLatestVariantBatch(asset?.variants || []);
     const selectedVariant = variants.find((variant) => variant.id === asset?.selected_id) || null;
     const activeVariant = variants.find((variant) => variant.id === activeVariantId) || selectedVariant || variants[0] || null;
     const displayUrl = activeVariant ? getAssetUrl(activeVariant.url) : getAssetUrl(currentImageUrl);
@@ -109,20 +114,20 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
         <div className={`variant-selector flex flex-col gap-4 ${className}`}>
             {showMainViewer && (
                 <div
-                    className={`variant-selector-viewer relative w-full ${getAspectRatioClass()} rounded-2xl overflow-hidden bg-gradient-to-br from-black/40 to-black/70 group cursor-pointer`}
+                    className={`variant-selector-viewer relative w-full ${getAspectRatioClass()} rounded-none overflow-hidden bg-gradient-to-br from-black/40 to-black/70 group cursor-pointer`}
                     onClick={() => displayUrl && setZoomedImage(displayUrl)}
                 >
                     {displayUrl ? (
                         <>
                             <img src={displayUrl} alt="Selected Variant" className="w-full h-full object-contain" />
                             <div className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="variant-selector-hint flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-white/10 bg-black/50 backdrop-blur-sm">
+                                <div className="variant-selector-hint flex items-center gap-1 px-2.5 py-1.5 rounded-none border border-white/10 bg-black/50 backdrop-blur-sm">
                                     <Maximize2 size={12} className="text-gray-300" />
                                     <span className="text-xs text-gray-300">点击放大查看</span>
                                 </div>
                             </div>
                             <div className="absolute left-3 top-3">
-                                <div className="flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] text-emerald-300 backdrop-blur-sm">
+                                <div className="flex items-center gap-1 rounded-none border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] text-emerald-300 backdrop-blur-sm">
                                     <Sparkles size={11} />
                                     当前展示版本
                                 </div>
@@ -136,10 +141,10 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                     )}
 
                     <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                        {selectedVariant && (
+                        {selectedVariant && allowDelete && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onDelete(selectedVariant.id); }}
-                                className="p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm"
+                                className="p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-none backdrop-blur-sm"
                                 title="删除当前版本"
                             >
                                 <Trash2 size={16} />
@@ -151,7 +156,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                         <div className="variant-selector-loading absolute inset-0 flex items-center justify-center z-10 backdrop-blur-sm">
                             <div className="flex flex-col items-center gap-3">
                                 <div className="variant-selector-spinner animate-spin rounded-full h-10 w-10 border-b-2"></div>
-                                <span className="text-white font-medium">正在生成 {displayGeneratingBatchSize} 个候选版本...</span>
+                                <span className="text-white font-medium">{generationLabel} {displayGeneratingBatchSize} 个候选版本...</span>
                             </div>
                         </div>
                     )}
@@ -160,14 +165,14 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
 
             <div className="flex flex-col gap-3">
                 {showGenerateControls && (
-                    <div className="rounded-2xl bg-black/20 p-3">
+                    <div className="rounded-none bg-black/20 p-3">
                         <div className="flex items-center justify-between gap-3">
-                            <div className="variant-selector-batch flex items-center gap-2 rounded-xl p-1 bg-black/20">
+                            <div className="variant-selector-batch flex items-center gap-2 rounded-none p-1 bg-black/20">
                             {[1, 2, 3, 4].map(size => (
                                 <button
                                     key={size}
                                     onClick={() => setBatchSize(size)}
-                                    className={`variant-selector-batch-button px-3 py-1 text-xs font-medium rounded-md transition-colors ${batchSize === size
+                                    className={`variant-selector-batch-button px-3 py-1 text-xs font-medium rounded-none transition-colors ${batchSize === size
                                         ? 'bg-blue-600 text-white'
                                         : 'text-gray-400 hover:text-white'
                                         }`}
@@ -182,7 +187,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                 disabled={isGenerating || disableGenerate}
                                 priceCredits={generatePriceCredits}
                                 balanceCredits={generateBalanceCredits}
-                                className={`variant-selector-generate flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isGenerating || disableGenerate
+                                className={`variant-selector-generate flex items-center gap-2 px-4 py-2 rounded-none text-sm font-medium transition-all ${isGenerating || disableGenerate
                                     ? 'bg-white/5 text-gray-400 cursor-not-allowed'
                                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20'
                                     }`}
@@ -266,7 +271,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                             </button>
                                         )}
 
-                                        {!isFavorited && (
+                                        {!isFavorited && allowDelete && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -314,7 +319,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                     <img
                                         src={imageUrl}
                                         alt="候选图"
-                                        className="h-full w-full cursor-pointer object-contain bg-black/20"
+                                        className="h-full w-full cursor-pointer object-contain bg-slate-950/10"
                                         onClick={() => handleSelectVariant(variant.id)}
                                     />
 
@@ -361,7 +366,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                             </div>
                                         )}
                                         {!isSelected && <div />}
-                                        {!isFavorited && (
+                                        {!isFavorited && allowDelete && (
                                             <button
                                                 type="button"
                                                 onClick={(e) => {
@@ -386,7 +391,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                         <div className="variant-selector-loading absolute inset-0 z-10 flex items-center justify-center backdrop-blur-sm">
                             <div className="flex flex-col items-center gap-3">
                                 <div className="variant-selector-spinner animate-spin rounded-full h-10 w-10 border-b-2"></div>
-                                <span className="text-white font-medium">正在生成 {displayGeneratingBatchSize} 个候选版本...</span>
+                                <span className="text-white font-medium">{generationLabel} {displayGeneratingBatchSize} 个候选版本...</span>
                             </div>
                         </div>
                     )}

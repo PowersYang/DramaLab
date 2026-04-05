@@ -23,6 +23,7 @@ vi.mock('framer-motion', () => ({
 // Mock lucide-react icons
 vi.mock('lucide-react', () => ({
     ArrowLeft: (props: any) => <span data-testid="icon-arrow-left" {...props} />,
+    Palette: (props: any) => <span data-testid="icon-palette" {...props} />,
     Users: (props: any) => <span data-testid="icon-users" {...props} />,
     MapPin: (props: any) => <span data-testid="icon-map-pin" {...props} />,
     Package: (props: any) => <span data-testid="icon-package" {...props} />,
@@ -48,6 +49,10 @@ vi.mock('@/components/common/AssetCard', () => ({
     default: ({ asset, type }: any) => (
         <div data-testid={`asset-card-${asset.id}`}>{asset.name}</div>
     ),
+}));
+
+vi.mock('@/components/series/SeriesArtDirectionEditor', () => ({
+    default: () => <div data-testid="series-art-direction-editor">剧集美术主档</div>,
 }));
 
 // Mock API
@@ -133,6 +138,14 @@ describe('SeriesDetailPage', () => {
                 expect(screen.getByText('这是一个测试系列')).toBeInTheDocument();
             });
         });
+
+        it('opens on the dedicated art direction page by default', async () => {
+            renderPage();
+            await waitFor(() => {
+                expect(screen.getByTestId('series-art-direction-editor')).toBeInTheDocument();
+            });
+            expect(screen.getByText('美术设定')).toBeInTheDocument();
+        });
     });
 
     // ── Error state ──
@@ -163,8 +176,9 @@ describe('SeriesDetailPage', () => {
         it('shows characters as default content with asset cards', async () => {
             renderPage();
             await waitFor(() => {
-                expect(screen.getAllByText('测试系列').length).toBeGreaterThanOrEqual(1);
+                expect(screen.getByTestId('series-art-direction-editor')).toBeInTheDocument();
             });
+            fireEvent.click(screen.getByRole('button', { name: /资产制作/ }));
             // Sidebar shows asset tabs
             expect(screen.getAllByText('角色').length).toBeGreaterThanOrEqual(1);
             // Content area shows character assets
@@ -175,8 +189,9 @@ describe('SeriesDetailPage', () => {
         it('switches to scenes when clicked in sidebar', async () => {
             renderPage();
             await waitFor(() => {
-                expect(screen.getAllByText('测试系列').length).toBeGreaterThanOrEqual(1);
+                expect(screen.getByTestId('series-art-direction-editor')).toBeInTheDocument();
             });
+            fireEvent.click(screen.getByRole('button', { name: /资产制作/ }));
             fireEvent.click(screen.getByText('场景'));
             await waitFor(() => {
                 expect(screen.getByText('场景A')).toBeInTheDocument();
@@ -186,8 +201,9 @@ describe('SeriesDetailPage', () => {
         it('shows empty state when props tab has no assets', async () => {
             renderPage();
             await waitFor(() => {
-                expect(screen.getAllByText('测试系列').length).toBeGreaterThanOrEqual(1);
+                expect(screen.getByTestId('series-art-direction-editor')).toBeInTheDocument();
             });
+            fireEvent.click(screen.getByRole('button', { name: /资产制作/ }));
             fireEvent.click(screen.getByText('道具'));
             await waitFor(() => {
                 expect(screen.getByText('暂无道具资产')).toBeInTheDocument();
@@ -197,7 +213,7 @@ describe('SeriesDetailPage', () => {
         it('displays asset counts in sidebar', async () => {
             renderPage();
             await waitFor(() => {
-                expect(screen.getAllByText('测试系列').length).toBeGreaterThanOrEqual(1);
+                expect(screen.getByTestId('series-art-direction-editor')).toBeInTheDocument();
             });
             // Characters: 2, Scenes: 1, Props: 0
             expect(screen.getByText('2')).toBeInTheDocument();

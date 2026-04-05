@@ -6,7 +6,7 @@
 
 import uuid
 
-from ...repository import ProjectRepository, PropRepository
+from ...repository import ProjectRepository, PropRepository, SeriesRepository
 from .project_command_service import ProjectCommandService
 from ...schemas.models import GenerationStatus, Prop
 from ...utils.datetime import utc_now
@@ -18,6 +18,7 @@ class PropService:
     def __init__(self):
         self.prop_repository = PropRepository()
         self.project_repository = ProjectRepository()
+        self.series_repository = SeriesRepository()
         self.project_command_service = ProjectCommandService()
 
     def create_prop(self, project_id: str, name: str, description: str):
@@ -31,7 +32,11 @@ class PropService:
             description=description,
             status=GenerationStatus.PENDING,
         )
-        self.prop_repository.save("project", project_id, prop)
+        # 中文注释：系列项目中新建道具默认沉淀到系列资产库，确保可跨分集复用。
+        if project.series_id:
+            self.prop_repository.save("series", project.series_id, prop)
+        else:
+            self.prop_repository.save("project", project_id, prop)
         return self.project_repository.get(project_id)
 
     def delete_prop(self, project_id: str, prop_id: str):
@@ -45,4 +50,14 @@ class PropService:
                 frame.prop_ids = [pid for pid in frame.prop_ids if pid != prop_id]
                 frame.updated_at = utc_now()
                 cleaned_frames.append(frame)
+        if project.series_id:
+            # 中文注释：系列项目里删除系列道具时只清理当前分集引用，避免误删共享主档。
+            series = self.series_repository.get(project.series_id)
+            is_series_prop = bool(series and any(item.id == prop_id for item in (series.props or [])))
+            if is_series_prop:
+                return self.project_command_service.sync_frames(
+                    project_id,
+                    project.version,
+                    [frame for frame in project.frames],
+                )
         return self.project_command_service.delete_asset_and_cleanup_frames(project_id, project.version, "prop", prop_id, cleaned_frames=cleaned_frames)

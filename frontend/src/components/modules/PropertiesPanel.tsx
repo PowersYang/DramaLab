@@ -1,13 +1,14 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { FileText, Users, Layout, Video, Mic, Music, Film, Palette, Wand2, Sparkles } from "lucide-react";
+import { FileText, Layout, Video, Mic, Music, Film, Palette, Wand2, Sparkles } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
-import { getEffectiveProjectCharacters, getEffectiveProjectCharacterCount, getProjectCharacterSourceHint } from "@/lib/projectAssets";
+import { getEffectiveProjectCharacters, getEffectiveProjectCharacterCount } from "@/lib/projectAssets";
+import ProjectCharacterSourceHintBanner from "@/components/common/ProjectCharacterSourceHintBanner";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 interface PropertiesPanelProps {
@@ -93,9 +94,7 @@ function ScriptInspector({ project }: { project: any }) {
 
             <div className="pt-4 border-t border-white/10">
                 {project?.series_id && (
-                    <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
-                        {getProjectCharacterSourceHint(project)}
-                    </div>
+                    <ProjectCharacterSourceHintBanner project={project} className="mb-4" />
                 )}
                 <ArtDirectionStyleDisplay project={project} />
             </div>
@@ -105,114 +104,10 @@ function ScriptInspector({ project }: { project: any }) {
 
 function AssetsInspector() {
     const currentProject = useProjectStore((state) => state.currentProject);
-    const updateProject = useProjectStore((state) => state.updateProject);
-
-    // Get aspect ratios from model settings
-    const characterAspectRatio = currentProject?.model_settings?.character_aspect_ratio || '9:16';
-    const sceneAspectRatio = currentProject?.model_settings?.scene_aspect_ratio || '16:9';
-    const propAspectRatio = currentProject?.model_settings?.prop_aspect_ratio || '1:1';
-
-    const handleUpdateAspectRatio = async (type: 'character' | 'scene' | 'prop', ratio: string) => {
-        if (!currentProject) return;
-
-        try {
-            const updatePayload: any = {};
-            if (type === 'character') updatePayload.character_aspect_ratio = ratio;
-            else if (type === 'scene') updatePayload.scene_aspect_ratio = ratio;
-            else if (type === 'prop') updatePayload.prop_aspect_ratio = ratio;
-
-            const updated = await api.updateModelSettings(
-                currentProject.id,
-                undefined, undefined, undefined,
-                type === 'character' ? ratio : undefined,
-                type === 'scene' ? ratio : undefined,
-                type === 'prop' ? ratio : undefined,
-                undefined
-            );
-            updateProject(currentProject.id, updated);
-        } catch (error) {
-            console.error('Failed to update aspect ratio:', error);
-        }
-    };
 
     return (
         <div className="space-y-6">
-            <div className="space-y-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Users size={14} /> 资产概览
-                </h3>
-                <div className="text-xs text-gray-400">
-                    统一管理资产比例和全局风格设定。
-                </div>
-            </div>
-
-            {/* Aspect Ratio Controls */}
-            <div className="space-y-4 pt-4 border-t border-white/10">
-                <div className="flex items-center gap-2 mb-2">
-                    <Layout className="text-primary" size={14} />
-                    <h3 className="font-bold text-white text-xs">资产比例</h3>
-                </div>
-
-                {/* Character Aspect Ratio */}
-                <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">角色</label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                        {['9:16', '16:9', '1:1'].map((ratio) => (
-                            <button
-                                key={ratio}
-                                onClick={() => handleUpdateAspectRatio('character', ratio)}
-                                className={`px-2 py-1.5 rounded text-[10px] border transition-all font-medium ${characterAspectRatio === ratio
-                                    ? 'bg-primary/20 text-primary border-primary/30'
-                                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
-                                    }`}
-                            >
-                                {ratio}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Scene Aspect Ratio */}
-                <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">场景</label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                        {['9:16', '16:9', '1:1'].map((ratio) => (
-                            <button
-                                key={ratio}
-                                onClick={() => handleUpdateAspectRatio('scene', ratio)}
-                                className={`px-2 py-1.5 rounded text-[10px] border transition-all font-medium ${sceneAspectRatio === ratio
-                                    ? 'bg-primary/20 text-primary border-primary/30'
-                                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
-                                    }`}
-                            >
-                                {ratio}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Prop Aspect Ratio */}
-                <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">道具</label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                        {['9:16', '16:9', '1:1'].map((ratio) => (
-                            <button
-                                key={ratio}
-                                onClick={() => handleUpdateAspectRatio('prop', ratio)}
-                                className={`px-2 py-1.5 rounded text-[10px] border transition-all font-medium ${propAspectRatio === ratio
-                                    ? 'bg-primary/20 text-primary border-primary/30'
-                                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
-                                    }`}
-                            >
-                                {ratio}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            {/* Art Direction Style Display (Read-only) */}
-            <div className="pt-4 border-t border-white/10">
+            <div>
                 <ArtDirectionStyleDisplay project={currentProject} />
             </div>
         </div>
@@ -220,9 +115,60 @@ function AssetsInspector() {
 }
 
 function ArtDirectionStyleDisplay({ project }: { project: any }) {
-    const artDirectionStyle = project?.art_direction?.style_config;
+    const updateProject = useProjectStore((state) => state.updateProject);
+    const resolvedArtDirection = project?.art_direction_resolved || project?.art_direction;
+    const artDirectionStyle = resolvedArtDirection?.style_config;
     const styleDescription = artDirectionStyle?.description?.trim();
-    const negativePrompt = artDirectionStyle?.negative_prompt?.trim();
+    const [positivePromptInput, setPositivePromptInput] = useState("");
+    const [negativePromptInput, setNegativePromptInput] = useState("");
+    const [isOverriding, setIsOverriding] = useState(false);
+    const [overrideError, setOverrideError] = useState<string | null>(null);
+    const [overrideMessage, setOverrideMessage] = useState<string | null>(null);
+
+    useEffect(() => {
+        // 中文注释：项目切换或后端回包更新后，输入框总是回到“当前生效美术设定”的最新值，避免编辑旧快照。
+        setPositivePromptInput(artDirectionStyle?.positive_prompt || "");
+        setNegativePromptInput(artDirectionStyle?.negative_prompt || "");
+        setOverrideError(null);
+        setOverrideMessage(null);
+    }, [project?.id, artDirectionStyle?.positive_prompt, artDirectionStyle?.negative_prompt]);
+
+    const handleOverrideProjectArtDirection = async () => {
+        if (!project?.id || !artDirectionStyle) return;
+
+        const nextPositivePrompt = positivePromptInput.trim();
+        const nextNegativePrompt = negativePromptInput.trim();
+        if (!nextPositivePrompt) {
+            setOverrideError("请先填写正向提示词，再执行项目覆写。");
+            setOverrideMessage(null);
+            return;
+        }
+
+        setIsOverriding(true);
+        setOverrideError(null);
+        setOverrideMessage(null);
+        try {
+            // 中文注释：这里显式走项目覆写接口，后端会把来源切到 project_override，不再继承剧集默认风格。
+            const selectedStyleId =
+                resolvedArtDirection?.selected_style_id ||
+                artDirectionStyle.id ||
+                `project-style-${project.id}`;
+            const updated = await api.updateProjectArtDirectionOverride(project.id, selectedStyleId, {
+                ...artDirectionStyle,
+                id: artDirectionStyle.id || selectedStyleId,
+                name: artDirectionStyle.name || "项目覆写风格",
+                description: artDirectionStyle.description || "",
+                positive_prompt: nextPositivePrompt,
+                negative_prompt: nextNegativePrompt,
+            });
+            updateProject(project.id, updated);
+            setOverrideMessage("已覆盖项目美术设定，当前项目将优先使用该提示词。");
+        } catch (error) {
+            setOverrideError(error instanceof Error ? error.message : "覆盖项目美术设定失败，请稍后重试。");
+        } finally {
+            setIsOverriding(false);
+        }
+    };
 
     return (
         <div className="space-y-4">
@@ -247,18 +193,43 @@ function ArtDirectionStyleDisplay({ project }: { project: any }) {
                         </div>
                     </div>
 
-                    <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">正向提示词</label>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-24 max-h-[28vh] overflow-y-auto">
-                            {artDirectionStyle.positive_prompt || '暂无正向提示词'}
+                    <div className="grid h-[clamp(16rem,42vh,30rem)] min-h-[16rem] grid-rows-2 gap-3">
+                        {/* 中文注释：提示词编辑区按当前页面高度自适应，正负提示词各占一半可用高度。 */}
+                        <div className="flex min-h-0 flex-col">
+                            <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">正向提示词</label>
+                            <textarea
+                                value={positivePromptInput}
+                                onChange={(event) => setPositivePromptInput(event.target.value)}
+                                placeholder="请输入项目级正向提示词"
+                                className="min-h-0 flex-1 resize-none rounded-lg border border-white/10 bg-black/40 px-2.5 py-2 text-xs text-gray-200 leading-relaxed outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
+                            />
+                        </div>
+
+                        <div className="flex min-h-0 flex-col">
+                            <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">负向提示词</label>
+                            <textarea
+                                value={negativePromptInput}
+                                onChange={(event) => setNegativePromptInput(event.target.value)}
+                                placeholder="请输入项目级负向提示词"
+                                className="min-h-0 flex-1 resize-none rounded-lg border border-white/10 bg-black/40 px-2.5 py-2 text-xs text-gray-200 leading-relaxed outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
+                            />
                         </div>
                     </div>
 
-                    <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">负向提示词</label>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 leading-relaxed min-h-20 max-h-[24vh] overflow-y-auto">
-                            {negativePrompt || "暂无负向提示词"}
-                        </div>
+                    <div className="space-y-2 pt-1">
+                        <button
+                            type="button"
+                            onClick={() => void handleOverrideProjectArtDirection()}
+                            disabled={isOverriding || !project?.series_id}
+                            className="w-full rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-55"
+                        >
+                            {isOverriding ? "覆盖中..." : "覆盖项目美术设定"}
+                        </button>
+                        <p className="text-[10px] text-gray-500">
+                            覆盖后将不再继承剧集默认美术风格，仅对当前项目生效。
+                        </p>
+                        {overrideError ? <p className="text-[10px] text-rose-300">{overrideError}</p> : null}
+                        {overrideMessage ? <p className="text-[10px] text-emerald-300">{overrideMessage}</p> : null}
                     </div>
                 </div>
             ) : (
@@ -1004,9 +975,7 @@ function AudioInspector() {
                 className="hidden"
             />
             {currentProject?.series_id && (
-                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
-                    {getProjectCharacterSourceHint(currentProject)}
-                </div>
+                <ProjectCharacterSourceHintBanner project={currentProject} />
             )}
             {!selectedCharacter ? (
                 <div className="p-4 bg-white/5 rounded-lg border border-white/10 text-center text-gray-500 text-xs">

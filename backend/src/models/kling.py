@@ -155,7 +155,8 @@ class KlingModel(VideoGenModel):
             path_suffix=str(submit_path),
         )
         # 提交任务
-        logger.info(f"[Kling] Submitting {'i2v' if is_i2v else 't2v'} task (model={model_name})")
+        task_kind = "图生视频" if is_i2v else "文生视频"
+        logger.info(f"可灵：正在提交{task_kind}任务（模型={model_name}）")
         response = requests.post(submit_url, headers=headers, json=body, timeout=30)
         response.raise_for_status()
         task_data = response.json()
@@ -167,7 +168,7 @@ class KlingModel(VideoGenModel):
             )
 
         task_id = task_data["data"]["task_id"]
-        logger.info(f"[Kling] Task submitted: {task_id}")
+        logger.info(f"可灵：任务已提交 任务编号={task_id}")
 
         # 轮询等待结果
         poll_url = provider_service.build_provider_url(
@@ -191,7 +192,7 @@ class KlingModel(VideoGenModel):
                 raise RuntimeError(f"Kling poll error: {result_data.get('message')}")
 
             status = result_data["data"]["task_status"]
-            logger.info(f"[Kling] Task status: {status} ({elapsed}s)")
+        logger.info(f"可灵：任务状态={status} 已等待={elapsed}秒")
 
             if status == "succeed":
                 video_url = result_data["data"]["task_result"]["videos"][0]["url"]
@@ -202,7 +203,7 @@ class KlingModel(VideoGenModel):
                     f.write(video_content)
 
                 generation_time = time.time() - start_time
-                logger.info(f"[Kling] Done in {generation_time:.1f}s -> {output_path}")
+                logger.info(f"可灵：已完成 用时={generation_time:.1f}秒 输出路径={output_path}")
                 return output_path, generation_time
 
             elif status == "failed":

@@ -57,7 +57,14 @@ describe("projectStore.selectProject", () => {
         title: "系列分集",
         original_text: "episode script",
         series_id: "series-1",
-        characters: [],
+        characters: [
+          {
+            id: "char-series-2",
+            name: "小满",
+            description: "收件箱确认后尚未建 link 的角色",
+            video_assets: [],
+          },
+        ],
         series_character_links: [
           {
             id: "link-1",
@@ -101,7 +108,10 @@ describe("projectStore.selectProject", () => {
       });
 
     await useProjectStore.getState().selectProject("series-project-1");
-    expect(useProjectStore.getState().currentProject?.characters.map((item) => item.id)).toEqual(["char-series-1"]);
+    expect(useProjectStore.getState().currentProject?.characters.map((item) => item.id)).toEqual(
+      expect.arrayContaining(["char-series-1", "char-series-2"]),
+    );
+    expect(useProjectStore.getState().currentProject?.characters).toHaveLength(2);
 
     await useProjectStore.getState().selectProject("standalone-project-1");
     expect(useProjectStore.getState().currentProject?.characters.map((item) => item.id)).toEqual(["char-project-1"]);

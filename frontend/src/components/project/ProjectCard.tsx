@@ -47,7 +47,7 @@ export default function ProjectCard({ project, onDelete, href }: ProjectCardProp
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             whileHover={{ scale: 1.02 }}
-            className="studio-panel p-6 rounded-[1.75rem] cursor-pointer group relative"
+            className="studio-panel p-6 rounded-none cursor-pointer group relative"
             onClick={handleOpen}
         >
             <div className="flex items-start justify-between mb-4">
@@ -64,7 +64,7 @@ export default function ProjectCard({ project, onDelete, href }: ProjectCardProp
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                         onClick={handleDelete}
-                        className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                        className="p-2 rounded-none bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
                     >
                         <Trash2 size={16} />
                     </button>
@@ -80,7 +80,7 @@ export default function ProjectCard({ project, onDelete, href }: ProjectCardProp
             </div>
 
             <div className="flex items-center justify-between">
-                <span className={`text-xs px-2 py-1 rounded ${statusColors[project.status as keyof typeof statusColors] || statusColors.pending}`}>
+                <span className={`text-xs px-2 py-1 rounded-none ${statusColors[project.status as keyof typeof statusColors] || statusColors.pending}`}>
                     {project.status || '待开始'}
                 </span>
 

@@ -290,7 +290,7 @@ class AuthService:
         )
         self.verification_code_repository.create(verification)
         self._record_send_code_rate_limit(normalized_identifier, ip_address)
-        logger.info("AUTH_SERVICE: verification code generated target_type=%s target=%s purpose=%s", target_type, normalized_identifier, purpose)
+        logger.info("认证服务：验证码已生成 目标类型=%s 目标=%s 用途=%s", target_type, normalized_identifier, purpose)
         payload = {"status": "sent", "target": normalized_identifier, "channel": target_type, "purpose": purpose}
         if target_type == "email" and self._email_delivery_is_configured():
             self._send_email_code_via_smtp(normalized_identifier, code, purpose)
@@ -561,7 +561,7 @@ class AuthService:
             )
             updated_count += 1
         if updated_count:
-            logger.info("AUTH_SERVICE: backfilled initial password for existing users count=%s", updated_count)
+            logger.info("认证服务：已为存量用户补齐初始密码 数量=%s", updated_count)
         return updated_count
 
     def issue_session(
@@ -670,7 +670,7 @@ class AuthService:
             memberships=memberships,
         )
         logger.info(
-            "AUTH_SERVICE: build_auth_me user_id=%s workspace_id=%s memberships=%s workspaces=%s membership_query_ms=%.2f workspace_build_ms=%.2f total_ms=%.2f",
+            "认证服务：构建当前用户信息 用户ID=%s 工作区ID=%s 成员关系数=%s 工作区数=%s 成员查询耗时毫秒=%.2f 工作区构建耗时毫秒=%.2f 总耗时毫秒=%.2f",
             user.id,
             current_workspace_id,
             len(memberships),

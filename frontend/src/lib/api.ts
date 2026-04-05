@@ -1,4 +1,5 @@
 import axiosLib from "axios";
+import type { Character, Prop, Scene } from "@/store/projectStore";
 
 // Dynamic API URL detection:
 // 1. In packaged app (Electron): Frontend is served by backend, use same origin
@@ -302,6 +303,13 @@ export interface TaskReceipt {
     created_at: string | number;
 }
 
+export interface SeriesAssetInboxPayload {
+    characters: Character[];
+    scenes: Scene[];
+    props: Prop[];
+    series_version?: number;
+}
+
 export interface TaskJob {
     id: string;
     task_type: string;
@@ -318,11 +326,27 @@ export interface TaskJob {
     error_message?: string | null;
     attempt_count: number;
     max_attempts: number;
+    timeout_seconds?: number;
     heartbeat_at?: string | null;
     started_at?: string | null;
     finished_at?: string | null;
     cancel_requested_at?: string | null;
     created_at: string | number;
+}
+
+export interface AssetPromptState {
+    id: string;
+    owner_scope: "project" | "series";
+    owner_id: string;
+    asset_type: "character" | "scene" | "prop";
+    asset_id: string;
+    output_type: "image" | "motion";
+    slot_type: string;
+    positive_prompt: string;
+    negative_prompt: string;
+    source: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface StoryboardRenderPayload {
@@ -1228,7 +1252,8 @@ export const api = {
 
     generateAsset: async (scriptId: string, assetId: string, assetType: string, stylePreset: string, stylePrompt?: string, generationType: string = "all", prompt: string = "", applyStyle: boolean = true, negativePrompt: string = "", batchSize: number = 1, modelName?: string): Promise<TaskReceipt> => {
         const dedupeKey = `asset:${scriptId}:${assetId}:${generationType}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/generate`, {
+        const res = await axios.post(`${API_URL}/asset-jobs/generate`, {
+            project_id: scriptId,
             asset_id: assetId,
             asset_type: assetType,
             style_preset: stylePreset,
@@ -1269,7 +1294,8 @@ export const api = {
         batchSize: number = 1
     ): Promise<TaskReceipt> => {
         const dedupeKey = `motion-ref:${scriptId}:${assetId}:${assetType}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/generate_motion_ref`, {
+        const res = await axios.post(`${API_URL}/asset-jobs/generate_motion_ref`, {
+            project_id: scriptId,
             asset_id: assetId,
             asset_type: assetType,
             prompt,
@@ -1283,6 +1309,25 @@ export const api = {
             },
         });
         return res.data;
+    },
+
+    getAssetPromptStates: async (options: {
+        assetId: string;
+        assetType: "character" | "scene" | "prop";
+        projectId?: string;
+        seriesId?: string;
+        outputType?: "image" | "motion";
+    }): Promise<AssetPromptState[]> => {
+        const response = await axios.get(`${API_URL}/asset-jobs/prompt-states`, {
+            params: {
+                asset_id: options.assetId,
+                asset_type: options.assetType,
+                project_id: options.projectId,
+                series_id: options.seriesId,
+                output_type: options.outputType,
+            },
+        });
+        return Array.isArray(response.data?.states) ? response.data.states : [];
     },
 
     deleteAssetVideo: async (scriptId: string, assetType: string, assetId: string, videoId: string) => {
@@ -1399,6 +1444,51 @@ export const api = {
             ai_recommendations: aiRecommendations
         });
         return res.data;
+    },
+
+    getProjectArtDirection: async (scriptId: string) => {
+        const res = await axios.get(`${API_URL}/projects/${scriptId}/art_direction`);
+        return res.data;
+    },
+
+    updateProjectArtDirectionOverride: async (scriptId: string, selectedStyleId: string, styleConfig: any) => {
+        const res = await axios.put(`${API_URL}/projects/${scriptId}/art_direction/override`, {
+            selected_style_id: selectedStyleId,
+            style_config: styleConfig,
+        });
+        return res.data;
+    },
+
+    clearProjectArtDirectionOverride: async (scriptId: string) => {
+        const res = await axios.delete(`${API_URL}/projects/${scriptId}/art_direction/override`);
+        return res.data;
+    },
+
+    getSeriesArtDirection: async (seriesId: string) => {
+        const res = await axios.get(`${API_URL}/series/${seriesId}/art_direction`);
+        return res.data;
+    },
+
+    updateSeriesArtDirection: async (
+        seriesId: string,
+        selectedStyleId: string,
+        styleConfig: unknown,
+        aiRecommendations?: unknown[]
+    ) => {
+        const payload: Record<string, unknown> = {
+            selected_style_id: selectedStyleId,
+            style_config: styleConfig,
+        };
+        if (aiRecommendations !== undefined) {
+            payload.ai_recommendations = aiRecommendations;
+        }
+        const res = await axios.put(`${API_URL}/series/${seriesId}/art_direction`, payload);
+        return res.data;
+    },
+
+    getSeriesArtDirectionProjects: async (seriesId: string) => {
+        const res = await axios.get(`${API_URL}/series/${seriesId}/art_direction/projects`);
+        return res.data as { projects: Array<{ project_id: string; title: string; episode_number?: number | null; source: string; is_dirty_from_series: boolean }> };
     },
 
     getStylePresets: async () => {
@@ -1968,8 +2058,148 @@ export const api = {
         const response = await axios.get(`${API_URL}/series/${seriesId}/assets`);
         return response.data;
     },
+    getSeriesAssetInbox: async (seriesId: string): Promise<SeriesAssetInboxPayload> => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/assets/inbox`);
+        return response.data;
+    },
+    upsertSeriesAssetInbox: async (
+        seriesId: string,
+        payload: {
+            expected_version?: number;
+            mode?: "replace" | "append";
+            characters: Character[];
+            scenes: Scene[];
+            props: Prop[];
+        },
+    ): Promise<SeriesAssetInboxPayload> => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}/assets/inbox`, payload);
+        return response.data;
+    },
+    removeSeriesAssetInboxItems: async (
+        seriesId: string,
+        payload: {
+            expected_version?: number;
+            character_ids: string[];
+            scene_ids: string[];
+            prop_ids: string[];
+        },
+    ): Promise<SeriesAssetInboxPayload> => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/assets/inbox/remove`, payload);
+        return response.data;
+    },
+    syncSeriesAssets: async (
+        seriesId: string,
+        payload: {
+            expected_version: number;
+            characters: Character[];
+            scenes: Scene[];
+            props: Prop[];
+        },
+    ) => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}/assets`, payload);
+        return response.data;
+    },
+    extractSeriesAssets: async (seriesId: string, text: string): Promise<TaskReceipt> => {
+        try {
+            const response = await axios.post(`${API_URL}/series/${seriesId}/assets/extract`, { text });
+            return response.data;
+        } catch (error) {
+            throw formatAxiosError(error, "识别系列资产失败");
+        }
+    },
     importSeriesAssets: async (seriesId: string, sourceSeriesId: string, assetIds: string[]): Promise<TaskReceipt> => {
         const response = await axios.post(`${API_URL}/series/${seriesId}/assets/import`, { source_series_id: sourceSeriesId, asset_ids: assetIds });
+        return response.data;
+    },
+    generateSeriesAsset: async (
+        seriesId: string,
+        assetId: string,
+        assetType: string,
+        generationType: string = "all",
+        prompt: string = "",
+        applyStyle: boolean = true,
+        negativePrompt: string = "",
+        batchSize: number = 1,
+        stylePreset: string = "ArtDirection",
+        stylePrompt?: string,
+        modelName?: string,
+    ): Promise<TaskReceipt> => {
+        const dedupeKey = `series-generate-asset:${seriesId}:${assetId}:${generationType}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+        const response = await axios.post(
+            `${API_URL}/asset-jobs/generate`,
+            {
+                series_id: seriesId,
+                asset_id: assetId,
+                asset_type: assetType,
+                style_preset: stylePreset,
+                style_prompt: stylePrompt,
+                generation_type: generationType,
+                prompt,
+                apply_style: applyStyle,
+                negative_prompt: negativePrompt,
+                batch_size: batchSize,
+                model_name: modelName,
+            },
+            {
+                headers: {
+                    "Idempotency-Key": dedupeKey,
+                },
+            },
+        );
+        return response.data;
+    },
+    generateSeriesMotionRef: async (
+        seriesId: string,
+        assetId: string,
+        assetType: string,
+        prompt: string = "",
+        audioUrl?: string,
+        negativePrompt: string = "",
+        duration: number = 5,
+        batchSize: number = 1,
+    ): Promise<TaskReceipt> => {
+        const dedupeKey = `series-generate-motion-ref:${seriesId}:${assetId}:${assetType}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+        const response = await axios.post(
+            `${API_URL}/asset-jobs/generate_motion_ref`,
+            {
+                series_id: seriesId,
+                asset_id: assetId,
+                asset_type: assetType,
+                prompt,
+                audio_url: audioUrl,
+                negative_prompt: negativePrompt,
+                duration,
+                batch_size: batchSize,
+            },
+            {
+                headers: {
+                    "Idempotency-Key": dedupeKey,
+                },
+            },
+        );
+        return response.data;
+    },
+    updateSeriesAssetAttributes: async (seriesId: string, assetId: string, assetType: string, attributes: any) => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/assets/update_attributes`, {
+            asset_id: assetId,
+            asset_type: assetType,
+            attributes,
+        });
+        return response.data;
+    },
+    selectSeriesAssetVariant: async (
+        seriesId: string,
+        assetId: string,
+        assetType: string,
+        variantId: string,
+        generationType?: string,
+    ) => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/assets/variant/select`, {
+            asset_id: assetId,
+            asset_type: assetType,
+            variant_id: variantId,
+            generation_type: generationType,
+        });
         return response.data;
     },
 
@@ -2003,7 +2233,7 @@ export const api = {
     createEpisodeForSeries: async (seriesId: string, title: string, episodeNumber: number) => {
         try {
             return await api.createEpisodeInSeries(seriesId, title, episodeNumber);
-        } catch (error) {
+        } catch {
             const project = await api.createProject(title, "", true);
             await api.addEpisodeToSeries(seriesId, project.id, episodeNumber);
             return project;

@@ -8,6 +8,7 @@ export interface ImageVariant {
     url: string;
     created_at: string | number;
     prompt_used?: string;
+    batch_id?: string | null;
 }
 
 export interface ImageAsset {
@@ -58,6 +59,9 @@ export interface Character {
     full_body_image_url?: string;
     three_view_image_url?: string;
     headshot_image_url?: string;
+    full_body_prompt?: string;
+    three_view_prompt?: string;
+    headshot_prompt?: string;
 
     // New Asset Containers
     full_body_asset?: ImageAsset;
@@ -172,6 +176,8 @@ export interface ArtDirection {
     custom_styles: StyleConfig[];
     ai_recommendations: StyleConfig[];
 }
+
+export type ArtDirectionSource = "standalone" | "series_default" | "project_override";
 
 export interface ModelSettings {
     t2i_model: string;  // Text-to-Image model for Assets
@@ -388,9 +394,13 @@ export interface Series {
     scenes: Scene[];
     props: Prop[];
     art_direction?: ArtDirection;
+    art_direction_updated_at?: string | number;
+    art_direction_updated_by?: string;
     prompt_config?: PromptConfig;
     model_settings?: ModelSettings;
     episode_ids: string[];
+    version?: number;
+    status?: string;
     created_at: string | number;
     updated_at: string | number;
 }
@@ -413,6 +423,11 @@ export interface Project {
     aspectRatio?: string;
     style_preset?: string;
     art_direction?: ArtDirection;
+    art_direction_source?: ArtDirectionSource;
+    art_direction_override?: Record<string, any>;
+    art_direction_resolved?: ArtDirection;
+    art_direction_overridden_at?: string | number;
+    art_direction_overridden_by?: string;
     model_settings?: ModelSettings;
     prompt_config?: PromptConfig;
     merged_video_url?: string;
@@ -451,7 +466,9 @@ const parseSortableTime = (value: string | number | undefined | null): number =>
     return Number.MAX_SAFE_INTEGER;
 };
 
-const sortByCreatedAt = <T extends { created_at?: string | number; id?: string }>(items: T[] | undefined): T[] => {
+const normalizeEntityName = (value?: string | null): string => String(value || "").trim().toLowerCase();
+
+const sortByCreatedAt = <T extends { created_at?: string | number; id?: string; name?: string }>(items: T[] | undefined): T[] => {
     if (!Array.isArray(items)) {
         return [];
     }
@@ -462,6 +479,13 @@ const sortByCreatedAt = <T extends { created_at?: string | number; id?: string }
         if (timeA !== timeB) {
             return timeA - timeB;
         }
+        
+        const nameA = a?.name || "";
+        const nameB = b?.name || "";
+        if (nameA !== nameB) {
+            return nameA.localeCompare(nameB);
+        }
+        
         return String(a?.id || '').localeCompare(String(b?.id || ''));
     });
 };
@@ -594,8 +618,34 @@ const normalizeProject = (project: any): any => {
     const normalizedCharacters = Array.isArray(project.characters)
         ? sortByCreatedAt(project.characters).map(normalizeAssetOwner)
         : [];
-    const effectiveCharacters = project.series_id && derivedSeriesCharacters.length > 0
-        ? sortByCreatedAt(derivedSeriesCharacters)
+    const effectiveCharacters = project.series_id
+        ? (() => {
+            // 中文注释：系列项目把 links 解析角色和 project.characters 做并集，
+            // 兼容“收件箱确认入库后暂未建立分集角色链接”的过渡态。
+            const merged = [...derivedSeriesCharacters];
+            const seen = new Set(derivedSeriesCharacters.map((character: Character) => character.id));
+            const seenNames = new Set(
+                derivedSeriesCharacters
+                    .map((character: Character) => normalizeEntityName(character.name))
+                    .filter((name: string) => Boolean(name)),
+            );
+            for (const character of normalizedCharacters) {
+                if (seen.has(character.id)) {
+                    continue;
+                }
+                const normalizedName = normalizeEntityName(character.name);
+                // 中文注释：系列角色优先于分集本地历史角色；如果同名但 ID 不同，前端归并时过滤本地副本。
+                if (normalizedName && seenNames.has(normalizedName)) {
+                    continue;
+                }
+                seen.add(character.id);
+                if (normalizedName) {
+                    seenNames.add(normalizedName);
+                }
+                merged.push(character);
+            }
+            return sortByCreatedAt(merged);
+        })()
         : normalizedCharacters;
 
     const normalizedTimeline = project.timeline || undefined;
@@ -608,6 +658,18 @@ const normalizeProject = (project: any): any => {
         ...(Array.isArray(project.frames) ? { frames: sortStoryboardFrames(project.frames) } : {}),
         ...(Array.isArray(project.video_tasks) ? { video_tasks: sortVideoTasks(project.video_tasks) } : {}),
         ...(normalizedTimeline ? { final_mix_timeline: toFinalMixTimelineDraft(normalizedTimeline) } : {}),
+    };
+};
+
+const normalizeSeries = (series: any): any => {
+    if (!series) {
+        return series;
+    }
+    return {
+        ...series,
+        ...(Array.isArray(series.characters) ? { characters: sortByCreatedAt(series.characters) } : {}),
+        ...(Array.isArray(series.scenes) ? { scenes: sortByCreatedAt(series.scenes) } : {}),
+        ...(Array.isArray(series.props) ? { props: sortByCreatedAt(series.props) } : {}),
     };
 };
 
@@ -842,21 +904,12 @@ export const useProjectStore = create<ProjectStore>()(
                     if (job.status !== "succeeded") {
                         throw new Error(job.error_message || "风格分析失败");
                     }
-                    const recommendations = job.result_json?.recommendations || [];
-                    const current = get().currentProject;
-                    if (current) {
-                        const updatedArtDirection = {
-                            ...current.art_direction,
-                            ai_recommendations: recommendations
-                        } as ArtDirection;
-
-                        set((state) => ({
-                            currentProject: state.currentProject ? {
-                                ...state.currentProject,
-                                art_direction: updatedArtDirection
-                            } : null
-                        }));
-                    }
+                    const latest = await api.getProject(scriptId);
+                    const normalized = normalizeProject(latest);
+                    set((state) => ({
+                        projects: state.projects.map((project) => (project.id === scriptId ? normalized : project)),
+                        currentProject: state.currentProject?.id === scriptId ? normalized : state.currentProject,
+                    }));
 
                 } catch (error) {
                     console.error("Failed to analyze art style:", error);
@@ -916,13 +969,14 @@ export const useProjectStore = create<ProjectStore>()(
             // Series State
             seriesList: [],
             currentSeries: null,
-            setSeriesList: (seriesList: Series[]) => set({ seriesList }),
+            setSeriesList: (seriesList: Series[]) => set({ seriesList: seriesList.map((s: Series) => normalizeSeries(s)) }),
 
             fetchSeriesList: async () => {
                 try {
                     const seriesList = await api.listSeries();
-                    set({ seriesList });
-                    return seriesList;
+                    const normalizedList = seriesList.map((s: Series) => normalizeSeries(s));
+                    set({ seriesList: normalizedList });
+                    return normalizedList;
                 } catch (error) {
                     console.error('Failed to fetch series list:', error);
                     return [];
@@ -932,7 +986,7 @@ export const useProjectStore = create<ProjectStore>()(
             fetchSeries: async (id: string) => {
                 try {
                     const series = await api.getSeries(id);
-                    set({ currentSeries: series });
+                    set({ currentSeries: normalizeSeries(series) });
                 } catch (error) {
                     console.error('Failed to fetch series:', error);
                 }
@@ -941,10 +995,11 @@ export const useProjectStore = create<ProjectStore>()(
             createSeries: async (title: string, description?: string) => {
                 try {
                     const series = await api.createSeries(title, description);
+                    const normalizedSeries = normalizeSeries(series);
                     set((state) => ({
-                        seriesList: [...state.seriesList, series],
+                        seriesList: [...state.seriesList, normalizedSeries],
                     }));
-                    return series;
+                    return normalizedSeries;
                 } catch (error) {
                     console.error('Failed to create series:', error);
                     throw error;
@@ -964,7 +1019,7 @@ export const useProjectStore = create<ProjectStore>()(
                 }
             },
 
-            setCurrentSeries: (series: Series | null) => set({ currentSeries: series }),
+            setCurrentSeries: (series: Series | null) => set({ currentSeries: series ? normalizeSeries(series) : null }),
         }),
         {
             name: 'project-storage',

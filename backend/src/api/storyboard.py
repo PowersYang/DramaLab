@@ -42,7 +42,7 @@ async def analyze_to_storyboard(
 ):
     """调用 AI 分析剧本文本并登记独立任务。"""
     try:
-        logger.info("STORYBOARD_API: analyze_to_storyboard script_id=%s text_length=%s", script_id, len(request.text or ""))
+        logger.info("分镜接口：分镜分析 项目ID=%s 文本长度=%s", script_id, len(request.text or ""))
         receipt = task_service.create_job(
             task_type="storyboard.analyze",
             payload={
@@ -59,10 +59,10 @@ async def analyze_to_storyboard(
         )
         return signed_response(receipt)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: analyze_to_storyboard failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：分镜分析 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: analyze_to_storyboard unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：分镜分析 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -74,7 +74,7 @@ async def refine_storyboard_prompt(
 ):
     """把原始分镜提示词润色成中英文双语版本。"""
     try:
-        logger.info("STORYBOARD_API: refine_storyboard_prompt script_id=%s frame_id=%s", script_id, request.frame_id)
+        logger.info("分镜接口：润色分镜提示词 项目ID=%s 分镜ID=%s", script_id, request.frame_id)
         receipt = task_service.create_job(
             task_type="storyboard.refine_prompt",
             payload={
@@ -94,10 +94,10 @@ async def refine_storyboard_prompt(
         )
         return signed_response(receipt)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: refine_storyboard_prompt failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：润色分镜提示词 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: refine_storyboard_prompt unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：润色分镜提示词 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -105,7 +105,7 @@ async def refine_storyboard_prompt(
 async def generate_storyboard(script_id: str, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """触发分镜图生成。"""
     try:
-        logger.info("STORYBOARD_API: generate_storyboard script_id=%s", script_id)
+        logger.info("分镜接口：生成分镜图 项目ID=%s", script_id)
         storyboard_workflow.prepare_generate_storyboard(script_id)
         receipt = task_service.create_job(
             task_type="storyboard.generate_all",
@@ -120,7 +120,7 @@ async def generate_storyboard(script_id: str, idempotency_key: str | None = Head
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("STORYBOARD_API: generate_storyboard unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：生成分镜图 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -128,14 +128,14 @@ async def generate_storyboard(script_id: str, idempotency_key: str | None = Head
 async def toggle_frame_lock(script_id: str, request: ToggleFrameLockRequest):
     """切换分镜帧锁定状态。"""
     try:
-        logger.info("STORYBOARD_API: toggle_frame_lock script_id=%s frame_id=%s", script_id, request.frame_id)
+        logger.info("分镜接口：切换分镜锁定 项目ID=%s 分镜ID=%s", script_id, request.frame_id)
         updated_script = storyboard_frame_service.toggle_lock(script_id, request.frame_id)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: toggle_frame_lock failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：切换分镜锁定 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: toggle_frame_lock unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：切换分镜锁定 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -143,7 +143,7 @@ async def toggle_frame_lock(script_id: str, request: ToggleFrameLockRequest):
 async def update_frame(script_id: str, request: UpdateFrameRequest):
     """更新分镜帧信息，如提示词、场景、角色等。"""
     try:
-        logger.info("STORYBOARD_API: update_frame script_id=%s frame_id=%s", script_id, request.frame_id)
+        logger.info("分镜接口：更新分镜帧 项目ID=%s 分镜ID=%s", script_id, request.frame_id)
         updated_script = storyboard_frame_service.update_frame(
             script_id,
             request.frame_id,
@@ -156,10 +156,10 @@ async def update_frame(script_id: str, request: UpdateFrameRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: update_frame failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：更新分镜帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: update_frame unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：更新分镜帧 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -167,7 +167,7 @@ async def update_frame(script_id: str, request: UpdateFrameRequest):
 async def add_frame(script_id: str, request: AddFrameRequest):
     """新增分镜帧。"""
     try:
-        logger.info("STORYBOARD_API: add_frame script_id=%s insert_at=%s", script_id, request.insert_at)
+        logger.info("分镜接口：新增分镜帧 项目ID=%s 插入位置=%s", script_id, request.insert_at)
         updated_script = storyboard_frame_service.add_frame(
             script_id,
             request.scene_id,
@@ -177,10 +177,10 @@ async def add_frame(script_id: str, request: AddFrameRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: add_frame failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：新增分镜帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: add_frame unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：新增分镜帧 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -188,14 +188,14 @@ async def add_frame(script_id: str, request: AddFrameRequest):
 async def delete_frame(script_id: str, frame_id: str):
     """删除分镜帧。"""
     try:
-        logger.info("STORYBOARD_API: delete_frame script_id=%s frame_id=%s", script_id, frame_id)
+        logger.info("分镜接口：删除分镜帧 项目ID=%s 分镜ID=%s", script_id, frame_id)
         updated_script = storyboard_frame_service.delete_frame(script_id, frame_id)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: delete_frame failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：删除分镜帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: delete_frame unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：删除分镜帧 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -203,7 +203,7 @@ async def delete_frame(script_id: str, frame_id: str):
 async def copy_frame(script_id: str, request: CopyFrameRequest):
     """复制一帧分镜。"""
     try:
-        logger.info("STORYBOARD_API: copy_frame script_id=%s frame_id=%s insert_at=%s", script_id, request.frame_id, request.insert_at)
+        logger.info("分镜接口：复制分镜帧 项目ID=%s 分镜ID=%s 插入位置=%s", script_id, request.frame_id, request.insert_at)
         updated_script = storyboard_frame_service.copy_frame(
             script_id,
             request.frame_id,
@@ -211,10 +211,10 @@ async def copy_frame(script_id: str, request: CopyFrameRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: copy_frame failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：复制分镜帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: copy_frame unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：复制分镜帧 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -222,14 +222,14 @@ async def copy_frame(script_id: str, request: CopyFrameRequest):
 async def reorder_frames(script_id: str, request: ReorderFramesRequest):
     """重排分镜帧顺序。"""
     try:
-        logger.info("STORYBOARD_API: reorder_frames script_id=%s frame_count=%s", script_id, len(request.frame_ids))
+        logger.info("分镜接口：重排分镜帧 项目ID=%s 分镜数=%s", script_id, len(request.frame_ids))
         updated_script = storyboard_frame_service.reorder_frames(script_id, request.frame_ids)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: reorder_frames failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：重排分镜帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: reorder_frames unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：重排分镜帧 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -238,7 +238,7 @@ async def render_frame(script_id: str, request: RenderFrameRequest, idempotency_
     """根据构图数据重绘指定分镜帧。"""
     try:
         logger.info(
-            "STORYBOARD_API: render_frame script_id=%s frame_id=%s batch_size=%s has_composition=%s",
+            "分镜接口：重绘分镜帧 项目ID=%s 分镜ID=%s 批量数=%s 是否带构图=%s",
             script_id,
             request.frame_id,
             request.batch_size,
@@ -262,10 +262,10 @@ async def render_frame(script_id: str, request: RenderFrameRequest, idempotency_
         )
         return signed_response(receipt)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: render_frame failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：重绘分镜帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: render_frame unexpected_error script_id=%s frame_id=%s", script_id, request.frame_id)
+        logger.exception("分镜接口：重绘分镜帧 发生未预期异常 项目ID=%s 分镜ID=%s", script_id, request.frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -281,7 +281,7 @@ async def render_frames_batch(
             raise ValueError("至少需要一个分镜渲染项")
 
         logger.info(
-            "STORYBOARD_API: render_frames_batch script_id=%s item_count=%s",
+            "分镜接口：批量重绘分镜帧 项目ID=%s 条目数=%s",
             script_id,
             len(request.items),
         )
@@ -308,10 +308,10 @@ async def render_frames_batch(
 
         return signed_response(receipts)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: render_frames_batch failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：批量重绘分镜帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: render_frames_batch unexpected_error script_id=%s", script_id)
+        logger.exception("分镜接口：批量重绘分镜帧 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -322,14 +322,14 @@ async def render_frames_batch(
 async def select_video(script_id: str, frame_id: str, request: SelectVideoRequest):
     """为某一帧切换当前选中的视频版本。"""
     try:
-        logger.info("STORYBOARD_API: select_video script_id=%s frame_id=%s video_id=%s", script_id, frame_id, request.video_id)
+        logger.info("分镜接口：选择视频版本 项目ID=%s 分镜ID=%s 视频ID=%s", script_id, frame_id, request.video_id)
         updated_script = asset_service.select_video_for_frame(script_id, frame_id, request.video_id)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: select_video failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：选择视频版本 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: select_video unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
+        logger.exception("分镜接口：选择视频版本 发生未预期异常 项目ID=%s 分镜ID=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -341,17 +341,17 @@ async def extract_last_frame(
 ):
     """从已完成视频里抽最后一帧，并加入该帧的渲染图候选列表。"""
     try:
-        logger.info("STORYBOARD_API: extract_last_frame script_id=%s frame_id=%s video_task_id=%s", script_id, frame_id, request.video_task_id)
+        logger.info("分镜接口：抽取视频最后一帧 项目ID=%s 分镜ID=%s 视频任务ID=%s", script_id, frame_id, request.video_task_id)
         updated_script = storyboard_workflow.extract_last_frame(script_id, frame_id, request.video_task_id)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: extract_last_frame failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：抽取视频最后一帧 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except RuntimeError as exc:
-        logger.exception("STORYBOARD_API: extract_last_frame runtime_error script_id=%s frame_id=%s", script_id, frame_id)
+        logger.exception("分镜接口：抽取视频最后一帧 运行时异常 项目ID=%s 分镜ID=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: extract_last_frame unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
+        logger.exception("分镜接口：抽取视频最后一帧 发生未预期异常 项目ID=%s 分镜ID=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -363,17 +363,17 @@ async def upload_frame_image(
 ):
     """给分镜帧上传一张渲染图候选图片。"""
     try:
-        logger.info("STORYBOARD_API: upload_frame_image script_id=%s frame_id=%s filename=%s", script_id, frame_id, file.filename)
+        logger.info("分镜接口：上传分镜图片 项目ID=%s 分镜ID=%s 文件名=%s", script_id, frame_id, file.filename)
         with staged_upload_file(file.file, file.filename) as file_path:
             object_key = OSSImageUploader().upload_image(file_path, sub_path="uploads")
         if not object_key:
-            raise RuntimeError("OSS upload failed for frame image.")
+            raise RuntimeError("分镜图片 OSS 上传失败。")
 
         updated_script = asset_service.upload_frame_image(script_id, frame_id, object_key)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("STORYBOARD_API: upload_frame_image failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("分镜接口：上传分镜图片 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("STORYBOARD_API: upload_frame_image unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
+        logger.exception("分镜接口：上传分镜图片 发生未预期异常 项目ID=%s 分镜ID=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))

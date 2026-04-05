@@ -22,6 +22,7 @@ class TaskStatus(str, Enum):
 class TaskType(str, Enum):
     PROJECT_REPARSE = "project.reparse"
     PROJECT_SYNC_DESCRIPTIONS = "project.sync_descriptions"
+    SERIES_ASSETS_EXTRACT = "series.assets.extract"
     SERIES_IMPORT_ASSETS = "series.assets.import"
     SERIES_IMPORT_CONFIRM = "series.import.confirm"
     SERIES_IMPORT_PREVIEW = "series.import.preview"

@@ -6,7 +6,7 @@
 
 import uuid
 
-from ...repository import ProjectRepository, SceneRepository
+from ...repository import ProjectRepository, SceneRepository, SeriesRepository
 from .project_command_service import ProjectCommandService
 from ...schemas.models import GenerationStatus, Scene
 from ...utils.datetime import utc_now
@@ -18,6 +18,7 @@ class SceneService:
     def __init__(self):
         self.scene_repository = SceneRepository()
         self.project_repository = ProjectRepository()
+        self.series_repository = SeriesRepository()
         self.project_command_service = ProjectCommandService()
 
     def create_scene(self, project_id: str, name: str, description: str):
@@ -31,7 +32,11 @@ class SceneService:
             description=description,
             status=GenerationStatus.PENDING,
         )
-        self.scene_repository.save("project", project_id, scene)
+        # 中文注释：系列项目中新建场景默认落到系列资产库，保证其他分集可以直接复用。
+        if project.series_id:
+            self.scene_repository.save("series", project.series_id, scene)
+        else:
+            self.scene_repository.save("project", project_id, scene)
         return self.project_repository.get(project_id)
 
     def delete_scene(self, project_id: str, scene_id: str):
@@ -45,4 +50,14 @@ class SceneService:
                 frame.scene_id = ""
                 frame.updated_at = utc_now()
                 cleaned_frames.append(frame)
+        if project.series_id:
+            # 中文注释：分集里删除系列场景时只解除当前分集引用，不直接删系列主档，避免影响其他分集。
+            series = self.series_repository.get(project.series_id)
+            is_series_scene = bool(series and any(item.id == scene_id for item in (series.scenes or [])))
+            if is_series_scene:
+                return self.project_command_service.sync_frames(
+                    project_id,
+                    project.version,
+                    [frame for frame in project.frames],
+                )
         return self.project_command_service.delete_asset_and_cleanup_frames(project_id, project.version, "scene", scene_id, cleaned_frames=cleaned_frames)

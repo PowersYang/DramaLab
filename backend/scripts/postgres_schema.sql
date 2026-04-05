@@ -161,6 +161,26 @@ create table if not exists video_tasks (
     reference_video_urls jsonb not null default '[]'::jsonb
 );
 
+create table if not exists asset_prompt_states (
+    id varchar(64) primary key,
+    owner_scope varchar(32) not null,
+    owner_id varchar(64) not null,
+    asset_type varchar(32) not null,
+    asset_id varchar(64) not null,
+    output_type varchar(32) not null,
+    slot_type varchar(32) not null default 'default',
+    positive_prompt text not null default '',
+    negative_prompt text not null default '',
+    source varchar(32) not null default 'user_input',
+    organization_id varchar(64),
+    workspace_id varchar(64),
+    created_by varchar(64),
+    updated_by varchar(64),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (owner_scope, owner_id, asset_type, asset_id, output_type, slot_type)
+);
+
 create index if not exists ix_style_presets_active_sort on style_presets (is_active, sort_order, created_at);
 create index if not exists ix_user_art_styles_user_sort on user_art_styles (user_id, sort_order, updated_at);
 create index if not exists ix_characters_owner on characters (owner_type, owner_id);
@@ -168,6 +188,7 @@ create unique index if not exists ux_characters_series_canonical_name_active on 
 create unique index if not exists ux_character_asset_units_character_unit_type on character_asset_units (character_id, unit_type) where is_deleted = false;
 create index if not exists ix_projects_org_workspace_updated on projects (organization_id, workspace_id, is_deleted, updated_at);
 create index if not exists ix_series_org_workspace_updated on series (organization_id, workspace_id, is_deleted, updated_at);
+create index if not exists ix_asset_prompt_states_owner_asset on asset_prompt_states (owner_scope, owner_id, asset_type, asset_id, output_type, updated_at);
 create index if not exists ix_project_character_links_project on project_character_links (project_id);
 create index if not exists ix_project_character_links_character on project_character_links (character_id);
 create index if not exists ix_project_character_links_series_status on project_character_links (series_id, match_status);

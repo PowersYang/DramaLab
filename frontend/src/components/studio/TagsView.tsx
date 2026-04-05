@@ -13,18 +13,23 @@ interface TagsViewProps {
 export default function TagsView({ currentMeta }: TagsViewProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { visitedViews, addVisitedView, removeVisitedView } = useStudioUiStore();
+  const visitedViews = useStudioUiStore((state) => state.visitedViews);
+  const addVisitedView = useStudioUiStore((state) => state.addVisitedView);
+  const removeVisitedView = useStudioUiStore((state) => state.removeVisitedView);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const currentTitle = currentMeta?.title;
+  const currentPath = currentMeta?.path;
 
   useEffect(() => {
-    if (currentMeta) {
+    // 中文注释：只在标题或路径真正变化时写入标签历史，避免父组件每次 render 新建对象时重复触发 store 更新。
+    if (currentTitle && currentPath) {
       addVisitedView({
-        title: currentMeta.title,
-        path: currentMeta.path,
-        name: currentMeta.title,
+        title: currentTitle,
+        path: currentPath,
+        name: currentTitle,
       });
     }
-  }, [currentMeta, addVisitedView]);
+  }, [addVisitedView, currentPath, currentTitle]);
 
   const handleClose = (e: React.MouseEvent, view: TagView) => {
     e.preventDefault();

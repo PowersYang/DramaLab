@@ -26,7 +26,7 @@ task_service = TaskService()
 async def get_task(job_id: str, context: RequestContext = Depends(get_request_context)):
     job = task_service.get_job(job_id)
     if not job or job.workspace_id != context.current_workspace_id:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     return signed_response(job)
 
 
@@ -49,7 +49,7 @@ async def list_tasks(
         limit=limit,
     )
     logger.info(
-        "TASK_API: list_tasks project_id=%s series_id=%s statuses=%s limit=%s count=%s duration_ms=%.2f",
+        "任务接口：列出任务 project_id=%s series_id=%s 状态=%s 限制=%s 数量=%s 耗时ms=%.2f",
         project_id,
         series_id,
         parsed_statuses,
@@ -65,11 +65,11 @@ async def cancel_task(job_id: str, context: RequestContext = Depends(require_cap
     try:
         job = task_service.get_job(job_id)
         if not job or job.workspace_id != context.current_workspace_id:
-            raise ValueError(f"Task job {job_id} not found")
+            raise ValueError(f"任务 {job_id} 不存在")
         job = task_service.cancel_job(job_id)
         return signed_response(job)
     except ValueError as exc:
-        logger.warning("TASK_API: cancel_task failed job_id=%s detail=%s", job_id, exc)
+        logger.warning("任务接口：取消任务 失败 任务ID=%s 详情=%s", job_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
 
 
@@ -78,12 +78,12 @@ async def retry_task(job_id: str, context: RequestContext = Depends(require_capa
     try:
         job = task_service.get_job(job_id)
         if not job or job.workspace_id != context.current_workspace_id:
-            raise ValueError(f"Task job {job_id} not found")
+            raise ValueError(f"任务 {job_id} 不存在")
         job = task_service.retry_job(job_id)
         return signed_response(job)
     except TaskRetryLimitReached as exc:
-        logger.warning("TASK_API: retry_task rejected job_id=%s detail=%s", job_id, exc)
+        logger.warning("任务接口：重试任务 被拒绝 任务ID=%s 详情=%s", job_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
-        logger.warning("TASK_API: retry_task failed job_id=%s detail=%s", job_id, exc)
+        logger.warning("任务接口：重试任务 失败 任务ID=%s 详情=%s", job_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))

@@ -24,7 +24,7 @@ class ExportManager:
 
     def render_project(self, script: Script, options: Dict[str, Any]) -> str:
         """导出项目最终视频，并返回 OSS 对象键。"""
-        logger.info("Starting export for project %s with options: %s", script.id, options)
+        logger.info("开始导出：项目编号=%s 选项=%s", script.id, options)
 
         _resolution = options.get("resolution", "1080p")
         format_name = options.get("format", "mp4")
@@ -40,10 +40,10 @@ class ExportManager:
             object_key = uploader.upload_file(output_path, sub_path="export") if uploader.is_configured else None
             if not object_key:
                 raise RuntimeError("Failed to upload exported video to OSS.")
-            logger.info("Export completed: %s -> %s", output_path, object_key)
+            logger.info("导出完成：本地路径=%s 对象键=%s", output_path, object_key)
             return object_key
         except Exception as exc:
-            logger.error("Export failed: %s", exc)
+            logger.error("导出失败：%s", exc)
             raise
         finally:
             remove_temp_file(output_path if "output_path" in locals() else None)

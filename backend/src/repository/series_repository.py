@@ -124,8 +124,11 @@ class SeriesRepository(BaseRepository[Series]):
                     title=series.title,
                     description=series.description,
                     art_direction=series.art_direction.model_dump(mode="json") if series.art_direction else None,
+                    art_direction_updated_at=series.art_direction_updated_at,
+                    art_direction_updated_by=series.art_direction_updated_by,
                     model_settings=series.model_settings.model_dump(mode="json"),
                     prompt_config=series.prompt_config.model_dump(mode="json"),
+                    asset_inbox_json={},
                     version=series.version,
                     status=series.status,
                     is_deleted=False,
@@ -148,8 +151,11 @@ class SeriesRepository(BaseRepository[Series]):
                     title=series.title,
                     description=series.description,
                     art_direction=series.art_direction.model_dump(mode="json") if series.art_direction else None,
+                    art_direction_updated_at=series.art_direction_updated_at,
+                    art_direction_updated_by=series.art_direction_updated_by,
                     model_settings=series.model_settings.model_dump(mode="json"),
                     prompt_config=series.prompt_config.model_dump(mode="json"),
+                    asset_inbox_json={},
                     version=series.version,
                     status=series.status,
                     is_deleted=False,
@@ -161,6 +167,41 @@ class SeriesRepository(BaseRepository[Series]):
             )
             _insert_series_children(session, series, _tenant_kwargs(series))
         return series
+
+    def get_asset_inbox(self, series_id: str) -> dict:
+        """读取系列资产收件箱快照。"""
+        with self._with_session() as session:
+            record = self._get_active(session, SeriesRecord, series_id)
+            if record is None:
+                raise ValueError(f"Series {series_id} not found")
+            raw = record.asset_inbox_json or {}
+            return {
+                "characters": list(raw.get("characters") or []),
+                "scenes": list(raw.get("scenes") or []),
+                "props": list(raw.get("props") or []),
+                "series_version": record.version,
+            }
+
+    def save_asset_inbox(self, series_id: str, inbox: dict, expected_version: int | None = None) -> dict:
+        """写入系列资产收件箱。"""
+        with self._with_session() as session:
+            record = self._get_active(session, SeriesRecord, series_id)
+            if record is None:
+                raise ValueError(f"Series {series_id} not found")
+            if expected_version is not None and record.version != expected_version:
+                raise ValueError(f"Series {series_id} version conflict")
+            record.asset_inbox_json = {
+                "characters": list(inbox.get("characters") or []),
+                "scenes": list(inbox.get("scenes") or []),
+                "props": list(inbox.get("props") or []),
+            }
+            record.updated_at = utc_now()
+            return {
+                "characters": list(record.asset_inbox_json.get("characters") or []),
+                "scenes": list(record.asset_inbox_json.get("scenes") or []),
+                "props": list(record.asset_inbox_json.get("props") or []),
+                "series_version": record.version,
+            }
 
     def patch_metadata(self, series_id: str, patch: dict, expected_version: int | None = None) -> Series:
         with self._with_session() as session:

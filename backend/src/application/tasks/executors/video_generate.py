@@ -60,4 +60,11 @@ class VideoGenerateExecutor:
             "project_id": task.project_id,
             "frame_id": task.frame_id,
             "asset_id": task.asset_id,
+            "requested_model": payload.get("requested_model") or payload.get("model") or task.model,
+            "resolved_model": task.model,
+            "fallback_reason": (
+                f"任务请求模型 {payload.get('requested_model')}，系统实际执行模型为 {task.model}"
+                if payload.get("requested_model") and payload.get("requested_model") != task.model
+                else None
+            ),
         }

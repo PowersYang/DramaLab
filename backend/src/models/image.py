@@ -39,7 +39,7 @@ class WanxImageModel(ImageGenModel):
     def api_key(self):
         api_key = ModelProviderService().get_provider_credential("DASHSCOPE", "api_key")
         if not api_key:
-            logger.warning("Dashscope API Key not configured in provider management.")
+            logger.warning("供应商管理未配置 Dashscope 访问密钥。")
         return api_key
 
     def generate(self, prompt: str, output_path: str, ref_image_path: str = None, ref_image_paths: list = None, model_name: str = None, **kwargs) -> Tuple[str, float]:
@@ -66,9 +66,9 @@ class WanxImageModel(ImageGenModel):
             final_model_name = self.params.get('model_name', 'wan2.6-t2i')
 
         if all_ref_paths:
-            logger.info(f"Using I2I model: {final_model_name} with {len(all_ref_paths)} reference images")
+            logger.info(f"使用图生图模型：{final_model_name}，参考图数量：{len(all_ref_paths)}")
         else:
-            logger.info(f"Using T2I model: {final_model_name}")
+            logger.info(f"使用文生图模型：{final_model_name}")
 
         size = kwargs.pop('size', self.params.get('size', '1280*1280'))
         n = kwargs.pop('n', self.params.get('n', 1))
@@ -79,12 +79,12 @@ class WanxImageModel(ImageGenModel):
         # 不同模型支持的参考图数量不同，这里提前裁掉
         ref_limit = 4 if final_model_name == 'wan2.6-image' else 3
         if len(all_ref_paths) > ref_limit:
-            logger.warning(f"Limiting reference images from {len(all_ref_paths)} to {ref_limit} for model {final_model_name}")
+            logger.warning(f"参考图数量超限：从 {len(all_ref_paths)} 限制到 {ref_limit}（模型：{final_model_name}）")
             all_ref_paths = all_ref_paths[:ref_limit]
         
-        logger.info(f"Starting image generation...")
-        logger.info(f"Prompt: {prompt}")
-        logger.info(f"Model: {final_model_name}, Size: {size}, N: {n}")
+        logger.info("开始生成图片...")
+        logger.info(f"提示词：{prompt}")
+        logger.info(f"模型：{final_model_name}, 尺寸：{size}, 张数：{n}")
 
         try:
             api_start_time = time.time()
@@ -118,15 +118,15 @@ class WanxImageModel(ImageGenModel):
                 },
             }
 
-            logger.info(f"Generation success. Image URL: {image_url}")
-            logger.info(f"API duration: {api_duration:.2f}s")
+            logger.info(f"生成成功，图片链接：{image_url}")
+            logger.info(f"接口耗时：{api_duration:.2f}秒")
             
             # 拉取成品图片到本地
             self._download_image(image_url, output_path)
             return output_path, api_duration
 
         except Exception as e:
-            logger.error(f"Error during generation: {e}")
+            logger.error(f"生成过程中发生异常：{e}")
             logger.error(traceback.format_exc())
             raise
 
@@ -175,13 +175,13 @@ class WanxImageModel(ImageGenModel):
         if negative_prompt:
             payload["parameters"]["negative_prompt"] = negative_prompt
         
-        logger.info(f"Calling Wan 2.6 T2I HTTP API...")
-        logger.info(f"Payload: {payload}")
+        logger.info("正在调用 Wan 2.6 文生图接口...")
+        logger.info(f"请求负载：{payload}")
         
         response = requests.post(url, headers=headers, json=payload, timeout=300)  # 5 minutes for slow API responses
         
-        logger.info(f"Response status: {response.status_code}")
-        logger.info(f"Response body: {response.text[:500]}...")
+        logger.info(f"响应状态码：{response.status_code}")
+        logger.info(f"响应体：{response.text[:500]}...")
         
         if response.status_code != 200:
             error_data = response.json() if response.text else {}
@@ -234,41 +234,16 @@ class WanxImageModel(ImageGenModel):
         
         # 组装消息内容：文本 + 参考图
         content = [{"text": prompt}]
-        
+
         # 参考图如果是本地文件，要先传 OSS 再拿签名地址
         if ref_image_paths:
             # 这里再做一层保护性裁剪，避免超出接口上限
             ref_limit = 4
+            uploader = OSSImageUploader()
             for path in ref_image_paths[:ref_limit]:
-                if os.path.exists(path):
-                    # 本地文件先传 OSS，再生成给 AI 接口使用的签名地址
-                    uploader = OSSImageUploader()
-                    if uploader.is_configured:
-                        object_key = uploader.upload_file(path, sub_path="temp/ref_images")
-                        if object_key:
-                            # 模型调用使用较短有效期的签名地址
-                            signed_url = uploader.sign_url_for_api(object_key)
-                            content.append({"image": signed_url})
-                            logger.info(f"Reference image uploaded, signed URL: {signed_url[:80]}...")
-                    else:
-                        # 没配 OSS 时这里只能记日志；远端接口通常无法直接读本地路径
-                        logger.warning(f"OSS not configured, cannot upload reference image: {path}")
-                elif path.startswith("http"):
-                    # 已经是可访问地址，直接透传
-                    content.append({"image": path})
-                else:
-                    # 也兼容直接传对象键的情况
-                    if is_object_key(path):
-                        uploader = OSSImageUploader()
-                        if uploader.is_configured:
-                            # 对象键也要先换成 AI 可访问的签名地址
-                            signed_url = uploader.sign_url_for_api(path)
-                            content.append({"image": signed_url})
-                            logger.info(f"Reference image (Object Key), signed URL: {signed_url[:80]}...")
-                        else:
-                            logger.warning(f"OSS not configured but Object Key provided: {path}")
-                    else:
-                        logger.warning(f"Reference image not found: {path}")
+                normalized_url = self._normalize_reference_image_url_for_api(path, uploader=uploader)
+                content.append({"image": normalized_url})
+                logger.info(f"参考图已就绪，调用链接：{normalized_url[:80]}...")
         
         payload = {
             "model": "wan2.6-image",
@@ -293,14 +268,14 @@ class WanxImageModel(ImageGenModel):
         if negative_prompt:
             payload["parameters"]["negative_prompt"] = negative_prompt
         
-        logger.info(f"Calling Wan 2.6 Image HTTP API (async)...")
-        logger.info(f"Payload: {payload}")
+        logger.info("正在调用 Wan 2.6 图生图接口（异步）...")
+        logger.info(f"请求负载：{payload}")
         
         # 第一步：提交异步任务
         response = requests.post(create_url, headers=headers, json=payload, timeout=120)  # 2 minutes for task creation
         
-        logger.info(f"Create task response status: {response.status_code}")
-        logger.info(f"Create task response body: {response.text[:500]}")
+        logger.info(f"创建任务响应状态码：{response.status_code}")
+        logger.info(f"创建任务响应体：{response.text[:500]}")
         
         if response.status_code != 200:
             error_data = response.json() if response.text else {}
@@ -312,7 +287,7 @@ class WanxImageModel(ImageGenModel):
         if not task_id:
             raise RuntimeError(f"No task_id in response: {result}")
         
-        logger.info(f"Task created: {task_id}")
+        logger.info(f"任务已创建：{task_id}")
         
         # 第二步：轮询任务直到完成
         poll_url = provider_service.build_provider_url(
@@ -335,13 +310,13 @@ class WanxImageModel(ImageGenModel):
             poll_response = requests.get(poll_url, headers=poll_headers, timeout=30)
             
             if poll_response.status_code != 200:
-                logger.warning(f"Poll request failed: {poll_response.status_code}")
+                logger.warning(f"轮询请求失败：{poll_response.status_code}")
                 continue
             
             poll_result = poll_response.json()
             task_status = poll_result.get('output', {}).get('task_status')
             
-            logger.info(f"Task {task_id} status: {task_status} (elapsed: {elapsed}s)")
+            logger.info(f"任务状态：任务编号={task_id} 状态={task_status} 已耗时={elapsed}秒")
             
             if task_status == 'SUCCEEDED':
                 # 从完成结果里取出图片地址
@@ -358,12 +333,12 @@ class WanxImageModel(ImageGenModel):
                 if not image_url:
                     raise RuntimeError(f"No image URL in content: {content}")
                 
-                logger.info(f"Task completed. Image URL: {image_url}")
+                logger.info(f"任务完成，图片链接：{image_url}")
                 return image_url, {"task_id": task_id, "request_id": poll_result.get("request_id") or poll_response.headers.get("x-request-id")}
             
             elif task_status == 'FAILED':
                 # 失败时把完整响应打出来，方便排查
-                logger.error(f"Task {task_id} failed. Full response: {poll_result}")
+                logger.error(f"任务失败：任务编号={task_id} 完整响应：{poll_result}")
                 
                 # 尽量从不同字段里提取可读错误信息
                 error_msg = (
@@ -400,45 +375,20 @@ class WanxImageModel(ImageGenModel):
         # 其余参数原样透传给 SDK
         call_args.update(kwargs)
         
-        logger.info(f"SDK call_args: {dict((k, v) for k, v in call_args.items() if k != 'images')}")
+        logger.info(f"客户端库调用参数：{dict((k, v) for k, v in call_args.items() if k != 'images')}")
         # 图生图场景下还要把参考图统一整理成 URL
         if all_ref_paths:
             ref_image_urls = []
             uploader = OSSImageUploader()
             for path in all_ref_paths:
-                if os.path.exists(path):
-                    # 本地文件先传 OSS，再换签名地址
-                    if uploader.is_configured:
-                        object_key = uploader.upload_file(path, sub_path="temp/ref_images")
-                        if object_key:
-                            signed_url = uploader.sign_url_for_api(object_key)
-                            ref_image_urls.append(signed_url)
-                            logger.info(f"Reference image uploaded, signed URL: {signed_url[:80]}...")
-                        else:
-                            raise RuntimeError(f"Failed to upload reference image to OSS: {path}")
-                    else:
-                        logger.warning(f"OSS not configured, cannot upload reference image: {path}")
-                elif path.startswith("http"):
-                    # 已经是可访问地址
-                    ref_image_urls.append(path)
-                else:
-                    # 兼容直接传对象键
-                    if is_object_key(path):
-                        if uploader.is_configured:
-                            signed_url = uploader.sign_url_for_api(path)
-                            ref_image_urls.append(signed_url)
-                            logger.info(f"Reference image (Object Key), signed URL: {signed_url[:80]}...")
-                        else:
-                            raise ValueError(f"OSS not configured but Object Key provided: {path}")
-                    else:
-                        raise ValueError(f"Reference image not found: {path}")
+                ref_image_urls.append(self._normalize_reference_image_url_for_api(path, uploader=uploader))
             
-            logger.info(f"DEBUG: ref_image_urls count: {len(ref_image_urls)}")
+            logger.info(f"调试：参考图链接列表 数量：{len(ref_image_urls)}")
             
             # 这里再做一层保护性裁剪
             ref_limit = 4 if model_name == 'wan2.6-image' else 3
             if len(ref_image_urls) > ref_limit:
-                logger.warning(f"Limiting reference images from {len(ref_image_urls)} to {ref_limit}")
+                logger.warning(f"参考图数量超限：从 {len(ref_image_urls)} 限制到 {ref_limit}")
                 ref_image_urls = ref_image_urls[:ref_limit]
             
             call_args['images'] = ref_image_urls
@@ -446,15 +396,15 @@ class WanxImageModel(ImageGenModel):
         # 正式调用 Dashscope SDK
         rsp = ImageSynthesis.call(**call_args)
         
-        logger.info(f"SDK response: {rsp}")
+        logger.info(f"客户端库响应：{rsp}")
 
         if rsp.status_code != HTTPStatus.OK:
-            logger.error(f"Task failed with status code: {rsp.status_code}, code: {rsp.code}, message: {rsp.message}")
+            logger.error(f"任务失败：状态码={rsp.status_code} 代码={rsp.code} 信息={rsp.message}")
             raise RuntimeError(f"Task failed: {rsp.message}")
 
         # 从 SDK 返回结果里提取图片地址
         if hasattr(rsp, 'output'):
-            logger.info(f"Response Output: {rsp.output}")
+            logger.info(f"响应输出：{rsp.output}")
             results = rsp.output.get('results')
             url = rsp.output.get('url')
             
@@ -467,16 +417,56 @@ class WanxImageModel(ImageGenModel):
             elif url:
                  image_url = url
             else:
-                 logger.error(f"Unexpected response structure. Output: {rsp.output}")
+                 logger.error(f"响应结构异常，输出：{rsp.output}")
                  raise RuntimeError("Could not find image URL in response.")
         else:
-             logger.error(f"Response has no output. Response: {rsp}")
+             logger.error(f"响应缺少输出字段，完整响应：{rsp}")
              raise RuntimeError("Response has no output.")
         
         return image_url, {"task_id": None, "request_id": getattr(rsp, "request_id", None)}
 
+    def _normalize_reference_image_url_for_api(self, path: str, uploader: OSSImageUploader | None = None) -> str:
+        """把参考图输入统一转换成可被远端模型服务直接拉取的 URL。"""
+        uploader = uploader or OSSImageUploader()
+
+        if os.path.exists(path):
+            if not uploader.is_configured:
+                raise RuntimeError(f"对象存储未配置，无法上传参考图：{path}")
+            object_key = uploader.upload_file(path, sub_path="temp/ref_images")
+            if not object_key:
+                raise RuntimeError(f"Failed to upload reference image to OSS: {path}")
+            signed_url = uploader.sign_url_for_api(object_key)
+            return self._require_remote_reference_url(
+                signed_url,
+                source_label=f"uploaded object {object_key}",
+            )
+
+        if path.startswith(("http://", "https://")):
+            return path
+
+        if is_object_key(path):
+            if not uploader.is_configured:
+                raise RuntimeError(f"OSS not configured but Object Key provided: {path}")
+            signed_url = uploader.sign_url_for_api(path)
+            return self._require_remote_reference_url(
+                signed_url,
+                source_label=f"object key {path}",
+            )
+
+        raise ValueError(f"Reference image not found: {path}")
+
+    def _require_remote_reference_url(self, candidate_url: str, *, source_label: str) -> str:
+        """校验参考图 URL，避免把空串或非法地址继续传给供应商接口。"""
+        normalized = str(candidate_url or "").strip()
+        if normalized.startswith(("http://", "https://")):
+            return normalized
+        raise RuntimeError(
+            "Reference image URL is unavailable for remote generation: "
+            f"{source_label}"
+        )
+
     def _download_image(self, url: str, output_path: str):
-        logger.info(f"Downloading image to {output_path}...")
+        logger.info(f"正在下载图片到 {output_path}...")
         
         # 给下载请求加重试策略，降低偶发网络错误影响
         retry_strategy = Retry(
@@ -504,10 +494,10 @@ class WanxImageModel(ImageGenModel):
             
             # 先写临时文件，再原子替换成正式文件
             os.rename(temp_path, output_path)
-            logger.info("Download complete.")
+            logger.info("下载完成。")
             
         except Exception as e:
-            logger.error(f"Failed to download image: {e}")
+            logger.error(f"下载图片失败：{e}")
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             raise

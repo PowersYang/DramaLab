@@ -17,43 +17,79 @@ branch_labels = None
 depends_on = None
 
 
+def _current_schema() -> str | None:
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        return None
+    # 中文注释：env.py 已把 search_path 切到业务 schema，这里直接读取 current_schema 保证幂等判断与真实落表 schema 一致。
+    return bind.exec_driver_sql("select current_schema()").scalar()
+
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    schema = _current_schema()
+    columns = inspector.get_columns(table_name, schema=schema)
+    return any(column.get("name") == column_name for column in columns)
+
+
+def _table_exists(table_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    schema = _current_schema()
+    return table_name in inspector.get_table_names(schema=schema)
+
+
+def _index_exists(table_name: str, index_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    schema = _current_schema()
+    indexes = inspector.get_indexes(table_name, schema=schema)
+    return any(index.get("name") == index_name for index in indexes)
+
+
 def upgrade() -> None:
     """创建系列角色主档字段与分集角色引用表。"""
-    op.add_column("characters", sa.Column("canonical_name", sa.String(length=255), nullable=True))
-    op.add_column("characters", sa.Column("aliases_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True))
-    op.add_column("characters", sa.Column("identity_fingerprint", sa.String(length=255), nullable=True))
-    op.add_column("characters", sa.Column("merge_status", sa.String(length=32), nullable=False, server_default="active"))
+    if not _column_exists("characters", "canonical_name"):
+        op.add_column("characters", sa.Column("canonical_name", sa.String(length=255), nullable=True))
+    if not _column_exists("characters", "aliases_json"):
+        op.add_column("characters", sa.Column("aliases_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True))
+    if not _column_exists("characters", "identity_fingerprint"):
+        op.add_column("characters", sa.Column("identity_fingerprint", sa.String(length=255), nullable=True))
+    if not _column_exists("characters", "merge_status"):
+        op.add_column("characters", sa.Column("merge_status", sa.String(length=32), nullable=False, server_default="active"))
 
-    op.create_table(
-        "project_character_links",
-        sa.Column("id", sa.String(length=64), nullable=False),
-        sa.Column("project_id", sa.String(length=64), nullable=False),
-        sa.Column("series_id", sa.String(length=64), nullable=False),
-        sa.Column("character_id", sa.String(length=64), nullable=False),
-        sa.Column("source_name", sa.String(length=255), nullable=True),
-        sa.Column("source_alias", sa.String(length=255), nullable=True),
-        sa.Column("episode_notes", sa.Text(), nullable=True),
-        sa.Column("override_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("match_confidence", sa.Float(), nullable=True),
-        sa.Column("match_status", sa.String(length=32), nullable=False, server_default="confirmed"),
-        sa.Column("organization_id", sa.String(length=64), nullable=True),
-        sa.Column("workspace_id", sa.String(length=64), nullable=True),
-        sa.Column("created_by", sa.String(length=64), nullable=True),
-        sa.Column("updated_by", sa.String(length=64), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("deleted_by", sa.String(length=64), nullable=True),
-        sa.ForeignKeyConstraint(["character_id"], ["characters.id"]),
-        sa.ForeignKeyConstraint(["project_id"], ["projects.id"]),
-        sa.ForeignKeyConstraint(["series_id"], ["series.id"]),
-        sa.PrimaryKeyConstraint("id"),
-    )
+    if not _table_exists("project_character_links"):
+        op.create_table(
+            "project_character_links",
+            sa.Column("id", sa.String(length=64), nullable=False),
+            sa.Column("project_id", sa.String(length=64), nullable=False),
+            sa.Column("series_id", sa.String(length=64), nullable=False),
+            sa.Column("character_id", sa.String(length=64), nullable=False),
+            sa.Column("source_name", sa.String(length=255), nullable=True),
+            sa.Column("source_alias", sa.String(length=255), nullable=True),
+            sa.Column("episode_notes", sa.Text(), nullable=True),
+            sa.Column("override_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column("match_confidence", sa.Float(), nullable=True),
+            sa.Column("match_status", sa.String(length=32), nullable=False, server_default="confirmed"),
+            sa.Column("organization_id", sa.String(length=64), nullable=True),
+            sa.Column("workspace_id", sa.String(length=64), nullable=True),
+            sa.Column("created_by", sa.String(length=64), nullable=True),
+            sa.Column("updated_by", sa.String(length=64), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+            sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.false()),
+            sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("deleted_by", sa.String(length=64), nullable=True),
+            sa.ForeignKeyConstraint(["character_id"], ["characters.id"]),
+            sa.ForeignKeyConstraint(["project_id"], ["projects.id"]),
+            sa.ForeignKeyConstraint(["series_id"], ["series.id"]),
+            sa.PrimaryKeyConstraint("id"),
+        )
 
-    op.create_index("ix_project_character_links_project", "project_character_links", ["project_id"], unique=False)
-    op.create_index("ix_project_character_links_character", "project_character_links", ["character_id"], unique=False)
-    op.create_index("ix_project_character_links_series_status", "project_character_links", ["series_id", "match_status"], unique=False)
+    if _table_exists("project_character_links") and not _index_exists("project_character_links", "ix_project_character_links_project"):
+        op.create_index("ix_project_character_links_project", "project_character_links", ["project_id"], unique=False)
+    if _table_exists("project_character_links") and not _index_exists("project_character_links", "ix_project_character_links_character"):
+        op.create_index("ix_project_character_links_character", "project_character_links", ["character_id"], unique=False)
+    if _table_exists("project_character_links") and not _index_exists("project_character_links", "ix_project_character_links_series_status"):
+        op.create_index("ix_project_character_links_series_status", "project_character_links", ["series_id", "match_status"], unique=False)
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_characters_series_canonical_name_active

@@ -1,19 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Users, MapPin, Box, RefreshCw, Image as ImageIcon, X, Check, ChevronRight, Trash2, Plus, Video, FileText, Wand2, Palette, Sliders } from "lucide-react";
+import { User, Users, MapPin, Box, X, Check, Plus, RefreshCw } from "lucide-react";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
 import { api, crudApi, TaskJob } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
-import { getCharacterPreviewImage } from "@/lib/characterAssets";
-import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
-import { getEffectiveProjectCharacters, getProjectCharacterSourceHint } from "@/lib/projectAssets";
+import { formatRequestFailureMessage } from "@/lib/taskFeedback";
+import { getEffectiveProjectCharacters } from "@/lib/projectAssets";
 import AssetTypeTabs from "@/components/common/AssetTypeTabs";
+import StudioAssetCard from "@/components/common/StudioAssetCard";
+import ProjectCharacterSourceHintBanner from "@/components/common/ProjectCharacterSourceHintBanner";
 import CharacterWorkbench from "./CharacterWorkbench";
-import { VariantSelector } from "../common/VariantSelector";
-import { VideoVariantSelector } from "../common/VideoVariantSelector";
+import ScenePropWorkbenchModal from "./ScenePropWorkbenchModal";
 import { PANEL_HEADER_CLASS, PANEL_META_TEXT_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 function getAssetTypeLabel(type: "character" | "scene" | "prop" | string) {
@@ -24,6 +24,8 @@ function getAssetTypeLabel(type: "character" | "scene" | "prop" | string) {
 }
 
 const ACTIVE_TASK_STATUSES = ["queued", "claimed", "running", "retry_waiting", "cancel_requested"];
+const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+const EMPTY_TASK_IDS: string[] = [];
 
 function mapJobToGeneratingTask(job: TaskJob) {
     const assetId = job.resource_id || job.payload_json?.asset_id;
@@ -40,9 +42,18 @@ function mapJobToGeneratingTask(job: TaskJob) {
     }
 
     if (job.task_type === "asset.motion_ref.generate") {
+        const motionAssetType = job.payload_json?.asset_type;
+        const generationType =
+            motionAssetType === "head_shot"
+                ? "video_head_shot"
+                : motionAssetType === "scene"
+                    ? "video_scene"
+                    : motionAssetType === "prop"
+                        ? "video_prop"
+                        : "video_full_body";
         return {
             assetId,
-            generationType: job.payload_json?.asset_type === "head_shot" ? "video_head_shot" : "video_full_body",
+            generationType,
             batchSize: 1,
         };
     }
@@ -50,13 +61,37 @@ function mapJobToGeneratingTask(job: TaskJob) {
     return null;
 }
 
+export function collectTerminalGeneratingTaskKeys(
+    jobsById: Record<string, TaskJob>,
+    jobIds: string[],
+    assetIdSet: Set<string>,
+) {
+    // 中文注释：仅终态任务参与 pending 清理，运行态仍由活跃任务列表驱动卡片“生成中”展示。
+    const keys = new Set<string>();
+    jobIds.forEach((jobId) => {
+        const job = jobsById[jobId];
+        if (!job || !TERMINAL_TASK_STATUSES.has(job.status)) {
+            return;
+        }
+        const mapped = mapJobToGeneratingTask(job);
+        if (!mapped || !assetIdSet.has(mapped.assetId)) {
+            return;
+        }
+        keys.add(`${mapped.assetId}:${mapped.generationType}`);
+    });
+    return Array.from(keys);
+}
+
+const LOCAL_PENDING_TASK_TTL_MS = 15000;
+
 export default function ConsistencyVault() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const reconcileGeneratingTasks = useProjectStore((state) => state.reconcileGeneratingTasks);
     const enqueueReceipts = useTaskStore((state) => state.enqueueReceipts);
-    const waitForJob = useTaskStore((state) => state.waitForJob);
     const fetchProjectJobs = useTaskStore((state) => state.fetchProjectJobs);
+    const jobsById = useTaskStore((state) => state.jobsById);
+    const jobIdsByProject = useTaskStore((state) => state.jobIdsByProject);
     const { account, getTaskPrice, canAffordTask } = useBillingGuard();
 
 
@@ -80,6 +115,11 @@ export default function ConsistencyVault() {
     const motionRefGeneratePrice = getTaskPrice("asset.motion_ref.generate");
     const motionRefAffordable = canAffordTask("asset.motion_ref.generate");
     const effectiveCharacters = getEffectiveProjectCharacters(currentProject);
+    const previousActiveTaskKeysRef = useRef<string[]>([]);
+    const previousProjectIdRef = useRef<string | null>(null);
+    const [pendingGeneratingTasks, setPendingGeneratingTasks] = useState<
+        { assetId: string; generationType: string; batchSize: number; expiresAt: number }[]
+    >([]);
 
     // Derive selected asset from currentProject
     const selectedAsset = currentProject ? (() => {
@@ -90,15 +130,31 @@ export default function ConsistencyVault() {
         return list?.find((a: any) => a.id === selectedAssetId) || null;
     })() : null;
 
+    const effectiveGeneratingTasks = useMemo(() => {
+        const now = Date.now();
+        const merged = new Map<string, { assetId: string; generationType: string; batchSize: number }>();
+
+        [...(generatingTasks || []), ...pendingGeneratingTasks.filter((task) => task.expiresAt > now)].forEach((task: any) => {
+            const key = `${task.assetId}:${task.generationType}`;
+            merged.set(key, {
+                assetId: task.assetId,
+                generationType: task.generationType,
+                batchSize: task.batchSize,
+            });
+        });
+
+        return Array.from(merged.values());
+    }, [generatingTasks, pendingGeneratingTasks]);
+
     const isAssetGenerating = (assetId: string) => {
-        return generatingTasks?.some((t: any) => t.assetId === assetId);
+        return effectiveGeneratingTasks.some((t: any) => t.assetId === assetId);
     };
 
     const getAssetGeneratingTypes = (assetId: string) => {
-        return generatingTasks?.filter((t: any) => t.assetId === assetId).map((t: any) => ({
+        return effectiveGeneratingTasks.filter((t: any) => t.assetId === assetId).map((t: any) => ({
             type: t.generationType,
             batchSize: t.batchSize
-        })) || [];
+        }));
     };
 
     const handleUpdateDescription = async (assetId: string, type: string, description: string) => {
@@ -111,13 +167,34 @@ export default function ConsistencyVault() {
         }
     };
 
-    const handleGenerate = async (assetId: string, type: string, generationType: string = "all", prompt: string = "", applyStyle: boolean = true, negativePrompt: string = "", batchSize: number = 1) => {
+    const handleGenerate = async (
+        assetId: string,
+        type: string,
+        generationType: string = "all",
+        prompt: string = "",
+        applyStyle: boolean = true,
+        negativePrompt: string = "",
+        batchSize: number = 1,
+        modelName?: string,
+    ) => {
         if (!currentProject) return;
 
         // Add task with specific generation type and batch size
         if (addGeneratingTask) {
             addGeneratingTask(assetId, generationType, batchSize);
         }
+        setPendingGeneratingTasks((current) => {
+            const nextTask = {
+                assetId,
+                generationType,
+                batchSize,
+                expiresAt: Date.now() + LOCAL_PENDING_TASK_TTL_MS,
+            };
+            return [
+                ...current.filter((task) => !(task.assetId === assetId && task.generationType === generationType)),
+                nextTask,
+            ];
+        });
 
         try {
             const stylePrompt = currentProject?.art_direction?.style_config?.positive_prompt || "";
@@ -136,19 +213,15 @@ export default function ConsistencyVault() {
                 applyStyle,
                 negativePrompt,
                 batchSize,
-                currentProject.model_settings?.t2i_model
+                modelName || currentProject.model_settings?.t2i_model
             );
             enqueueReceipts(currentProject.id, [response]);
-            const job = await waitForJob(response.job_id, { intervalMs: 2000 });
-            const updatedProject = await api.getProject(currentProject.id);
-            updateProject(currentProject.id, updatedProject);
-            if (["failed", "timed_out"].includes(job.status)) {
-                alert(job.error_message || "生成失败，请稍后重试");
-            }
         } catch (error: any) {
             console.error("Failed to generate asset:", error);
-            alert(`启动生成任务失败: ${error.response?.data?.detail || error.message}`);
-        } finally {
+            alert(formatRequestFailureMessage(error, "启动生成任务失败"));
+            setPendingGeneratingTasks((current) =>
+                current.filter((task) => !(task.assetId === assetId && task.generationType === generationType)),
+            );
             if (removeGeneratingTask) {
                 removeGeneratingTask(assetId, generationType);
             }
@@ -232,12 +305,31 @@ export default function ConsistencyVault() {
             }
         }
 
-        // Use a more specific generation type to avoid state pollution
-        const generationType = resolvedAssetSubType === "head_shot" ? "video_head_shot" : "video_full_body";
+        // 中文注释：把场景/道具也映射成独立 generationType，避免和角色动态任务互相污染 UI 生成状态。
+        const generationType =
+            finalAssetType === "scene"
+                ? "video_scene"
+                : finalAssetType === "prop"
+                    ? "video_prop"
+                    : resolvedAssetSubType === "head_shot"
+                        ? "video_head_shot"
+                        : "video_full_body";
 
         if (addGeneratingTask) {
             addGeneratingTask(assetId, generationType, 1);
         }
+        setPendingGeneratingTasks((current) => {
+            const nextTask = {
+                assetId,
+                generationType,
+                batchSize: 1,
+                expiresAt: Date.now() + LOCAL_PENDING_TASK_TTL_MS,
+            };
+            return [
+                ...current.filter((task) => !(task.assetId === assetId && task.generationType === generationType)),
+                nextTask,
+            ];
+        });
 
         try {
             console.log(`[handleGenerateVideo] Starting ${generationType} generation for asset ${type}, type: ${finalAssetType}...`);
@@ -251,16 +343,12 @@ export default function ConsistencyVault() {
                 duration
             );
             enqueueReceipts(currentProject.id, [response]);
-            const job = await waitForJob(response.job_id, { intervalMs: 3000 });
-            const updatedProject = await api.getProject(currentProject.id);
-            updateProject(currentProject.id, updatedProject);
-            if (["failed", "timed_out"].includes(job.status)) {
-                alert(`视频生成失败: ${job.error_message || '生成失败，请稍后重试'}`);
-            }
         } catch (error: any) {
             console.error("Failed to generate video:", error);
-            alert(`启动视频生成失败: ${error.response?.data?.detail || error.message}`);
-        } finally {
+            alert(formatRequestFailureMessage(error, "启动视频生成失败"));
+            setPendingGeneratingTasks((current) =>
+                current.filter((task) => !(task.assetId === assetId && task.generationType === generationType)),
+            );
             if (removeGeneratingTask) {
                 removeGeneratingTask(assetId, generationType);
             }
@@ -284,18 +372,43 @@ export default function ConsistencyVault() {
     const assets = activeTab === "character" ? effectiveCharacters :
         activeTab === "scene" ? currentProject?.scenes :
             activeTab === "prop" ? currentProject?.props : [];
+    const currentProjectAssetIds = useMemo(() => {
+        if (!currentProject) {
+            return [];
+        }
+
+        return [
+            ...effectiveCharacters.map((asset: any) => asset.id),
+            ...(currentProject.scenes || []).map((asset: any) => asset.id),
+            ...(currentProject.props || []).map((asset: any) => asset.id),
+        ];
+    }, [currentProject, effectiveCharacters]);
+    const currentProjectAssetIdSet = useMemo(() => new Set(currentProjectAssetIds), [currentProjectAssetIds]);
+    const currentProjectGeneratingTasks = useMemo(() => {
+        return effectiveGeneratingTasks.filter((task: any) => currentProjectAssetIdSet.has(task.assetId));
+    }, [currentProjectAssetIdSet, effectiveGeneratingTasks]);
+    const activeGeneratingTaskKeys = useMemo(() => {
+        return currentProjectGeneratingTasks.map((task: any) => `${task.assetId}:${task.generationType}`).sort();
+    }, [currentProjectGeneratingTasks]);
+    const currentProjectTaskIds = useMemo(() => {
+        if (!currentProject) {
+            return EMPTY_TASK_IDS;
+        }
+        return jobIdsByProject[currentProject.id] || EMPTY_TASK_IDS;
+    }, [currentProject, jobIdsByProject]);
+    const terminalGeneratingTaskKeys = useMemo(() => {
+        if (!currentProject) {
+            return EMPTY_TASK_IDS;
+        }
+
+        // 中文注释：任务队列已经进入终态时，立即回收对应 optimistic 生成态，避免卡片继续显示“生成中”。
+        return collectTerminalGeneratingTaskKeys(jobsById, currentProjectTaskIds, currentProjectAssetIdSet);
+    }, [currentProject, currentProjectAssetIdSet, currentProjectTaskIds, jobsById]);
 
     useEffect(() => {
         if (!currentProject) {
             return;
         }
-
-        const projectAssetIds = [
-            ...effectiveCharacters.map((asset: any) => asset.id),
-            ...(currentProject.scenes || []).map((asset: any) => asset.id),
-            ...(currentProject.props || []).map((asset: any) => asset.id),
-        ];
-        const projectAssetIdSet = new Set(projectAssetIds);
 
         let isCancelled = false;
 
@@ -310,8 +423,8 @@ export default function ConsistencyVault() {
                 const activeTasks = jobs
                     .map(mapJobToGeneratingTask)
                     .filter((task): task is { assetId: string; generationType: string; batchSize: number } => Boolean(task))
-                    .filter((task) => projectAssetIdSet.has(task.assetId));
-                reconcileGeneratingTasks(projectAssetIds, activeTasks);
+                    .filter((task) => currentProjectAssetIdSet.has(task.assetId));
+                reconcileGeneratingTasks(currentProjectAssetIds, activeTasks);
             } catch (error) {
                 if (!isCancelled) {
                     console.error("Failed to reconcile asset generation tasks:", error);
@@ -320,15 +433,125 @@ export default function ConsistencyVault() {
         };
 
         void reconcileWithTaskQueue();
-        const timer = window.setInterval(() => {
-            void reconcileWithTaskQueue();
-        }, 15000);
-
         return () => {
             isCancelled = true;
+        };
+    }, [currentProject, currentProjectAssetIdSet, currentProjectAssetIds, fetchProjectJobs, reconcileGeneratingTasks]);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            const now = Date.now();
+            setPendingGeneratingTasks((current) => current.filter((task) => task.expiresAt > now));
+        }, 1000);
+
+        return () => {
             window.clearInterval(timer);
         };
-    }, [currentProject, effectiveCharacters, fetchProjectJobs, reconcileGeneratingTasks]);
+    }, []);
+
+    useEffect(() => {
+        if (generatingTasks.length === 0) {
+            return;
+        }
+
+        const activeKeys = new Set(generatingTasks.map((task: any) => `${task.assetId}:${task.generationType}`));
+        setPendingGeneratingTasks((current) =>
+            current.filter((task) => !activeKeys.has(`${task.assetId}:${task.generationType}`)),
+        );
+    }, [generatingTasks]);
+
+    useEffect(() => {
+        if (terminalGeneratingTaskKeys.length === 0) {
+            return;
+        }
+        const terminalKeySet = new Set(terminalGeneratingTaskKeys);
+        setPendingGeneratingTasks((current) =>
+            current.filter((task) => !terminalKeySet.has(`${task.assetId}:${task.generationType}`)),
+        );
+    }, [terminalGeneratingTaskKeys]);
+
+    useEffect(() => {
+        if (!currentProject) {
+            return;
+        }
+
+        let cancelled = false;
+        let timeoutId: number | null = null;
+
+        // 关闭弹窗后仍然持续轮询活跃任务，保证资产卡片和再次打开的工作台都能吃到最新状态。
+        const pollActiveAssetJobs = async () => {
+            try {
+                const jobs = await fetchProjectJobs(currentProject.id, ACTIVE_TASK_STATUSES);
+                if (cancelled) {
+                    return;
+                }
+                const activeTasks = jobs
+                    .map(mapJobToGeneratingTask)
+                    .filter((task): task is { assetId: string; generationType: string; batchSize: number } => Boolean(task))
+                    .filter((task) => currentProjectAssetIdSet.has(task.assetId));
+                reconcileGeneratingTasks(currentProjectAssetIds, activeTasks);
+            } catch (error) {
+                if (!cancelled) {
+                    console.error("Failed to poll active asset jobs:", error);
+                }
+            } finally {
+                if (!cancelled) {
+                    timeoutId = window.setTimeout(pollActiveAssetJobs, 3000);
+                }
+            }
+        };
+
+        timeoutId = window.setTimeout(pollActiveAssetJobs, 3000);
+        return () => {
+            cancelled = true;
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        };
+    }, [activeGeneratingTaskKeys, currentProject, currentProjectAssetIdSet, currentProjectAssetIds, fetchProjectJobs, reconcileGeneratingTasks]);
+
+    useEffect(() => {
+        if (!currentProject) {
+            previousActiveTaskKeysRef.current = [];
+            previousProjectIdRef.current = null;
+            return;
+        }
+
+        if (previousProjectIdRef.current !== currentProject.id) {
+            previousProjectIdRef.current = currentProject.id;
+            previousActiveTaskKeysRef.current = activeGeneratingTaskKeys;
+            return;
+        }
+
+        const previousKeys = previousActiveTaskKeysRef.current;
+        const activeKeySet = new Set(activeGeneratingTaskKeys);
+        const finishedTaskKeys = previousKeys.filter((taskKey) => !activeKeySet.has(taskKey));
+        previousActiveTaskKeysRef.current = activeGeneratingTaskKeys;
+
+        if (finishedTaskKeys.length === 0) {
+            return;
+        }
+
+        let cancelled = false;
+
+        // 只有后台任务刚结束时才补拉项目详情，避免历史完成任务导致工作台重复刷新。
+        void (async () => {
+            try {
+                const refreshedProject = await api.getProject(currentProject.id);
+                if (!cancelled) {
+                    updateProject(currentProject.id, refreshedProject);
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    console.error("Failed to refresh project after asset task completion:", error);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeGeneratingTaskKeys, currentProject, updateProject]);
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -379,9 +602,7 @@ export default function ConsistencyVault() {
                     </button>
                 </div>
                 {activeTab === "character" && currentProject?.series_id && (
-                    <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
-                        {getProjectCharacterSourceHint(currentProject)}
-                    </div>
+                    <ProjectCharacterSourceHintBanner project={currentProject} className="mt-3" />
                 )}
             </div>
 
@@ -407,7 +628,7 @@ export default function ConsistencyVault() {
                     <div className="p-6">
                         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                             {assets?.map((asset: any) => (
-                                <AssetCard
+                                <StudioAssetCard
                                     key={asset.id}
                                     asset={asset}
                                     type={activeTab}
@@ -435,37 +656,60 @@ export default function ConsistencyVault() {
                                 setSelectedAssetType(null);
                             }}
                             onUpdateDescription={(desc: string) => handleUpdateDescription(selectedAssetId, selectedAssetType, desc)}
-                            onGenerate={(type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number) => handleGenerate(selectedAssetId, selectedAssetType, type, prompt, applyStyle, negativePrompt, batchSize)}
+                            onGenerate={(type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number, modelName?: string) => handleGenerate(selectedAssetId, selectedAssetType, type, prompt, applyStyle, negativePrompt, batchSize, modelName)}
                             generatingTypes={getAssetGeneratingTypes(selectedAssetId)}
                             stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
                             styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
                             onGenerateVideo={(prompt: string, negativePrompt: string, duration: number, subType?: string) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, negativePrompt, duration, subType)}
                             onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
+                            promptStateProjectId={currentProject?.id}
                         />
-                    ) : (
-                        <CharacterDetailModal
-                            asset={selectedAsset}
-                            type={selectedAssetType}
+                    ) : (selectedAssetType === "scene" || selectedAssetType === "prop") ? (
+                            <ScenePropWorkbenchModal
+                                asset={selectedAsset as any}
+                                assetType={selectedAssetType as "scene" | "prop"}
+                            promptStateProjectId={currentProject?.id}
                             onClose={() => {
                                 setSelectedAssetId(null);
                                 setSelectedAssetType(null);
                             }}
                             onUpdateDescription={(desc: string) => handleUpdateDescription(selectedAssetId, selectedAssetType, desc)}
-                            onGenerate={(applyStyle: boolean, negativePrompt: string, batchSize: number) => handleGenerate(selectedAssetId, selectedAssetType, "all", "", applyStyle, negativePrompt, batchSize)}
-                            isGenerating={isAssetGenerating(selectedAssetId)}
-                            generatePriceCredits={assetGeneratePrice}
-                            balanceCredits={account?.balance_credits}
-                            generateAffordable={assetGenerateAffordable}
-                            stylePrompt={currentProject?.art_direction?.style_config?.positive_prompt || ""}
                             styleNegativePrompt={currentProject?.art_direction?.style_config?.negative_prompt || ""}
-                            onGenerateVideo={(prompt: string, duration: number) => handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, "", duration, "video")}
-                            onDeleteVideo={(videoId: string) => handleDeleteVideo(selectedAssetId, selectedAssetType, videoId)}
+                            onSelectVariant={(variantId: string) =>
+                                api.selectAssetVariant(currentProject!.id, selectedAssetId, selectedAssetType, variantId).then((updatedProject) => {
+                                    updateProject(currentProject!.id, updatedProject);
+                                })
+                            }
+                            onDeleteVariant={(variantId: string) =>
+                                api.deleteAssetVariant(currentProject!.id, selectedAssetId, selectedAssetType, variantId).then((updatedProject) => {
+                                    updateProject(currentProject!.id, updatedProject);
+                                })
+                            }
+                            onGenerateImage={(prompt: string, negativePrompt: string, batchSize: number) =>
+                                handleGenerate(
+                                    selectedAssetId,
+                                    selectedAssetType,
+                                    "all",
+                                    prompt,
+                                    true,
+                                    negativePrompt,
+                                    batchSize,
+                                    currentProject?.model_settings?.t2i_model,
+                                )
+                            }
+                            onGenerateVideo={(prompt: string, negativePrompt: string) =>
+                                handleGenerateVideo(selectedAssetId, selectedAssetType, prompt, negativePrompt, 5, "video")
+                            }
+                            isGeneratingImage={isAssetGenerating(selectedAssetId)}
                             isGeneratingVideo={getAssetGeneratingTypes(selectedAssetId).some((t: any) => t.type.startsWith("video"))}
-                            videoGeneratePriceCredits={motionRefGeneratePrice}
-                            videoBalanceCredits={account?.balance_credits}
-                            videoGenerateAffordable={motionRefAffordable}
+                            imagePriceCredits={assetGeneratePrice}
+                            imageBalanceCredits={account?.balance_credits ?? 0}
+                            imageAffordable={assetGenerateAffordable}
+                            videoPriceCredits={motionRefGeneratePrice}
+                            videoBalanceCredits={account?.balance_credits ?? 0}
+                            videoAffordable={motionRefAffordable}
                         />
-                    )
+                    ) : null
                 )}
             </AnimatePresence>
 
@@ -484,478 +728,6 @@ export default function ConsistencyVault() {
         </div >
     );
 }
-
-function CharacterDetailModal({
-    asset,
-    type,
-    onClose,
-    onUpdateDescription,
-    onGenerate,
-    isGenerating,
-    generatePriceCredits,
-    balanceCredits,
-    generateAffordable,
-    stylePrompt = "",
-    styleNegativePrompt = "",
-    onGenerateVideo,
-    onDeleteVideo,
-    isGeneratingVideo,
-    videoGeneratePriceCredits,
-    videoBalanceCredits,
-    videoGenerateAffordable,
-}: any) {
-    const [description, setDescription] = useState(asset.description);
-    const [isEditing, setIsEditing] = useState(false);
-    const currentProject = useProjectStore((state) => state.currentProject);
-    const updateProject = useProjectStore((state) => state.updateProject);
-
-    // Style Controls
-    const [applyStyle, setApplyStyle] = useState(true);
-    const [negativePrompt, setNegativePrompt] = useState(styleNegativePrompt || "low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry");
-    const [showAdvanced, setShowAdvanced] = useState(false);
-
-    // Video Controls
-    const [activeTab, setActiveTab] = useState<"image" | "video">("image");
-    const [videoPrompt, setVideoPrompt] = useState(asset.video_prompt || "");
-
-    // Sync local state if asset changes
-    useEffect(() => {
-        setDescription(asset.description);
-        if (asset.video_prompt) setVideoPrompt(asset.video_prompt);
-        else if (!videoPrompt) {
-            setVideoPrompt(`Cinematic shot of ${asset.name}, ${asset.description}, looking around, breathing, slight movement, high quality, 4k`);
-        }
-    }, [asset]);
-
-    // Sync negative prompt if style changes
-    useEffect(() => {
-        if (styleNegativePrompt && (!negativePrompt || negativePrompt.includes("low quality"))) {
-            setNegativePrompt(styleNegativePrompt);
-        }
-    }, [styleNegativePrompt]);
-
-    const handleSave = () => {
-        onUpdateDescription(description);
-        setIsEditing(false);
-    };
-
-    const handleSelectVariant = async (variantId: string) => {
-        if (!currentProject) return;
-        try {
-            const updatedProject = await api.selectAssetVariant(currentProject.id, asset.id, type, variantId);
-            updateProject(currentProject.id, updatedProject);
-        } catch (error) {
-            console.error("Failed to select variant:", error);
-        }
-    };
-
-    const handleDeleteVariant = async (variantId: string) => {
-        if (!currentProject) return;
-        try {
-            const updatedProject = await api.deleteAssetVariant(currentProject.id, asset.id, type, variantId);
-            updateProject(currentProject.id, updatedProject);
-        } catch (error) {
-            console.error("Failed to delete variant:", error);
-        }
-    };
-
-    const handleGenerateClick = (batchSize: number) => {
-        onGenerate(applyStyle, negativePrompt, batchSize);
-    };
-
-    const typeLabel = getAssetTypeLabel(type);
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 md:p-8">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="asset-workbench-shell asset-surface-strong border border-white/10 rounded-[32px] w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl"
-            >
-                {/* ── Header ── */}
-                <div className="flex h-20 items-center justify-between border-b border-white/5 bg-white/[0.02] px-8">
-                    <div className="flex items-center gap-4">
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                            type === "scene" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                        } border`}>
-                            {type === "scene" ? <MapPin size={20} /> : <Box size={20} />}
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h2 className="text-xl font-bold text-white">{asset.name}</h2>
-                                <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                                    {typeLabel}详情
-                                </span>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-0.5">管理资产参考图与视频变体</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full text-gray-500 hover:text-white transition-all">
-                        <X size={24} />
-                    </button>
-                </div>
-
-                {/* ── Main Content Area ── */}
-                <div className="flex-1 flex overflow-hidden">
-                    {/* Left: Media Control */}
-                    <div className="w-[55%] flex flex-col border-r border-white/5 bg-black/20">
-                        {/* Internal Tabs */}
-                        <div className="flex p-2 bg-black/40 border-b border-white/5">
-                            <button
-                                onClick={() => setActiveTab("image")}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                                    activeTab === "image" 
-                                        ? "bg-white/10 text-white shadow-lg ring-1 ring-white/10" 
-                                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                                }`}
-                            >
-                                <ImageIcon size={16} />
-                                图片参考
-                            </button>
-                            <button
-                                onClick={() => setActiveTab("video")}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                                    activeTab === "video" 
-                                        ? "bg-white/10 text-white shadow-lg ring-1 ring-white/10" 
-                                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                                }`}
-                            >
-                                <Video size={16} />
-                                视频参考
-                            </button>
-                        </div>
-
-                        <div className="flex-1 overflow-hidden p-6">
-                            {activeTab === "image" ? (
-                                <VariantSelector
-                                    asset={asset.image_asset}
-                                    currentImageUrl={asset.image_url}
-                                    onSelect={handleSelectVariant}
-                                    onDelete={handleDeleteVariant}
-                                    onGenerate={handleGenerateClick}
-                                    isGenerating={isGenerating}
-                                    disableGenerate={!generateAffordable}
-                                    generateDisabledReason="当前组织算力豆余额不足，无法提交资产生成任务"
-                                    generatePriceCredits={generatePriceCredits}
-                                    generateBalanceCredits={balanceCredits ?? 0}
-                                    aspectRatio={type === "scene" ? "16:9" : "1:1"}
-                                    className="h-full"
-                                />
-                            ) : (
-                                <VideoVariantSelector
-                                    videos={asset.video_assets || []}
-                                    onDelete={onDeleteVideo}
-                                    onGenerate={(duration) => onGenerateVideo(videoPrompt, duration)}
-                                    isGenerating={isGeneratingVideo}
-                                    generatePriceCredits={videoGeneratePriceCredits}
-                                    generateBalanceCredits={videoBalanceCredits ?? 0}
-                                    disableGenerate={!videoGenerateAffordable}
-                                    aspectRatio={type === "scene" ? "16:9" : "1:1"}
-                                    className="h-full"
-                                />
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Right: Info & Settings */}
-                    <div className="flex-1 flex flex-col bg-black/20">
-                        <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
-                            {/* Section: Description */}
-                            <section>
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-2 text-gray-400">
-                                        <FileText size={14} />
-                                        <h3 className="text-xs font-bold uppercase tracking-widest">素材描述</h3>
-                                    </div>
-                                    {!isEditing && (
-                                        <button 
-                                            onClick={() => setIsEditing(true)} 
-                                            className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
-                                        >
-                                            修改描述
-                                        </button>
-                                    )}
-                                </div>
-                                
-                                {isEditing ? (
-                                    <div className="space-y-3">
-                                        <textarea
-                                            value={description}
-                                            onChange={(e) => setDescription(e.target.value)}
-                                            className="w-full h-40 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-gray-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all"
-                                            placeholder="请输入详细的素材描述..."
-                                        />
-                                        <div className="flex justify-end gap-2">
-                                            <button 
-                                                onClick={() => { setIsEditing(false); setDescription(asset.description); }} 
-                                                className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-300 transition-colors"
-                                            >
-                                                取消
-                                            </button>
-                                            <button 
-                                                onClick={handleSave} 
-                                                className="px-5 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20"
-                                            >
-                                                保存更改
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="group relative">
-                                        <p className="text-[13px] text-gray-300 leading-relaxed bg-white/[0.03] p-5 rounded-2xl border border-white/5 group-hover:border-white/10 transition-all">
-                                            {asset.description || "暂未填写描述"}
-                                        </p>
-                                    </div>
-                                )}
-                            </section>
-
-                            {/* Section: Prompts */}
-                            <section className="space-y-6">
-                                {activeTab === "video" ? (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2 text-gray-400">
-                                            <Wand2 size={14} />
-                                            <h3 className="text-xs font-bold uppercase tracking-widest">视频提示词</h3>
-                                        </div>
-                                        <textarea
-                                            value={videoPrompt}
-                                            onChange={(e) => setVideoPrompt(e.target.value)}
-                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-gray-300 resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
-                                            placeholder="描述您想要的视频动态效果..."
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="space-y-6">
-                                        <div className="space-y-4">
-                                            <div className="flex items-center gap-2 text-gray-400">
-                                                <Palette size={14} />
-                                                <h3 className="text-xs font-bold uppercase tracking-widest">全局风格</h3>
-                                            </div>
-                                            <div className="bg-white/[0.03] rounded-2xl p-5 border border-white/5 space-y-4">
-                                                <label className="flex items-center gap-3 cursor-pointer group">
-                                                    <div className="relative flex items-center">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={applyStyle}
-                                                            onChange={(e) => setApplyStyle(e.target.checked)}
-                                                            className="peer sr-only"
-                                                        />
-                                                        <div className="h-5 w-9 rounded-full bg-white/10 transition-colors peer-checked:bg-indigo-600" />
-                                                        <div className="absolute left-1 top-1 h-3 w-3 rounded-full bg-white transition-transform peer-checked:translate-x-4" />
-                                                    </div>
-                                                    <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">应用艺术指导风格</span>
-                                                </label>
-
-                                                {stylePrompt && (
-                                                    <div className="text-[11px] text-gray-500 font-mono bg-black/40 p-3 rounded-xl border border-white/5 leading-relaxed">
-                                                        <span className="text-indigo-400 font-bold mr-2">STYLE:</span> 
-                                                        {stylePrompt}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            <button
-                                                onClick={() => setShowAdvanced(!showAdvanced)}
-                                                className="flex items-center justify-between w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-all"
-                                            >
-                                                <div className="flex items-center gap-2 text-gray-400">
-                                                    <Sliders size={14} />
-                                                    <span className="text-xs font-bold uppercase tracking-widest">高级设置（负向提示词）</span>
-                                                </div>
-                                                <ChevronRight size={16} className={`text-gray-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
-                                            </button>
-
-                                            <AnimatePresence>
-                                                {showAdvanced && (
-                                                    <motion.div
-                                                        initial={{ height: 0, opacity: 0 }}
-                                                        animate={{ height: "auto", opacity: 1 }}
-                                                        exit={{ height: 0, opacity: 0 }}
-                                                        className="overflow-hidden"
-                                                    >
-                                                        <textarea
-                                                            value={negativePrompt}
-                                                            onChange={(e) => setNegativePrompt(e.target.value)}
-                                                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-gray-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all"
-                                                            placeholder="排除您不想要的视觉元素..."
-                                                        />
-                                                    </motion.div>
-                                                )}
-                                            </AnimatePresence>
-                                        </div>
-                                    </div>
-                                )}
-                            </section>
-                        </div>
-
-                        {/* Footer Actions */}
-                        <div className="p-8 border-t border-white/5 bg-white/[0.02] flex gap-4">
-                            <button
-                                onClick={onClose}
-                                className="flex-1 py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold text-sm hover:bg-white/10 transition-all flex items-center justify-center gap-2"
-                            >
-                                <Check size={18} className="text-indigo-400" />
-                                确认完成
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </motion.div>
-        </div>
-    );
-}
-
-function ImageWithRetry({ src, alt, className }: { src: string, alt: string, className?: string }) {
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(false);
-    const [retryCount, setRetryCount] = useState(0);
-
-    // Reset state when src changes
-    useEffect(() => {
-        setIsLoading(true);
-        setError(false);
-        setRetryCount(0);
-    }, [src]);
-
-    useEffect(() => {
-        if (error && retryCount < 10) {
-            const timer = setTimeout(() => {
-                setRetryCount(prev => prev + 1);
-                setError(false);
-            }, 1000 * (retryCount + 1)); // Exponential backoff
-            return () => clearTimeout(timer);
-        }
-    }, [error, retryCount]);
-
-    // Construct src with retry param to bypass cache if retrying
-    const displaySrc = retryCount > 0 ? `${src}${src.includes('?') ? '&' : '?'}retry=${retryCount}` : src;
-
-    return (
-        <div className={`relative ${className}`}>
-            {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/5 backdrop-blur-sm z-10">
-                    <RefreshCw className="animate-spin text-white/50" size={24} />
-                </div>
-            )}
-            <img
-                src={displaySrc}
-                alt={alt}
-                className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
-                onLoad={() => setIsLoading(false)}
-                onError={() => {
-                    setError(true);
-                    setIsLoading(true); // Keep showing loader while retrying
-                }}
-            />
-            {error && retryCount >= 10 && (
-                <div className="absolute inset-0 flex items-center justify-center bg-red-500/10 backdrop-blur-sm z-20">
-                    <span className="text-xs text-red-400 font-bold">加载失败</span>
-                </div>
-            )}
-        </div>
-    );
-}
-
-function AssetCard({
-    asset,
-    type,
-    isGenerating,
-    onClick,
-    onDelete,
-}: any) {
-    const getSelectedVariant = (imageAsset?: { selected_id?: string | null; variants?: Array<{ id: string; url: string; created_at?: string | number }> }) => {
-        if (!imageAsset?.variants?.length) return null;
-        return imageAsset.variants.find((variant) => variant.id === imageAsset.selected_id) || imageAsset.variants[0];
-    };
-
-    const resolveAssetPreview = () => {
-        if (type === "character") {
-            return getCharacterPreviewImage(asset);
-        }
-
-        const selectedVariant = getSelectedVariant(asset.image_asset);
-        return {
-            previewPath: selectedVariant?.url || asset.image_url,
-            previewTimestamp: selectedVariant?.created_at,
-        };
-    };
-
-    const { previewPath, previewTimestamp } = resolveAssetPreview();
-    const fullImageUrl = previewTimestamp
-        ? getAssetUrlWithTimestamp(previewPath, typeof previewTimestamp === "number" ? previewTimestamp : new Date(previewTimestamp).getTime())
-        : getAssetUrl(previewPath);
-
-    return (
-        <motion.div
-            layout
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            onClick={onClick}
-            className="group relative flex flex-col rounded-2xl border border-white/10 bg-white/5 transition-all duration-300 cursor-pointer hover:border-indigo-500/50 hover:bg-white/[0.08] hover:shadow-2xl hover:shadow-indigo-500/10"
-        >
-            {/* ── Image Container ── */}
-            <div className="relative aspect-[3/4] overflow-hidden rounded-t-2xl">
-                {previewPath ? (
-                    <ImageWithRetry
-                        src={fullImageUrl}
-                        alt={asset.name}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
-                ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-black/40">
-                        <ImageIcon className="text-white/10" size={48} strokeWidth={1} />
-                    </div>
-                )}
-
-                <div className="absolute right-3 top-3 z-20">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete();
-                        }}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-black/45 text-white/75 shadow-lg shadow-black/30 backdrop-blur-md transition-all hover:border-red-400/30 hover:bg-red-500/25 hover:text-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
-                        title="删除"
-                    >
-                        <Trash2 size={16} />
-                    </button>
-                </div>
-
-                {/* ── Overlay Gradient ── */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-300" />
-            </div>
-
-            {/* ── Loading Overlay ── */}
-            {isGenerating && (
-                <div className="absolute inset-0 z-30 bg-black/70 backdrop-blur-sm flex items-center justify-center flex-col gap-3">
-                    <div className="relative">
-                        <RefreshCw className="animate-spin text-indigo-400" size={32} />
-                        <div className="absolute inset-0 animate-pulse bg-indigo-500/20 blur-xl rounded-full" />
-                    </div>
-                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-indigo-200">Generating</span>
-                </div>
-            )}
-
-            {/* ── Info Area ── */}
-            <div className="flex flex-1 flex-col px-4 pt-3 pb-3">
-                <div>
-                    <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-[13px] font-bold text-white truncate group-hover:text-indigo-400 transition-colors">
-                            {asset.name}
-                        </h3>
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-gray-400 line-clamp-2">
-                        {asset.description || "暂未填写描述"}
-                    </p>
-                </div>
-            </div>
-        </motion.div>
-    );
-}
-
-
 
 function CreateAssetDialog({
     initialType,

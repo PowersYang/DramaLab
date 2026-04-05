@@ -36,13 +36,13 @@ def get_ffmpeg_path() -> str:
 
         for path in possible_paths:
             if os.path.exists(path) and os.access(path, os.X_OK):
-                logger.info(f"Using bundled ffmpeg at: {path}")
+                logger.info(f"使用内置视频处理程序路径：{path}")
                 return path
 
     # 再回退到系统 PATH
     system_ffmpeg = shutil.which("ffmpeg")
     if system_ffmpeg:
-        logger.info(f"Using system ffmpeg at: {system_ffmpeg}")
+        logger.info(f"使用系统视频处理程序路径：{system_ffmpeg}")
         return system_ffmpeg
 
     # Windows 下安装后如果没重开终端，PATH 可能还没刷新
@@ -65,13 +65,12 @@ def get_ffmpeg_path() -> str:
         ]
         for path in common_windows_paths:
             if path and os.path.isfile(path):
-                logger.info(f"Using ffmpeg found at common Windows path: {path}")
+                logger.info(f"在常见安装路径找到视频处理程序：{path}")
                 return path
 
         logger.warning(
-            "FFmpeg not found in PATH or common Windows paths. "
-            "If FFmpeg is installed, ensure its 'bin' folder is in the system PATH "
-            "and restart the application."
+            "未在系统路径或常见安装目录找到视频处理程序。"
+            "如已安装，请确保其可执行文件目录已加入系统路径，并重启应用。"
         )
 
     return None

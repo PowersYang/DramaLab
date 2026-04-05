@@ -379,7 +379,7 @@ export default function AuthEntryPage({ mode, onClose }: AuthEntryPageProps) {
                         disabled={submitting || sendCooldown > 0}
                         className="h-10 rounded-[14px] border border-[#365273] bg-[linear-gradient(180deg,#132235_0%,#0d1826_100%)] text-[13px] font-semibold text-[#d9e3f2] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,color,box-shadow,background-color] hover:border-[#5f83ad] hover:bg-[linear-gradient(180deg,#182b40_0%,#102032_100%)] hover:text-[#f1d8ab] hover:shadow-[0_12px_24px_rgba(10,22,38,0.28)] disabled:cursor-not-allowed disabled:border-[#223246] disabled:bg-[linear-gradient(180deg,#111926_0%,#0d1520_100%)] disabled:text-[#5d7188]"
                       >
-                        {sendCooldown > 0 ? `${sendCooldown}s 后重试` : passwordStage === "forgot" ? "发送重置码" : "获取验证码"}
+                        {sendCooldown > 0 ? `${sendCooldown}s 后重试` : "获取验证码"}
                       </button>
                     </div>
                   )}

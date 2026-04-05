@@ -465,6 +465,11 @@ class ProjectRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     series_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     episode_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     art_direction: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    art_direction_source: Mapped[str] = mapped_column(String(32), default="standalone", nullable=False)
+    art_direction_override: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    art_direction_resolved: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    art_direction_overridden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    art_direction_overridden_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     # 中文注释：项目级时间轴工程当前先直接挂在 projects 表，兼容旧链路并降低首期迁移成本。
@@ -484,8 +489,12 @@ class SeriesRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     art_direction: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    art_direction_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    art_direction_updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model_settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     prompt_config: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    # 中文注释：系列资产收件箱用于暂存“分集提取待确认候选”，确认前不进入剧集资产主档。
+    asset_inbox_json: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
 
@@ -616,6 +625,41 @@ class PropRecord(TenantAuditMixin, SoftDeleteMixin, Base):
     video_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+
+
+class AssetPromptStateRecord(TenantAuditMixin, Base):
+    __tablename__ = "asset_prompt_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_scope",
+            "owner_id",
+            "asset_type",
+            "asset_id",
+            "output_type",
+            "slot_type",
+            name="uq_asset_prompt_states_scope_asset_slot",
+        ),
+        Index(
+            "ix_asset_prompt_states_owner_asset",
+            "owner_scope",
+            "owner_id",
+            "asset_type",
+            "asset_id",
+            "output_type",
+            "updated_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    asset_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    asset_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    slot_type: Mapped[str] = mapped_column(String(32), nullable=False, default="default")
+    positive_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    negative_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="user_input")
 
 
 class CharacterAssetUnitRecord(TenantAuditMixin, SoftDeleteMixin, Base):

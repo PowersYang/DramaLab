@@ -2,6 +2,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from .models import Character, Prop, Scene
+
 
 class TimelineAssetRequest(BaseModel):
     id: str
@@ -76,6 +78,11 @@ class GenerateAssetRequest(BaseModel):
     model_name: Optional[str] = None
 
 
+class GenerateAssetJobRequest(GenerateAssetRequest):
+    project_id: Optional[str] = None
+    series_id: Optional[str] = None
+
+
 class ToggleLockRequest(BaseModel):
     asset_id: str
     asset_type: str
@@ -143,6 +150,32 @@ class ImportAssetsRequest(BaseModel):
     asset_ids: List[str]
 
 
+class SyncSeriesAssetsRequest(BaseModel):
+    expected_version: int = 1
+    characters: List[Character] = Field(default_factory=list)
+    scenes: List[Scene] = Field(default_factory=list)
+    props: List[Prop] = Field(default_factory=list)
+
+
+class ExtractSeriesAssetsRequest(BaseModel):
+    text: str
+
+
+class UpsertSeriesAssetInboxRequest(BaseModel):
+    expected_version: Optional[int] = None
+    mode: str = "replace"
+    characters: List[Character] = Field(default_factory=list)
+    scenes: List[Scene] = Field(default_factory=list)
+    props: List[Prop] = Field(default_factory=list)
+
+
+class RemoveSeriesAssetInboxItemsRequest(BaseModel):
+    expected_version: Optional[int] = None
+    character_ids: List[str] = Field(default_factory=list)
+    scene_ids: List[str] = Field(default_factory=list)
+    prop_ids: List[str] = Field(default_factory=list)
+
+
 class ConfirmImportRequest(BaseModel):
     title: str
     description: str = ""
@@ -174,6 +207,11 @@ class GenerateMotionRefRequest(BaseModel):
     negative_prompt: Optional[str] = None
     duration: int = 5
     batch_size: int = 1
+
+
+class GenerateMotionRefJobRequest(GenerateMotionRefRequest):
+    project_id: Optional[str] = None
+    series_id: Optional[str] = None
 
 
 class AnalyzeToStoryboardRequest(BaseModel):
@@ -602,6 +640,17 @@ class SaveArtDirectionRequest(BaseModel):
     style_config: Dict[str, Any]
     custom_styles: List[Dict[str, Any]] = Field(default_factory=list)
     ai_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class UpdateProjectArtDirectionOverrideRequest(BaseModel):
+    selected_style_id: str
+    style_config: Dict[str, Any]
+
+
+class UpdateSeriesArtDirectionRequest(BaseModel):
+    selected_style_id: str
+    style_config: Dict[str, Any]
+    ai_recommendations: Optional[List[Dict[str, Any]]] = None
 
 
 class UserArtStyleWriteRequest(BaseModel):

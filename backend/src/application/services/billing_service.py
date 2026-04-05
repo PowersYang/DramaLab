@@ -96,7 +96,7 @@ class BillingService:
             return self.account_repository.create(account, session=session)
         except IntegrityError:
             # 中文注释：多实例下两个请求可能同时给同一组织补首个账本，唯一约束兜底后直接回读即可。
-            logger.info("BILLING_SERVICE: ensure_account raced on organization_id=%s, reading existing account", organization_id)
+            logger.info("计费服务：确保账本 并发冲突 组织ID=%s，改为回读已有账本", organization_id)
             existing = self.account_repository.get_by_organization(organization_id)
             if existing is None:
                 raise
@@ -435,7 +435,7 @@ class BillingService:
                 )
                 return existing
         if not job.organization_id:
-            logger.info("BILLING_SERVICE: skip charge for job_id=%s because organization_id is missing", job.id)
+            logger.info("计费服务：跳过扣费 任务ID=%s，因为缺少组织ID", job.id)
             return None
         pricing_rule = self.pricing_repository.get_active_rule(job.task_type, organization_id=job.organization_id)
         if pricing_rule is None:
@@ -517,7 +517,7 @@ class BillingService:
             session=session,
         )
         logger.info(
-            "BILLING_SERVICE: charge_task_submission organization_id=%s job_id=%s task_type=%s amount=%s balance_after=%s",
+            "计费服务：任务提交扣费 组织ID=%s 任务ID=%s 任务类型=%s 扣费算力豆=%s 扣费后余额=%s",
             job.organization_id,
             job.id,
             job.task_type,
@@ -1173,7 +1173,7 @@ class BillingService:
             )
         account = self.account_repository.update_record(account_record, {})
         logger.info(
-            "BILLING_SERVICE: recharge_credit organization_id=%s related_type=%s related_id=%s amount_cents=%s total_credits=%s balance_after=%s",
+            "计费服务：充值入账 组织ID=%s 关联类型=%s 关联ID=%s 充值金额分=%s 入账算力豆=%s 入账后余额=%s",
             organization_id,
             related_type,
             related_id,

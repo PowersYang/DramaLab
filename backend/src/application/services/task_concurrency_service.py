@@ -29,6 +29,7 @@ TASK_TYPE_LABELS: dict[str, str] = {
     TaskType.PROJECT_REPARSE.value: "项目重解析",
     TaskType.PROJECT_SYNC_DESCRIPTIONS.value: "描述同步",
     TaskType.SERIES_ASSET_GENERATE.value: "系列资产生成",
+    TaskType.SERIES_ASSETS_EXTRACT.value: "系列资产识别",
     TaskType.SERIES_IMPORT_ASSETS.value: "系列资产导入",
     TaskType.SERIES_IMPORT_CONFIRM.value: "系列导入确认",
     TaskType.SERIES_IMPORT_PREVIEW.value: "系列导入预分析",
@@ -105,7 +106,7 @@ class TaskConcurrencyService:
                 )
             )
         logger.info(
-            "TASK_CONCURRENCY_SERVICE: bootstrap_default_limits_for_organization organization_id=%s task_types=%s max_concurrency=%s",
+            "并发限制服务：初始化默认并发限制 组织ID=%s 任务类型数量=%s 最大并发=%s",
             organization_id,
             len(created_limits),
             max_concurrency,
@@ -133,7 +134,7 @@ class TaskConcurrencyService:
         )
         organization = self.organization_repository.get(organization_id)
         logger.info(
-            "TASK_CONCURRENCY_SERVICE: upsert_limit organization_id=%s task_type=%s max_concurrency=%s",
+            "并发限制服务：创建/更新并发限制 组织ID=%s 任务类型=%s 最大并发=%s",
             organization_id,
             task_type,
             max_concurrency,
@@ -147,7 +148,7 @@ class TaskConcurrencyService:
         """删除并发限制配置，删除后该组织该任务类型恢复为不限流。"""
         self._validate_scope(organization_id, task_type)
         self.limit_repository.delete_by_scope(organization_id, task_type)
-        logger.info("TASK_CONCURRENCY_SERVICE: delete_limit organization_id=%s task_type=%s", organization_id, task_type)
+        logger.info("并发限制服务：删除并发限制 组织ID=%s 任务类型=%s", organization_id, task_type)
         return {"status": "deleted", "organization_id": organization_id, "task_type": task_type}
 
     def _validate_scope(self, organization_id: str, task_type: str) -> None:

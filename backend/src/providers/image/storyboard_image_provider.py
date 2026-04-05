@@ -36,10 +36,10 @@ class StoryboardGenerator:
 
     def generate_storyboard(self, script: Any) -> Any:
         """为剧本中所有未完成分镜帧批量生成图片。"""
-        logger.info("Generating storyboard for script: %s", script.title)
+        logger.info("正在生成分镜：剧本=%s", script.title)
         total_frames = len(script.frames)
         for index, frame in enumerate(script.frames):
-            logger.info("Generating frame %s/%s: %s", index + 1, total_frames, frame.id)
+            logger.info("正在生成分镜帧 %s/%s：帧编号=%s", index + 1, total_frames, frame.id)
             if frame.status == GenerationStatus.COMPLETED and frame.image_url:
                 continue
             scene = next((item for item in script.scenes if item.id == frame.scene_id), None)
@@ -71,7 +71,7 @@ class StoryboardGenerator:
                 asset_ref_paths.extend(ref_image_paths)
             if ref_image_path:
                 asset_ref_paths.append(ref_image_path)
-            logger.info("[Storyboard] Using %s frontend-provided reference images", len(asset_ref_paths))
+            logger.info("分镜：使用前端提供的参考图数量=%s", len(asset_ref_paths))
         else:
             # 若前端未传参考，则退回到项目中已选中的角色与场景资产。
             for char_id in frame.character_ids:
@@ -142,7 +142,7 @@ class StoryboardGenerator:
             for _ in range(batch_size):
                 variant_id = str(uuid.uuid4())
                 output_path = create_temp_file_path(prefix=f"dramalab-storyboard-{frame.id}-{variant_id}-", suffix=".png")
-                logger.info("[Storyboard] Calling model.generate with %s reference images using model %s", len(asset_ref_paths), model_name or "default")
+                logger.info("分镜：调用模型生成 参考图数量=%s 模型=%s", len(asset_ref_paths), model_name or "默认")
                 try:
                     self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
                     if self.model.last_generation_metrics:
@@ -174,7 +174,7 @@ class StoryboardGenerator:
             frame.status = GenerationStatus.COMPLETED
 
         except Exception as exc:
-            logger.error("Failed to generate frame %s: %s", frame.id, exc)
+            logger.error("分镜：生成分镜帧失败 帧编号=%s 错误=%s", frame.id, exc)
             frame.status = GenerationStatus.FAILED
 
         return frame

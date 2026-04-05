@@ -52,6 +52,7 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   "project.reparse": "剧本重新解析",
   "project.sync_descriptions": "同步资产描述",
   "series.asset.generate": "剧集资产生成",
+  "series.assets.extract": "剧集资产识别",
   "series.assets.import": "剧集资产导入",
   "series.import.confirm": "导入确认",
   "series.import.preview": "导入预览",

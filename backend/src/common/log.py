@@ -4,8 +4,25 @@ import sys
 
 
 logger = logging.getLogger(__name__)
-LOG_FORMAT = "%(asctime)s | %(levelname)-5s | %(name)s | %(message)s"
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+_LEVEL_NAME_CN = {
+    "DEBUG": "调试",
+    "INFO": "信息",
+    "WARNING": "警告",
+    "ERROR": "错误",
+    "CRITICAL": "致命",
+}
+
+
+class _ChineseLogFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        original = record.levelname
+        try:
+            record.levelname = _LEVEL_NAME_CN.get(record.levelname, record.levelname)
+            return super().format(record)
+        finally:
+            record.levelname = original
 
 
 def get_user_data_dir() -> str:
@@ -37,11 +54,11 @@ def setup_logging(level: int = logging.INFO, log_file: str | None = None) -> Non
             os.makedirs(log_dir, exist_ok=True)
 
         file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
-        file_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
+        file_handler.setFormatter(_ChineseLogFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
         handlers.append(file_handler)
 
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
+    console_handler.setFormatter(_ChineseLogFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
     handlers.append(console_handler)
 
     logging.basicConfig(
@@ -50,6 +67,9 @@ def setup_logging(level: int = logging.INFO, log_file: str | None = None) -> Non
         datefmt=LOG_DATE_FORMAT,
         handlers=handlers,
     )
+
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(logger_name).setLevel(logging.CRITICAL + 1)
 
 
 def get_logger(name: str) -> logging.Logger:

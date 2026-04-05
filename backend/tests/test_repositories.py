@@ -317,6 +317,83 @@ class RepositoryPersistenceTest(unittest.TestCase):
         self.assertIsNotNone(loaded_project.series_character_links[0].character)
         self.assertEqual(loaded_project.series_character_links[0].character.name, "Shared Hero")
 
+    def test_project_repository_hides_series_linked_duplicate_project_character_by_name(self):
+        from src.repository import ProjectCharacterLinkRepository, ProjectRepository, SeriesRepository
+        from src.schemas.models import Character, ProjectCharacterLink, Script, Series
+
+        now = utc_now()
+        project_repository = ProjectRepository()
+        series_repository = SeriesRepository()
+        link_repository = ProjectCharacterLinkRepository()
+
+        series_repository.create(
+            Series(
+                id="series_dedupe_1",
+                title="Series Dedupe",
+                description="desc",
+                characters=[
+                    Character(
+                        id="series_char_dedupe_1",
+                        name="柳若烟",
+                        canonical_name="柳若烟",
+                        description="系列主档角色",
+                    )
+                ],
+                created_at=now,
+                updated_at=now,
+                organization_id="org_1",
+                workspace_id="ws_1",
+            )
+        )
+        project_repository.create(
+            Script(
+                id="project_dedupe_1",
+                title="Episode Dedupe",
+                original_text="text",
+                series_id="series_dedupe_1",
+                characters=[
+                    Character(
+                        id="project_char_dedupe_1",
+                        name="柳若烟",
+                        description="分集本地历史角色",
+                    )
+                ],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                created_at=now,
+                updated_at=now,
+                organization_id="org_1",
+                workspace_id="ws_1",
+            )
+        )
+
+        link_repository.sync_for_project(
+            "project_dedupe_1",
+            "series_dedupe_1",
+            [
+                ProjectCharacterLink(
+                    id="project_char_link_dedupe_1",
+                    project_id="project_dedupe_1",
+                    series_id="series_dedupe_1",
+                    character_id="series_char_dedupe_1",
+                    source_name="柳若烟",
+                    match_status="auto_matched",
+                    match_confidence=1.0,
+                    organization_id="org_1",
+                    workspace_id="ws_1",
+                    created_at=now,
+                    updated_at=now,
+                )
+            ],
+        )
+
+        loaded_project = project_repository.get("project_dedupe_1")
+        self.assertIsNotNone(loaded_project)
+        self.assertEqual(len(loaded_project.series_character_links), 1)
+        self.assertFalse(any(item.id == "project_char_dedupe_1" for item in loaded_project.characters))
+
     def test_series_service_create_episode_draft_creates_project_and_binds_series(self):
         from src.application.services import SeriesService
         from src.repository import ProjectRepository
@@ -827,6 +904,51 @@ class RepositoryPersistenceTest(unittest.TestCase):
         )
         self.assertEqual(updated_series.version, 1)
         self.assertEqual(updated_series.characters[0].description, "new desc")
+
+    def test_series_service_select_variant_persists_scene_selected_id_and_image_url(self):
+        from src.application.services.series_service import SeriesService
+        from src.repository import SeriesRepository
+        from src.schemas.models import ImageAsset, ImageVariant, Scene, Series
+
+        now = utc_now()
+        repository = SeriesRepository()
+        repository.create(
+            Series(
+                id="series_select_variant_1",
+                title="Series Select Variant",
+                description="desc",
+                characters=[],
+                scenes=[
+                    Scene(
+                        id="series_scene_select_1",
+                        name="审讯室",
+                        description="昏暗审讯室",
+                        image_url="oss://scene-variant-4",
+                        image_asset=ImageAsset(
+                            selected_id="scene_variant_4",
+                            variants=[
+                                ImageVariant(id="scene_variant_1", url="oss://scene-variant-1", created_at=now),
+                                ImageVariant(id="scene_variant_4", url="oss://scene-variant-4", created_at=now),
+                            ],
+                        ),
+                    )
+                ],
+                props=[],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        updated_series = SeriesService().select_variant(
+            "series_select_variant_1",
+            "series_scene_select_1",
+            "scene",
+            "scene_variant_1",
+        )
+
+        self.assertEqual(updated_series.version, 1)
+        self.assertEqual(updated_series.scenes[0].image_asset.selected_id, "scene_variant_1")
+        self.assertEqual(updated_series.scenes[0].image_url, "oss://scene-variant-1")
 
     def test_project_repository_resave_keeps_character_unit_variants_active(self):
         from src.db.models import ImageVariantRecord, VideoVariantRecord

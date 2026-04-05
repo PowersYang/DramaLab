@@ -13,6 +13,7 @@ class ArtDirectionAnalyzeExecutor:
             payload["project_id"],
             payload["script_text"],
         )
+        self.system_service.persist_art_direction_recommendations(payload["project_id"], recommendations)
         result = {
             "project_id": payload["project_id"],
             "recommendations": recommendations,

@@ -16,6 +16,7 @@ import {
 
 import AdminSummaryStrip from "@/components/studio/admin/AdminSummaryStrip";
 import { api, type ProjectSummary, type SeriesSummary, type TaskJob } from "@/lib/api";
+import { formatTaskModelSummary, getTaskModelInfo } from "@/lib/taskModelInfo";
 import {
   isStudioCacheFresh,
   loadStudioCacheResource,
@@ -40,6 +41,7 @@ const TASK_COPY: Record<string, string> = {
   "project.reparse": "项目重解析",
   "project.sync_descriptions": "描述同步",
   "series.asset.generate": "剧集资产生成",
+  "series.assets.extract": "剧集资产识别",
   "series.assets.import": "剧集资产导入",
   "series.import.confirm": "剧集导入确认",
   "series.import.preview": "剧集导入预分析",
@@ -77,6 +79,8 @@ interface TaskTableRow extends TaskJob {
   scopeType: "项目" | "剧集" | "系统";
   taskLabel: string;
   statusLabel: string;
+  modelSummary: string | null;
+  fallbackReason: string | null;
 }
 
 const TASK_DASHBOARD_LOG_PREFIX = "[tasks-dashboard]";
@@ -341,6 +345,8 @@ export default function StudioTasksPage() {
           ...scopeMeta,
           taskLabel: TASK_COPY[task.task_type] || task.task_type,
           statusLabel: statusMeta.label,
+          modelSummary: formatTaskModelSummary(task),
+          fallbackReason: getTaskModelInfo(task).fallbackReason,
         };
       }),
     [mergedTasks, projectMap, seriesMap]
@@ -544,6 +550,8 @@ export default function StudioTasksPage() {
                       <span className="min-w-0">
                         <strong className="block truncate text-sm font-semibold studio-strong">{row.taskLabel}</strong>
                         <span className="block truncate text-xs studio-muted">{row.id}</span>
+                        {row.modelSummary ? <span className="block truncate text-xs studio-muted">{row.modelSummary}</span> : null}
+                        {row.fallbackReason ? <span className="block truncate text-xs text-amber-500">{row.fallbackReason}</span> : null}
                       </span>
                       <span className="min-w-0">
                         <strong className="block truncate text-sm font-semibold studio-strong">{row.scopeName}</strong>

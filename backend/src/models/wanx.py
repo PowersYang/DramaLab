@@ -28,7 +28,7 @@ class WanxModel(VideoGenModel):
     def api_key(self):
         api_key = ModelProviderService().get_provider_credential("DASHSCOPE", "api_key")
         if not api_key:
-            logger.warning("Dashscope API Key not configured in provider management.")
+            logger.warning("供应商管理未配置 Dashscope 访问密钥。")
         return api_key
 
     def generate(self, prompt: str, output_path: str, img_path: str = None, model_name: str = None, **kwargs) ->Tuple[str, float]:
@@ -38,13 +38,13 @@ class WanxModel(VideoGenModel):
             final_model_name = model_name
         elif kwargs.get('model'):
             final_model_name = kwargs.get('model')
-            logger.info(f"Using model from kwargs: {final_model_name}")
+            logger.info(f"从参数使用模型：{final_model_name}")
         elif img_path or kwargs.get('img_url'):
             final_model_name = self.params.get('i2v_model_name', 'wan2.6-i2v')  # 默认走图生视频模型
-            logger.info(f"Using I2V model: {final_model_name}")
+            logger.info(f"使用图生视频模型：{final_model_name}")
         else:
             final_model_name = self.params.get('model_name', 'wan2.5-t2v-preview')
-            logger.info(f"Using T2V model: {final_model_name}")
+            logger.info(f"使用文生视频模型：{final_model_name}")
 
         size = self.params.get('size', '1280*720')
         prompt_extend = self.params.get('prompt_extend', True)
@@ -70,8 +70,8 @@ class WanxModel(VideoGenModel):
         camera_motion = kwargs.get('camera_motion')
         subject_motion = kwargs.get('subject_motion')
 
-        logger.info(f"Starting generation with model: {final_model_name}")
-        logger.info(f"Prompt: {prompt}")
+        logger.info(f"开始生成视频，模型：{final_model_name}")
+        logger.info(f"提示词：{prompt}")
 
         try:
             api_start_time = time.time()
@@ -85,11 +85,11 @@ class WanxModel(VideoGenModel):
                 if os.path.exists(img_path):
                     # 本地文件先上传到 OSS，再换成带签名的访问地址
                     if uploader.is_configured:
-                        logger.info(f"Uploading input image to OSS: {img_path}")
+                        logger.info(f"正在上传输入图片到对象存储：{img_path}")
                         object_key = uploader.upload_file(img_path, sub_path="temp/i2v_input")
                         if object_key:
                             img_url = uploader.sign_url_for_api(object_key)
-                            logger.info(f"Input image uploaded, signed URL: {img_url[:80]}...")
+                            logger.info(f"输入图片已上传，签名链接：{img_url[:80]}...")
                         else:
                             raise RuntimeError("Failed to upload input image to OSS")
                     else:
@@ -101,7 +101,7 @@ class WanxModel(VideoGenModel):
                     # 看起来像 OSS 对象键，需要补签名
                     if uploader.is_configured:
                         img_url = uploader.sign_url_for_api(img_path)
-                        logger.info(f"Input image (Object Key from img_path), signed URL: {img_url[:80]}...")
+                        logger.info(f"输入图片（对象键，来源=本地路径）签名链接：{img_url[:80]}...")
                     else:
                         raise RuntimeError(f"OSS not configured, cannot sign Object Key: {img_path}")
                 else:
@@ -111,9 +111,9 @@ class WanxModel(VideoGenModel):
                 if is_object_key(img_url):
                     if uploader.is_configured:
                         img_url = uploader.sign_url_for_api(img_url)
-                        logger.info(f"Input image (Object Key from img_url), signed URL: {img_url[:80]}...")
+                        logger.info(f"输入图片（对象键，来源=输入链接）签名链接：{img_url[:80]}...")
                     else:
-                        logger.warning(f"OSS not configured, cannot sign Object Key in img_url: {img_url}")
+                        logger.warning(f"对象存储未配置，无法对输入图片对象键签名：{img_url}")
 
             # 音频输入也统一整理成模型可访问的 URL
             if audio_url:
@@ -126,7 +126,7 @@ class WanxModel(VideoGenModel):
                         object_key = uploader.upload_file(local_audio_path, sub_path="temp/audio_input")
                         if object_key:
                             audio_url = uploader.sign_url_for_api(object_key)
-                            logger.info(f"Input audio uploaded, signed URL: {audio_url[:80]}...")
+                            logger.info(f"输入音频已上传，签名链接：{audio_url[:80]}...")
                         else:
                             raise RuntimeError("Failed to upload input audio to OSS")
                     else:
@@ -134,9 +134,9 @@ class WanxModel(VideoGenModel):
                 elif is_object_key(audio_url):
                     if uploader.is_configured:
                         audio_url = uploader.sign_url_for_api(audio_url)
-                        logger.info(f"Input audio (Object Key), signed URL: {audio_url[:80]}...")
+                        logger.info(f"输入音频（对象键）签名链接：{audio_url[:80]}...")
                     else:
-                        logger.warning(f"OSS not configured, cannot sign Object Key in audio_url: {audio_url}")
+                        logger.warning(f"对象存储未配置，无法对输入音频对象键签名：{audio_url}")
 
             # 新版 Wan 模型走 HTTP 接口，旧型号继续走 SDK
             if final_model_name in ['wan2.6-i2v', 'wan2.6-i2v-flash', 'wan2.5-i2v']:
@@ -174,11 +174,11 @@ class WanxModel(VideoGenModel):
                     if local_path:
                         # 本地文件先上传 OSS
                         if uploader.is_configured:
-                            logger.info(f"Uploading reference video to OSS: {local_path}")
+                            logger.info(f"正在上传参考视频到对象存储：{local_path}")
                             object_key = uploader.upload_file(local_path, sub_path="temp/r2v_input")
                             if object_key:
                                 final_url = uploader.sign_url_for_api(object_key)
-                                logger.info(f"Reference video uploaded, signed URL: {final_url[:80]}...")
+                                logger.info(f"参考视频已上传，签名链接：{final_url[:80]}...")
                             else:
                                 raise RuntimeError(f"Failed to upload reference video: {local_path}")
                         else:
@@ -188,9 +188,9 @@ class WanxModel(VideoGenModel):
                         # 这里显式接受 OSS 对象键，不再兼容仓库内持久化相对路径。
                         if uploader.is_configured:
                             final_url = uploader.sign_url_for_api(ref_url)
-                            logger.info(f"Reference video (Object Key), signed URL: {final_url[:80]}...")
+                            logger.info(f"参考视频（对象键）签名链接：{final_url[:80]}...")
                         else:
-                            logger.warning(f"OSS not configured, cannot sign Object Key: {ref_url}")
+                            logger.warning(f"对象存储未配置，无法对对象键签名：{ref_url}")
                             
                     processed_ref_urls.append(final_url)
                 
@@ -228,15 +228,15 @@ class WanxModel(VideoGenModel):
             api_end_time = time.time()
             api_duration = api_end_time - api_start_time
 
-            logger.info(f"Generation success. Video URL: {video_url}")
-            logger.info(f"API duration: {api_duration:.2f}s")
+            logger.info(f"生成成功，视频链接：{video_url}")
+            logger.info(f"接口耗时：{api_duration:.2f}秒")
 
             # 拉取远端视频并落到本地输出路径
             self._download_video(video_url, output_path)
             return output_path, api_duration
 
         except Exception as e:
-            logger.error(f"Error during generation: {e}")
+            logger.error(f"生成过程中发生异常：{e}")
             raise
 
     def _generate_wan_i2v_http(self, prompt: str, img_url: str, model_name: str = "wan2.6-i2v",
@@ -294,14 +294,14 @@ class WanxModel(VideoGenModel):
         if seed:
             payload["parameters"]["seed"] = seed
         
-        logger.info(f"Calling {model_name} HTTP API (async)...")
-        logger.info(f"Payload: {payload}")
+        logger.info(f"正在调用 {model_name} 接口（异步）...")
+        logger.info(f"请求负载：{payload}")
         
         # 第一步：提交异步任务
         response = requests.post(create_url, headers=headers, json=payload, timeout=120)  # 2 minutes for task creation
         
-        logger.info(f"Create task response status: {response.status_code}")
-        logger.info(f"Create task response body: {response.text[:500] if response.text else 'empty'}")
+        logger.info(f"创建任务响应状态码：{response.status_code}")
+        logger.info(f"创建任务响应体：{response.text[:500] if response.text else '空'}")
         
         if response.status_code != 200:
             error_data = response.json() if response.text else {}
@@ -313,7 +313,7 @@ class WanxModel(VideoGenModel):
         if not task_id:
             raise RuntimeError(f"No task_id in response: {result}")
         
-        logger.info(f"Task created: {task_id}")
+        logger.info(f"任务已创建：{task_id}")
         
         # 第二步：轮询任务状态直到完成
         poll_url = provider_service.build_provider_url(
@@ -336,20 +336,20 @@ class WanxModel(VideoGenModel):
             poll_response = requests.get(poll_url, headers=poll_headers, timeout=30)
             
             if poll_response.status_code != 200:
-                logger.warning(f"Poll request failed: {poll_response.status_code}")
+                logger.warning(f"轮询请求失败：{poll_response.status_code}")
                 continue
             
             poll_result = poll_response.json()
             task_status = poll_result.get('output', {}).get('task_status')
             
-            logger.info(f"Task {task_id} status: {task_status} (elapsed: {elapsed}s)")
+            logger.info(f"任务状态：任务编号={task_id} 状态={task_status} 已耗时={elapsed}秒")
             
             if task_status == 'SUCCEEDED':
                 video_url = poll_result.get('output', {}).get('video_url')
                 if not video_url:
                     raise RuntimeError(f"No video_url in completed task: {poll_result}")
                 
-                logger.info(f"Task completed. Video URL: {video_url}")
+                logger.info(f"任务完成，视频链接：{video_url}")
                 return video_url
             
             elif task_status == 'FAILED':
@@ -410,14 +410,14 @@ class WanxModel(VideoGenModel):
         if seed:
             payload["parameters"]["seed"] = seed
         
-        logger.info(f"Calling {model_name} HTTP API (async)...")
-        logger.info(f"Payload: {payload}")
+        logger.info(f"正在调用 {model_name} 接口（异步）...")
+        logger.info(f"请求负载：{payload}")
         
         # 第一步：提交异步任务
         response = requests.post(create_url, headers=headers, json=payload, timeout=120)
         
-        logger.info(f"Create task response status: {response.status_code}")
-        logger.info(f"Create task response body: {response.text[:500] if response.text else 'empty'}")
+        logger.info(f"创建任务响应状态码：{response.status_code}")
+        logger.info(f"创建任务响应体：{response.text[:500] if response.text else '空'}")
         
         if response.status_code != 200:
             error_data = response.json() if response.text else {}
@@ -429,7 +429,7 @@ class WanxModel(VideoGenModel):
         if not task_id:
             raise RuntimeError(f"No task_id in response: {result}")
         
-        logger.info(f"Task created: {task_id}")
+        logger.info(f"任务已创建：{task_id}")
         
         # 第二步：轮询任务状态直到完成
         poll_url = provider_service.build_provider_url(
@@ -452,20 +452,20 @@ class WanxModel(VideoGenModel):
             poll_response = requests.get(poll_url, headers=poll_headers, timeout=30)
             
             if poll_response.status_code != 200:
-                logger.warning(f"Poll request failed: {poll_response.status_code}")
+                logger.warning(f"轮询请求失败：{poll_response.status_code}")
                 continue
             
             poll_result = poll_response.json()
             task_status = poll_result.get('output', {}).get('task_status')
             
-            logger.info(f"Task {task_id} status: {task_status} (elapsed: {elapsed}s)")
+            logger.info(f"任务状态：任务编号={task_id} 状态={task_status} 已耗时={elapsed}秒")
             
             if task_status == 'SUCCEEDED':
                 video_url = poll_result.get('output', {}).get('video_url')
                 if not video_url:
                     raise RuntimeError(f"No video_url in completed task: {poll_result}")
                 
-                logger.info(f"Task completed. Video URL: {video_url}")
+                logger.info(f"任务完成，视频链接：{video_url}")
                 return video_url
             
             elif task_status == 'FAILED':
@@ -509,39 +509,41 @@ class WanxModel(VideoGenModel):
         
         if img_url:
             call_args['img_url'] = img_url
-            logger.info(f"Image to Video mode. Input Image URL: {img_url}")
+            logger.info(f"图生视频模式，输入图片链接：{img_url}")
 
         rsp = VideoSynthesis.async_call(**call_args)
         
         if rsp.status_code != HTTPStatus.OK:
-            logger.error(f"Failed to submit task: {rsp.code}, {rsp.message}")
+            logger.error(f"提交任务失败：{rsp.code}, {rsp.message}")
             raise RuntimeError(f"Task submission failed: {rsp.message}")
         
         task_id = rsp.output.task_id
-        logger.info(f"Task submitted. Task ID: {task_id}")
+        logger.info(f"任务已提交，任务编号：{task_id}")
         
         # 轮询等待任务完成
         rsp = VideoSynthesis.wait(rsp)
         
-        logger.info(f"SDK response: {rsp}")
+        logger.info(f"客户端库响应：{rsp}")
 
         if rsp.status_code != HTTPStatus.OK:
-            logger.error(f"Task failed with status code: {rsp.status_code}, code: {rsp.code}, message: {rsp.message}")
+            logger.error(f"任务失败：状态码={rsp.status_code} 代码={rsp.code} 信息={rsp.message}")
             raise RuntimeError(f"Task failed: {rsp.message}")
         
         if rsp.output.task_status != 'SUCCEEDED':
-             logger.error(f"Task finished but status is {rsp.output.task_status}. Code: {rsp.output.code}, Message: {rsp.output.message}")
+             logger.error(
+                 f"任务结束但状态为 {rsp.output.task_status}。Code: {rsp.output.code}, Message: {rsp.output.message}"
+             )
              raise RuntimeError(f"Task failed with status {rsp.output.task_status}: {rsp.output.message}")
 
         video_url = rsp.output.video_url
         if not video_url:
-             logger.error("Video URL is empty despite SUCCEEDED status.")
+             logger.error("任务成功但视频链接为空。")
              raise RuntimeError("Video URL is empty.")
         
         return video_url
 
     def _download_video(self, url: str, path: str):
-        logger.info(f"Downloading video to {path}...")
+        logger.info(f"正在下载视频到 {path}...")
 
         session = requests.Session()
         retry = Retry(connect=3, backoff_factor=0.5)
@@ -560,10 +562,10 @@ class WanxModel(VideoGenModel):
 
             # 用原子替换避免下载一半就被读取
             os.rename(temp_path, path)
-            logger.info("Download complete.")
+            logger.info("下载完成。")
 
         except Exception as e:
-            logger.error(f"Failed to download video: {e}")
+            logger.error(f"下载视频失败：{e}")
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             raise

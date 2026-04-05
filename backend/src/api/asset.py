@@ -3,8 +3,6 @@
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
 from ..application.services import AssetService, VideoTaskService
-from ..application.services.model_provider_service import ModelProviderService
-from ..application.tasks import TaskService
 from ..auth.dependencies import get_request_context
 from ..application.workflows import AssetWorkflow
 from ..schemas.models import Script
@@ -30,8 +28,6 @@ router = APIRouter(dependencies=[Depends(get_request_context)])
 asset_service = AssetService()
 asset_workflow = AssetWorkflow()
 video_task_service = VideoTaskService()
-task_service = TaskService()
-model_provider_service = ModelProviderService()
 
 
 @router.post("/projects/{script_id}/assets/generate_motion_ref")
@@ -40,49 +36,14 @@ async def generate_motion_ref(
     request: GenerateMotionRefRequest,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    """为指定素材生成动作参考视频。"""
-    try:
-        # 动作参考生成通常较慢，先记录素材维度和批次，便于区分排队慢还是模型侧慢。
-        logger.info(
-            "ASSET_API: generate_motion_ref script_id=%s asset_id=%s asset_type=%s duration=%s batch_size=%s",
-            script_id,
-            request.asset_id,
-            request.asset_type,
-            request.duration,
-            request.batch_size,
-        )
-        asset_workflow.prepare_motion_ref_generation(
-            script_id=script_id,
-            asset_id=request.asset_id,
-            asset_type=request.asset_type,
-        )
-        receipt = task_service.create_job(
-            task_type="asset.motion_ref.generate",
-            payload={
-                "project_id": script_id,
-                "asset_id": request.asset_id,
-                "asset_type": request.asset_type,
-                "prompt": request.prompt,
-                "audio_url": request.audio_url,
-                "negative_prompt": request.negative_prompt,
-                "duration": request.duration,
-                "batch_size": request.batch_size,
-            },
-            project_id=script_id,
-            queue_name="video",
-            resource_type=request.asset_type,
-            resource_id=request.asset_id,
-            timeout_seconds=1800,
-            idempotency_key=idempotency_key,
-        )
-        logger.info("ASSET_API: generate_motion_ref task_created script_id=%s job_id=%s", script_id, receipt.job_id)
-        return signed_response(receipt)
-    except ValueError as exc:
-        logger.warning("ASSET_API: generate_motion_ref failed script_id=%s detail=%s", script_id, exc)
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        logger.exception("ASSET_API: generate_motion_ref unexpected_error script_id=%s", script_id)
-        raise HTTPException(status_code=500, detail=str(exc))
+    """硬切到统一资产任务入口，旧路由直接下线。"""
+    _ = request
+    _ = idempotency_key
+    logger.warning("素材接口：旧动作参考入口已下线 项目ID=%s，请改用 /asset-jobs/generate_motion_ref", script_id)
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy endpoint removed. Use POST /asset-jobs/generate_motion_ref",
+    )
 
 
 @router.post("/projects/{script_id}/assets/generate")
@@ -91,56 +52,14 @@ async def generate_single_asset(
     request: GenerateAssetRequest,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    """按指定参数生成单个素材。"""
-    try:
-        logger.info(
-            "ASSET_API: generate_single_asset script_id=%s asset_id=%s asset_type=%s generation_type=%s batch_size=%s",
-            script_id,
-            request.asset_id,
-            request.asset_type,
-            request.generation_type,
-            request.batch_size,
-        )
-        asset_workflow.prepare_project_asset_generation(
-            script_id,
-            request.asset_id,
-            request.asset_type,
-        )
-        if request.model_name:
-            model_provider_service.require_model_enabled(request.model_name, "t2i")
-        receipt = task_service.create_job(
-            task_type="asset.generate",
-            payload={
-                "project_id": script_id,
-                "asset_id": request.asset_id,
-                "asset_type": request.asset_type,
-                "style_preset": request.style_preset,
-                "reference_image_url": request.reference_image_url,
-                "style_prompt": request.style_prompt,
-                "generation_type": request.generation_type,
-                "prompt": request.prompt,
-                "apply_style": request.apply_style,
-                "negative_prompt": request.negative_prompt,
-                "batch_size": request.batch_size,
-                "model_name": request.model_name,
-            },
-            project_id=script_id,
-            queue_name="image",
-            resource_type=request.asset_type,
-            resource_id=request.asset_id,
-            timeout_seconds=1200,
-            idempotency_key=idempotency_key,
-            dedupe_scope=f"{request.asset_type}:{request.asset_id}:{request.generation_type}",
-        )
-        logger.info("ASSET_API: generate_single_asset task_created script_id=%s job_id=%s", script_id, receipt.job_id)
-        return signed_response(receipt)
-    except ValueError as exc:
-        logger.warning("ASSET_API: generate_single_asset failed script_id=%s detail=%s", script_id, exc)
-        status_code = 400 if "model" in str(exc).lower() else 404
-        raise HTTPException(status_code=status_code, detail=str(exc))
-    except Exception as exc:
-        logger.exception("ASSET_API: generate_single_asset unexpected_error script_id=%s", script_id)
-        raise HTTPException(status_code=500, detail=str(exc))
+    """硬切到统一资产任务入口，旧路由直接下线。"""
+    _ = request
+    _ = idempotency_key
+    logger.warning("素材接口：旧素材生成入口已下线 项目ID=%s，请改用 /asset-jobs/generate", script_id)
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy endpoint removed. Use POST /asset-jobs/generate",
+    )
 
 
 @router.post(
@@ -157,7 +76,7 @@ async def generate_asset_video(
     """为指定素材生成 I2V 视频。"""
     try:
         logger.info(
-            "ASSET_API: generate_asset_video script_id=%s asset_id=%s asset_type=%s duration=%s",
+            "素材接口：生成素材视频 项目ID=%s 素材ID=%s 素材类型=%s 时长=%s",
             script_id,
             asset_id,
             asset_type,
@@ -178,14 +97,14 @@ async def generate_asset_video(
             resource_id=asset_id,
             idempotency_key=idempotency_key,
         )
-        logger.info("ASSET_API: generate_asset_video task_created script_id=%s job_id=%s", script_id, receipt.job_id)
+        logger.info("素材接口：生成素材视频 已创建任务 项目ID=%s 任务ID=%s", script_id, receipt.job_id)
         _ = script
         return signed_response(receipt)
     except ValueError as exc:
-        logger.warning("ASSET_API: generate_asset_video failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：生成素材视频 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: generate_asset_video unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：生成素材视频 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -202,7 +121,7 @@ async def delete_asset_video(
     """删除某个素材下的一条视频记录。"""
     try:
         logger.info(
-            "ASSET_API: delete_asset_video script_id=%s asset_id=%s asset_type=%s video_id=%s",
+            "素材接口：删除素材视频 项目ID=%s 素材ID=%s 素材类型=%s 视频ID=%s",
             script_id,
             asset_id,
             asset_type,
@@ -216,10 +135,10 @@ async def delete_asset_video(
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: delete_asset_video failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：删除素材视频 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: delete_asset_video unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：删除素材视频 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -227,7 +146,7 @@ async def delete_asset_video(
 async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
     """切换素材锁定状态。"""
     try:
-        logger.info("ASSET_API: toggle_asset_lock script_id=%s asset_id=%s asset_type=%s", script_id, request.asset_id, request.asset_type)
+        logger.info("素材接口：切换素材锁定 项目ID=%s 素材ID=%s 素材类型=%s", script_id, request.asset_id, request.asset_type)
         updated_script = asset_service.toggle_lock(
             script_id,
             request.asset_id,
@@ -235,10 +154,10 @@ async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: toggle_asset_lock failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：切换素材锁定 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: toggle_asset_lock unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：切换素材锁定 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -246,7 +165,7 @@ async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
 async def update_asset_image(script_id: str, request: UpdateAssetImageRequest):
     """手动更新素材图片地址。"""
     try:
-        logger.info("ASSET_API: update_asset_image script_id=%s asset_id=%s asset_type=%s", script_id, request.asset_id, request.asset_type)
+        logger.info("素材接口：更新素材图片 项目ID=%s 素材ID=%s 素材类型=%s", script_id, request.asset_id, request.asset_type)
         updated_script = asset_service.update_image(
             script_id,
             request.asset_id,
@@ -255,10 +174,10 @@ async def update_asset_image(script_id: str, request: UpdateAssetImageRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: update_asset_image failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：更新素材图片 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: update_asset_image unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：更新素材图片 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -270,7 +189,7 @@ async def update_asset_attributes(
     """批量更新素材任意字段。"""
     try:
         logger.info(
-            "ASSET_API: update_asset_attributes script_id=%s asset_id=%s asset_type=%s fields=%s",
+            "素材接口：更新素材属性 项目ID=%s 素材ID=%s 素材类型=%s 字段=%s",
             script_id,
             request.asset_id,
             request.asset_type,
@@ -284,10 +203,10 @@ async def update_asset_attributes(
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: update_asset_attributes failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：更新素材属性 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: update_asset_attributes unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：更新素材属性 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -298,7 +217,7 @@ async def update_asset_description(
 ):
     """更新素材描述。"""
     try:
-        logger.info("ASSET_API: update_asset_description script_id=%s asset_id=%s asset_type=%s", script_id, request.asset_id, request.asset_type)
+        logger.info("素材接口：更新素材描述 项目ID=%s 素材ID=%s 素材类型=%s", script_id, request.asset_id, request.asset_type)
         updated_script = asset_service.update_description(
             script_id,
             request.asset_id,
@@ -307,10 +226,10 @@ async def update_asset_description(
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: update_asset_description failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：更新素材描述 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: update_asset_description unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：更新素材描述 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -319,7 +238,7 @@ async def select_asset_variant(script_id: str, request: SelectVariantRequest):
     """把某张候选图设为素材当前选中项。"""
     try:
         logger.info(
-            "ASSET_API: select_asset_variant script_id=%s asset_id=%s asset_type=%s variant_id=%s generation_type=%s",
+            "素材接口：选择素材候选图 项目ID=%s 素材ID=%s 素材类型=%s 候选ID=%s 生成类型=%s",
             script_id,
             request.asset_id,
             request.asset_type,
@@ -335,10 +254,10 @@ async def select_asset_variant(script_id: str, request: SelectVariantRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: select_asset_variant failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：选择素材候选图 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: select_asset_variant unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：选择素材候选图 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -347,7 +266,7 @@ async def delete_asset_variant(script_id: str, request: DeleteVariantRequest):
     """删除素材下的某张候选图。"""
     try:
         logger.info(
-            "ASSET_API: delete_asset_variant script_id=%s asset_id=%s asset_type=%s variant_id=%s",
+            "素材接口：删除素材候选图 项目ID=%s 素材ID=%s 素材类型=%s 候选ID=%s",
             script_id,
             request.asset_id,
             request.asset_type,
@@ -361,10 +280,10 @@ async def delete_asset_variant(script_id: str, request: DeleteVariantRequest):
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: delete_asset_variant failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：删除素材候选图 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: delete_asset_variant unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：删除素材候选图 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -373,7 +292,7 @@ async def toggle_variant_favorite(script_id: str, request: FavoriteVariantReques
     """切换候选图收藏状态；已收藏图片不会被自动清理。"""
     try:
         logger.info(
-            "ASSET_API: toggle_variant_favorite script_id=%s asset_id=%s asset_type=%s variant_id=%s is_favorited=%s",
+            "素材接口：切换候选图收藏 项目ID=%s 素材ID=%s 素材类型=%s 候选ID=%s 是否收藏=%s",
             script_id,
             request.asset_id,
             request.asset_type,
@@ -390,10 +309,10 @@ async def toggle_variant_favorite(script_id: str, request: FavoriteVariantReques
         )
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: toggle_variant_favorite failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：切换候选图收藏 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: toggle_variant_favorite unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：切换候选图收藏 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -409,7 +328,7 @@ async def upload_asset(
     """给素材手动上传一张图片，并登记为新的候选图。"""
     try:
         logger.info(
-            "ASSET_API: upload_asset script_id=%s asset_id=%s asset_type=%s upload_type=%s filename=%s",
+            "素材接口：上传素材图片 项目ID=%s 素材ID=%s 素材类型=%s 上传类型=%s 文件名=%s",
             script_id,
             asset_id,
             asset_type,
@@ -419,7 +338,7 @@ async def upload_asset(
         with staged_upload_file(file.file, file.filename) as file_path:
             oss_url = OSSImageUploader().upload_image(file_path, sub_path="uploads")
         if not oss_url:
-            raise RuntimeError("OSS upload failed. Static file mount has been removed, so local fallback URLs are no longer supported.")
+            raise RuntimeError("OSS 上传失败。由于已移除本地静态文件挂载，无法再回退到本地 URL。")
 
         updated_script = asset_service.upload_variant(
             script_id=script_id,
@@ -430,12 +349,12 @@ async def upload_asset(
             description=description,
         )
         if not updated_script:
-            raise HTTPException(status_code=404, detail="Script or asset not found")
-        logger.info("ASSET_API: upload_asset completed script_id=%s asset_id=%s", script_id, asset_id)
+            raise HTTPException(status_code=404, detail="项目或素材不存在")
+        logger.info("素材接口：上传素材图片 完成 项目ID=%s 素材ID=%s", script_id, asset_id)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("ASSET_API: upload_asset invalid_request script_id=%s detail=%s", script_id, exc)
+        logger.warning("素材接口：上传素材图片 参数非法 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("ASSET_API: upload_asset unexpected_error script_id=%s", script_id)
+        logger.exception("素材接口：上传素材图片 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

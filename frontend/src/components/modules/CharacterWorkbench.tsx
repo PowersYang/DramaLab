@@ -1,17 +1,24 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, ChevronRight, User, Check, Sliders } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { motion } from "framer-motion";
+import { X, RefreshCw, Lock, Video, Sparkles, Eye, ChevronLeft, User, Check } from "lucide-react";
 import BillingActionButton from "@/components/billing/BillingActionButton";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
-import { api } from "@/lib/api";
+import { api, type AssetPromptState } from "@/lib/api";
 import { applyCharacterVariantSelection, getPreferredCharacterPanel } from "@/lib/characterAssets";
+import {
+    DEFAULT_NEGATIVE_PROMPT_ZH,
+    getDefaultCharacterMotionPrompt,
+    getDefaultCharacterPrompt,
+} from "@/lib/characterPromptTemplates";
+import { useAvailableModelCatalog, type SimpleModelOption } from "@/lib/modelCatalog";
 import { isSeriesProject } from "@/lib/projectAssets";
 
 import { useProjectStore, type Character } from "@/store/projectStore";
 import { Image as PhotoIcon } from "lucide-react";
 import { getAssetUrl, normalizeComparableAssetPath } from "@/lib/utils";
+import { getLatestVariantBatch } from "@/lib/variantBatches";
 
 type PanelKey = "full_body" | "three_view" | "headshot";
 type MotionAssetType = "full_body" | "head_shot";
@@ -69,7 +76,6 @@ type CharacterAsset = {
     video_assets?: VideoVariantLike[];
 };
 
-const DEFAULT_NEGATIVE_PROMPT = "low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, jpeg artifacts, signature, watermark, blurry";
 const parseVariantTime = (value: string | number | undefined | null) => {
     if (typeof value === "number") {
         return Number.isFinite(value) ? value : 0;
@@ -79,17 +85,6 @@ const parseVariantTime = (value: string | number | undefined | null) => {
         return Number.isNaN(parsed) ? 0 : parsed;
     }
     return 0;
-};
-
-// 候选图稳定按生成时间倒序展示最近 4 张，避免“批次识别”误伤已生成结果。
-const getRecentVariants = <T extends { created_at?: string | number | null }>(variants: T[]) => {
-    if (!Array.isArray(variants) || variants.length === 0) {
-        return [];
-    }
-
-    return [...variants]
-        .sort((a, b) => parseVariantTime(b.created_at) - parseVariantTime(a.created_at))
-        .slice(0, 4);
 };
 
 // 视频预览也统一按最新优先排序，兼容新版 unit 视频和旧版 video task。
@@ -119,13 +114,26 @@ interface CharacterWorkbenchProps {
     asset: CharacterAsset;
     onClose: () => void;
     onUpdateDescription: (desc: string) => void;
-    onGenerate: (type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number) => void;
+    onGenerate: (type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number, modelName?: string) => void;
     generatingTypes: { type: string; batchSize: number }[];
     stylePrompt?: string;
     styleNegativePrompt?: string;
     onGenerateVideo?: (prompt: string, negativePrompt: string, duration: number, subType?: string) => void;
     onDeleteVideo?: (videoId: string) => void;
     isGeneratingVideo?: boolean;
+    staticTaskType?: string;
+    motionTaskType?: string;
+    allowMotionMode?: boolean;
+    enableMotionGeneration?: boolean;
+    motionUnavailableMessage?: string;
+    onSelectVariant?: (panel: PanelKey, variantId: string) => Promise<void> | void;
+    externalMotionVideos?: Partial<Record<Extract<PanelKey, "full_body" | "headshot">, VideoVariantLike[]>>;
+    selectedStaticModel?: string;
+    onSelectedStaticModelChange?: (modelId: string) => void;
+    staticModelOptions?: SimpleModelOption[];
+    staticModelSourceHint?: string;
+    promptStateProjectId?: string;
+    promptStateSeriesId?: string;
 }
 
 export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
@@ -136,10 +144,39 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
         generatingTypes = [],
         styleNegativePrompt = "",
         onGenerateVideo,
+        staticTaskType = "asset.generate",
+        motionTaskType = "asset.motion_ref.generate",
+        allowMotionMode = true,
+        enableMotionGeneration = !!onGenerateVideo,
+        motionUnavailableMessage = "当前工作台暂未接入动态生成任务。",
+        onSelectVariant,
+        externalMotionVideos,
+        selectedStaticModel,
+        onSelectedStaticModelChange,
+        staticModelOptions,
+        staticModelSourceHint,
+        promptStateProjectId,
+        promptStateSeriesId,
     } = props;
     const [activePanel, setActivePanel] = useState<PanelKey>("full_body");
     const updateProject = useProjectStore(state => state.updateProject);
     const currentProject = useProjectStore(state => state.currentProject);
+    const defaultStaticModelFromContext = selectedStaticModel || currentProject?.model_settings?.t2i_model || "wan2.5-t2i-preview";
+    const [localSelectedStaticModel, setLocalSelectedStaticModel] = useState(defaultStaticModelFromContext);
+    const effectiveSelectedStaticModel = onSelectedStaticModelChange ? defaultStaticModelFromContext : localSelectedStaticModel;
+    const { catalog: availableModelCatalog } = useAvailableModelCatalog({ t2i: effectiveSelectedStaticModel });
+    const effectiveStaticModelOptions = staticModelOptions || availableModelCatalog.t2i;
+    const effectiveStaticModelSourceHint =
+        staticModelSourceHint
+        || (isSeriesProject(currentProject)
+            ? "默认来自项目设置；系列项目可在项目设置中覆盖系列默认模型。"
+            : "默认来自项目设置。");
+
+    useEffect(() => {
+        if (!onSelectedStaticModelChange) {
+            setLocalSelectedStaticModel(defaultStaticModelFromContext);
+        }
+    }, [defaultStaticModelFromContext, onSelectedStaticModelChange]);
 
     // Mode state for Asset Activation v2 (Static/Motion)
     const [fullBodyMode, setFullBodyMode] = useState<'static' | 'motion'>('static');
@@ -148,8 +185,9 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
     // Motion Ref prompts (initialized with PRD templates)
     const [fullBodyMotionPrompt, setFullBodyMotionPrompt] = useState('');
     const [headshotMotionPrompt, setHeadshotMotionPrompt] = useState('');
-    const [fullBodyMotionNegativePrompt, setFullBodyMotionNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
-    const [headshotMotionNegativePrompt, setHeadshotMotionNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
+    // 动态参考图沿用中文默认负向词，避免重构后引用不存在的旧常量导致首屏崩溃。
+    const [fullBodyMotionNegativePrompt, setFullBodyMotionNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT_ZH);
+    const [headshotMotionNegativePrompt, setHeadshotMotionNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT_ZH);
 
     // Motion Ref generation state
     const [isVideoLoading, setIsVideoLoading] = useState(false);
@@ -192,20 +230,20 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
     const getInitialPrompt = useCallback((type: string, existingPrompt?: string | null) => {
         if (existingPrompt) return existingPrompt;
 
-        const baseDesc = asset.description || "";
-        const name = asset.name || "Character";
-
         if (type === "full_body") {
-            const prefix = hasNonFullBodyUpload ? "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, skin tone, and clothing as the reference image. " : "";
-            return `${prefix}Full body character design of ${name}, concept art. ${baseDesc}. Standing pose, neutral expression, no emotion, looking at viewer. Clean white background, isolated, no other objects, no scenery, simple background, high quality, masterpiece.`;
+            return getDefaultCharacterPrompt("full_body", asset.name || "角色", asset.description || "", {
+                keepReferenceConsistency: hasNonFullBodyUpload,
+            });
         }
         if (type === "three_view") {
-            const prefix = (hasFullBodyImage || hasAnyUpload) ? "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, and clothing as the reference image. " : "";
-            return `${prefix}Character Reference Sheet for ${name}. ${baseDesc}. Three-view character design: Front view, Side view, and Back view. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background, clean lines, studio lighting, high quality.`;
+            return getDefaultCharacterPrompt("three_view", asset.name || "角色", asset.description || "", {
+                keepReferenceConsistency: hasFullBodyImage || hasAnyUpload,
+            });
         }
         if (type === "headshot") {
-            const prefix = (hasFullBodyImage || hasAnyUpload) ? "STRICTLY MAINTAIN the SAME face, hairstyle, skin tone, and facial features as the reference image. " : "";
-            return `${prefix}Close-up portrait of the SAME character ${name}. ${baseDesc}. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece.`;
+            return getDefaultCharacterPrompt("headshot", asset.name || "角色", asset.description || "", {
+                keepReferenceConsistency: hasFullBodyImage || hasAnyUpload,
+            });
         }
         return "";
     }, [asset.description, asset.name, hasAnyUpload, hasFullBodyImage, hasNonFullBodyUpload]);
@@ -219,13 +257,15 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
 
     // New State for Style Control
     const [applyStyle] = useState(true);
-    // User's own negative prompt (initially empty or with sensible defaults)
-    const [negativePrompt, setNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT);
-    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
-    const assetGeneratePrice = getTaskPrice("asset.generate");
-    const motionRefGeneratePrice = getTaskPrice("asset.motion_ref.generate");
-    const assetGenerateAffordable = canAffordTask("asset.generate");
-    const motionRefAffordable = canAffordTask("asset.motion_ref.generate");
+    const [fullBodyNegativePrompt, setFullBodyNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT_ZH);
+    const [threeViewNegativePrompt, setThreeViewNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT_ZH);
+    const [headshotNegativePrompt, setHeadshotNegativePrompt] = useState(styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT_ZH);
+    const { account, getTaskPrice, canAffordTask, loading: billingGuardLoading } = useBillingGuard();
+    const assetGeneratePrice = getTaskPrice(staticTaskType);
+    const motionRefGeneratePrice = getTaskPrice(motionTaskType);
+    // 账本信息尚未返回时不要把按钮直接判成“余额不足”，否则用户刚打开弹窗就会看到灰掉的生成入口。
+    const assetGenerateAffordable = billingGuardLoading ? true : canAffordTask(staticTaskType);
+    const motionRefAffordable = enableMotionGeneration ? (billingGuardLoading ? true : canAffordTask(motionTaskType)) : true;
 
     // Get the uploaded image URL for reverse generation reference
     const getUploadedReferenceUrl = () => {
@@ -248,7 +288,10 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
 
     // Motion Ref generation handler with validation
     const handleGenerateMotionRef = async (assetType: MotionAssetType, prompt: string, negativePromptForMotion: string) => {
-        if (!onGenerateVideo) return;
+        if (!enableMotionGeneration || !onGenerateVideo) {
+            alert(motionUnavailableMessage);
+            return;
+        }
         if (!motionRefAffordable) {
             alert("当前组织算力豆余额不足，无法提交动态参考视频任务。");
             return;
@@ -271,52 +314,102 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
     // PRD Motion Prompt Templates
     const getMotionDefault = useCallback((type: 'full_body' | 'headshot') => {
         if (type === 'full_body') {
-            return `Full-body character reference video.\n${asset.description}.\nStanding pose, shifting weight slightly, natural hand gestures while talking, turning body 30 degrees left and right. Stable camera, flat lighting, keep the costume and face consistent.`;
+            return getDefaultCharacterMotionPrompt("full_body", asset.name || "角色", asset.description || "");
         } else {
-            return `High-fidelity portrait video reference.\n${asset.description}.\nFacing camera, subtle head movements, blinking, micro-expressions, stable framing, keep face details consistent.`;
+            return getDefaultCharacterMotionPrompt("headshot", asset.name || "角色", asset.description || "");
         }
-    }, [asset.description]);
+    }, [asset.description, asset.name]);
 
     // Initialize prompts if empty (first time load)
     useEffect(() => {
-        setFullBodyPrompt((currentPrompt) => currentPrompt || `Full body character design of ${asset.name}, concept art. ${asset.description}. Standing pose, neutral expression, no emotion, looking at viewer. Clean white background, isolated, no other objects, no scenery, simple background, high quality, masterpiece.`);
-        setThreeViewPrompt((currentPrompt) => currentPrompt || `Character Reference Sheet for ${asset.name}. ${asset.description}. Three-view character design: Front view, Side view, and Back view. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background.`);
-        setHeadshotPrompt((currentPrompt) => currentPrompt || `Close-up portrait of the SAME character ${asset.name}. ${asset.description}. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece.`);
+        setFullBodyPrompt((currentPrompt) => currentPrompt || getInitialPrompt("full_body"));
+        setThreeViewPrompt((currentPrompt) => currentPrompt || getInitialPrompt("three_view"));
+        setHeadshotPrompt((currentPrompt) => currentPrompt || getInitialPrompt("headshot"));
         setFullBodyMotionPrompt((currentPrompt) => currentPrompt || getMotionDefault('full_body'));
         setHeadshotMotionPrompt((currentPrompt) => currentPrompt || getMotionDefault('headshot'));
-    }, [asset.name, asset.description, getMotionDefault]);
+    }, [getInitialPrompt, getMotionDefault]);
 
     useEffect(() => {
         setOptimisticSelectedIds({});
     }, [asset.id]);
 
     useEffect(() => {
-        if (styleNegativePrompt && (!negativePrompt || negativePrompt === DEFAULT_NEGATIVE_PROMPT)) {
-            setNegativePrompt(styleNegativePrompt);
+        // 中文注释：切换到新资产时先回落到风格默认负向词，随后再由 prompt state 异步覆盖。
+        const fallbackNegative = styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT_ZH;
+        setFullBodyNegativePrompt(fallbackNegative);
+        setThreeViewNegativePrompt(fallbackNegative);
+        setHeadshotNegativePrompt(fallbackNegative);
+    }, [asset.id, styleNegativePrompt]);
+
+    useEffect(() => {
+        const hasOwner = !!promptStateProjectId || !!promptStateSeriesId;
+        if (!hasOwner || typeof api.getAssetPromptStates !== "function") {
+            return;
         }
-    }, [negativePrompt, styleNegativePrompt]);
+        let cancelled = false;
+        const fetchPromptStates = async () => {
+            try {
+                const states = await api.getAssetPromptStates({
+                    assetId: asset.id,
+                    assetType: "character",
+                    projectId: promptStateProjectId,
+                    seriesId: promptStateSeriesId,
+                });
+                if (cancelled) {
+                    return;
+                }
+                const buildStateMap = (items: AssetPromptState[]) =>
+                    new Map(items.map((item) => [`${item.output_type}:${item.slot_type}`, item]));
+                const stateMap = buildStateMap(states);
+                const imageFullBody = stateMap.get("image:full_body");
+                const imageThreeView = stateMap.get("image:three_view");
+                const imageHeadshot = stateMap.get("image:headshot");
+                const motionFullBody = stateMap.get("motion:full_body");
+                const motionHeadshot = stateMap.get("motion:head_shot");
+
+                if (imageFullBody?.positive_prompt) setFullBodyPrompt(imageFullBody.positive_prompt);
+                if (imageThreeView?.positive_prompt) setThreeViewPrompt(imageThreeView.positive_prompt);
+                if (imageHeadshot?.positive_prompt) setHeadshotPrompt(imageHeadshot.positive_prompt);
+
+                if (imageFullBody?.negative_prompt) setFullBodyNegativePrompt(imageFullBody.negative_prompt);
+                if (imageThreeView?.negative_prompt) setThreeViewNegativePrompt(imageThreeView.negative_prompt);
+                if (imageHeadshot?.negative_prompt) setHeadshotNegativePrompt(imageHeadshot.negative_prompt);
+
+                if (motionFullBody?.positive_prompt) setFullBodyMotionPrompt(motionFullBody.positive_prompt);
+                if (motionHeadshot?.positive_prompt) setHeadshotMotionPrompt(motionHeadshot.positive_prompt);
+                if (motionFullBody?.negative_prompt) setFullBodyMotionNegativePrompt(motionFullBody.negative_prompt);
+                if (motionHeadshot?.negative_prompt) setHeadshotMotionNegativePrompt(motionHeadshot.negative_prompt);
+            } catch (error) {
+                console.error("Failed to fetch character prompt states:", error);
+            }
+        };
+        void fetchPromptStates();
+        return () => {
+            cancelled = true;
+        };
+    }, [asset.id, promptStateProjectId, promptStateSeriesId]);
 
     // Update local state when asset updates (e.g. after generation)
     useEffect(() => {
         if (asset.full_body_prompt) {
             setFullBodyPrompt(asset.full_body_prompt);
         } else if (hasNonFullBodyUpload) {
-            setFullBodyPrompt((currentPrompt) => currentPrompt.includes("STRICTLY MAINTAIN") ? currentPrompt : getInitialPrompt("full_body", ""));
+            setFullBodyPrompt((currentPrompt) => currentPrompt.includes("严格保持与参考图一致") ? currentPrompt : getInitialPrompt("full_body", ""));
         }
 
         if (asset.three_view_prompt) {
             setThreeViewPrompt(asset.three_view_prompt);
         } else if (hasAnyUpload) {
-            setThreeViewPrompt((currentPrompt) => currentPrompt.includes("STRICTLY MAINTAIN") ? currentPrompt : getInitialPrompt("three_view", ""));
+            setThreeViewPrompt((currentPrompt) => currentPrompt.includes("严格保持与参考图一致") ? currentPrompt : getInitialPrompt("three_view", ""));
         }
 
         if (asset.headshot_prompt) {
             setHeadshotPrompt(asset.headshot_prompt);
         } else if (hasAnyUpload) {
-            setHeadshotPrompt((currentPrompt) => currentPrompt.includes("STRICTLY MAINTAIN") ? currentPrompt : getInitialPrompt("headshot", ""));
+            setHeadshotPrompt((currentPrompt) => currentPrompt.includes("严格保持与参考图一致") ? currentPrompt : getInitialPrompt("headshot", ""));
         }
     }, [
-        asset,
+        asset.id,
         asset.full_body_prompt,
         asset.headshot_prompt,
         asset.three_view_prompt,
@@ -331,11 +424,16 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
             return;
         }
         let prompt = "";
+        let negativePromptForPanel = styleNegativePrompt || DEFAULT_NEGATIVE_PROMPT_ZH;
         if (type === "full_body") prompt = fullBodyPrompt;
         else if (type === "three_view") prompt = threeViewPrompt;
         else if (type === "headshot") prompt = headshotPrompt;
 
-        onGenerate(type, prompt, applyStyle, negativePrompt, batchSize);
+        if (type === "full_body") negativePromptForPanel = fullBodyNegativePrompt;
+        else if (type === "three_view") negativePromptForPanel = threeViewNegativePrompt;
+        else if (type === "headshot") negativePromptForPanel = headshotNegativePrompt;
+
+        onGenerate(type, prompt, applyStyle, negativePromptForPanel, batchSize, effectiveSelectedStaticModel);
     };
 
     // Helper to check if a specific type is generating
@@ -386,10 +484,22 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
     }, [asset.id, currentProject, updateProject]);
 
     const handleSelectVariant = (type: PanelKey, variantId: string) => {
-        if (!currentProject) return;
-
         setOptimisticSelectedIds((current) => ({ ...current, [type]: variantId }));
         latestSelectionRef.current[type] = variantId;
+
+        if (onSelectVariant) {
+            Promise.resolve(onSelectVariant(type, variantId)).catch(async (error) => {
+                console.error("Failed to select variant:", error);
+                setOptimisticSelectedIds((current) => {
+                    const next = { ...current };
+                    delete next[type];
+                    return next;
+                });
+            });
+            return;
+        }
+
+        if (!currentProject) return;
 
         // 点击后先同步本地项目状态，确保弹窗左侧预览和角色卡片列表立即切到新图。
         const nextCharacters = currentProject.characters?.map((character) =>
@@ -496,8 +606,25 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
         return getRecentVideoVariants(Array.from(mergedById.values()));
     };
 
-    const fullBodyMotionVideos = resolvePanelMotionVideos("full_body");
-    const headshotMotionVideos = resolvePanelMotionVideos("headshot");
+    const fullBodyMotionVideos = externalMotionVideos?.full_body || resolvePanelMotionVideos("full_body");
+    const headshotMotionVideos = externalMotionVideos?.headshot || resolvePanelMotionVideos("headshot");
+    const isGeneratingFullBodyMotion = useMemo(
+        () => generatingTypes.some((task) => task.type === "video_full_body"),
+        [generatingTypes],
+    );
+    const isGeneratingHeadshotMotion = useMemo(
+        () => generatingTypes.some((task) => task.type === "video_head_shot"),
+        [generatingTypes],
+    );
+
+    useEffect(() => {
+        // 如果当前分面已经有动态结果或正在生成，重新打开工作台时优先回到动态视图；只有模式真的变化时才更新。
+        const nextFullBodyMode: 'static' | 'motion' = fullBodyMotionVideos.length > 0 || isGeneratingFullBodyMotion ? "motion" : "static";
+        const nextHeadshotMode: 'static' | 'motion' = headshotMotionVideos.length > 0 || isGeneratingHeadshotMotion ? "motion" : "static";
+
+        setFullBodyMode((currentMode) => (currentMode === nextFullBodyMode ? currentMode : nextFullBodyMode));
+        setHeadshotMode((currentMode) => (currentMode === nextHeadshotMode ? currentMode : nextHeadshotMode));
+    }, [asset.id, fullBodyMotionVideos.length, headshotMotionVideos.length, isGeneratingFullBodyMotion, isGeneratingHeadshotMotion]);
 
     const getPanelAsset = (panelKey: PanelKey) => {
         if (panelKey === "full_body") return fullBodyPanelAsset;
@@ -543,7 +670,7 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
             variantsCount: fullBodyPanelAsset.variants?.length || 0,
             isGenerating: getGeneratingInfo("full_body").isGenerating,
             isLocked: false,
-            motionEnabled: true
+            motionEnabled: allowMotionMode
         },
         {
             key: "three_view" as const,
@@ -569,12 +696,12 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
             variantsCount: headshotPanelAsset.variants?.length || 0,
             isGenerating: getGeneratingInfo("headshot").isGenerating,
             isLocked: !(fullBodyPanelAsset.variants?.length > 0 || asset.full_body_image_url || hasAnyUpload),
-            motionEnabled: true
+            motionEnabled: allowMotionMode
         }
     ];
 
     const completedPanels = panelConfigs.filter((panel) => !!panel.previewUrl || panel.variantsCount > 0).length;
-    const supportsActiveMotion = activePanel === "full_body" || activePanel === "headshot";
+    const supportsActiveMotion = allowMotionMode && (activePanel === "full_body" || activePanel === "headshot");
     const activeMode = activePanel === "full_body"
         ? fullBodyMode
         : activePanel === "headshot"
@@ -616,6 +743,23 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
         if (activePanel === "full_body") handleGenerateClick("full_body", fullBodyBatchSize);
         else if (activePanel === "three_view") handleGenerateClick("three_view", threeViewBatchSize);
         else handleGenerateClick("headshot", headshotBatchSize);
+    };
+    const activeMotionGenerating = activePanel === "full_body"
+        ? isGeneratingFullBodyMotion
+        : activePanel === "headshot"
+            ? isGeneratingHeadshotMotion
+            : false;
+    const activeMotionPrompt = activePanel === "headshot" ? headshotMotionPrompt : fullBodyMotionPrompt;
+    const activeMotionNegativePrompt = activePanel === "headshot" ? headshotMotionNegativePrompt : fullBodyMotionNegativePrompt;
+    const activeMotionHasSourceImage = activePanel === "headshot"
+        ? !!(headshotPanelAsset.variants?.length > 0 || asset.headshot_image_url || asset.avatar_url)
+        : !!(fullBodyPanelAsset.variants?.length > 0 || asset.full_body_image_url);
+    const handleToolbarGenerateMotion = () => {
+        if (activePanel === "headshot") {
+            void handleGenerateMotionRef("head_shot", headshotMotionPrompt, headshotMotionNegativePrompt);
+            return;
+        }
+        void handleGenerateMotionRef("full_body", fullBodyMotionPrompt, fullBodyMotionNegativePrompt);
     };
 
     const activeSelectedImageUrl = getPanelSelectedUrl(activePanel);
@@ -812,6 +956,33 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     </BillingActionButton>
                                 </div>
                             )}
+
+                            {activeMode === "motion" && supportsActiveMotion && (
+                                <div className="flex items-center gap-4">
+                                    <div className="rounded-xl border border-white/5 bg-black/40 px-4 py-2">
+                                        <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">动态参考</div>
+                                        <div className="mt-1 text-xs text-gray-300">
+                                            {activeMotionHasSourceImage ? "将基于当前选中静态图生成视频" : "请先选中或生成一张静态图"}
+                                        </div>
+                                    </div>
+
+                                    <BillingActionButton
+                                        type="button"
+                                        onClick={handleToolbarGenerateMotion}
+                                        disabled={activeMotionGenerating || !motionRefAffordable || !enableMotionGeneration}
+                                        className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                                            activeMotionGenerating || !motionRefAffordable || !enableMotionGeneration
+                                                ? "bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed"
+                                                : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
+                                        }`}
+                                        priceCredits={motionRefGeneratePrice ?? null}
+                                        balanceCredits={account?.balance_credits ?? undefined}
+                                    >
+                                        <Video size={14} className={activeMotionGenerating ? "animate-pulse" : ""} />
+                                        {activeMotionGenerating ? "正在生成动态参考" : "生成动态参考"}
+                                    </BillingActionButton>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-hidden px-2 pb-2">
@@ -822,8 +993,8 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     onSelect={(id: string) => handleSelectVariant("full_body", id)}
                                     prompt={fullBodyPrompt}
                                     setPrompt={setFullBodyPrompt}
-                                    negativePrompt={negativePrompt}
-                                    setNegativePrompt={setNegativePrompt}
+                                    negativePrompt={fullBodyNegativePrompt}
+                                    setNegativePrompt={setFullBodyNegativePrompt}
                                     isGenerating={getGeneratingInfo("full_body").isGenerating}
                                     generatingBatchSize={getGeneratingInfo("full_body").batchSize}
                                     aspectRatio="9:16"
@@ -832,17 +1003,23 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     supportsMotion={true}
                                     mode={fullBodyMode}
                                     motionRefVideos={fullBodyMotionVideos}
-                                    onGenerateMotionRef={(prompt: string, negativePromptForMotion: string) => handleGenerateMotionRef('full_body', prompt, negativePromptForMotion)}
-                                    isGeneratingMotion={generatingTypes.some(t => t.type === "video_full_body")}
+                                    isGeneratingMotion={isGeneratingFullBodyMotion}
                                     motionPrompt={fullBodyMotionPrompt}
                                     setMotionPrompt={setFullBodyMotionPrompt}
                                     motionNegativePrompt={fullBodyMotionNegativePrompt}
                                     setMotionNegativePrompt={setFullBodyMotionNegativePrompt}
                                     isVideoLoading={isVideoLoading}
                                     setIsVideoLoading={setIsVideoLoading}
-                                    motionRefAffordable={motionRefAffordable}
-                                    motionRefPrice={motionRefGeneratePrice}
-                                    balanceCredits={account?.balance_credits ?? undefined}
+                                    staticModelOptions={effectiveStaticModelOptions}
+                                    selectedStaticModel={effectiveSelectedStaticModel}
+                                    onSelectedStaticModelChange={(modelId) => {
+                                        if (onSelectedStaticModelChange) {
+                                            onSelectedStaticModelChange(modelId);
+                                            return;
+                                        }
+                                        setLocalSelectedStaticModel(modelId);
+                                    }}
+                                    staticModelSourceHint={effectiveStaticModelSourceHint}
                                     onZoomImage={setZoomedImageUrl}
                                 />
                             )}
@@ -854,8 +1031,8 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     onSelect={(id: string) => handleSelectVariant("three_view", id)}
                                     prompt={threeViewPrompt}
                                     setPrompt={setThreeViewPrompt}
-                                    negativePrompt={negativePrompt}
-                                    setNegativePrompt={setNegativePrompt}
+                                    negativePrompt={threeViewNegativePrompt}
+                                    setNegativePrompt={setThreeViewNegativePrompt}
                                     isGenerating={getGeneratingInfo("three_view").isGenerating}
                                     generatingBatchSize={getGeneratingInfo("three_view").batchSize}
                                     isLocked={!asset.full_body_image_url && !hasAnyUpload}
@@ -871,8 +1048,8 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     onSelect={(id: string) => handleSelectVariant("headshot", id)}
                                     prompt={headshotPrompt}
                                     setPrompt={setHeadshotPrompt}
-                                    negativePrompt={negativePrompt}
-                                    setNegativePrompt={setNegativePrompt}
+                                    negativePrompt={headshotNegativePrompt}
+                                    setNegativePrompt={setHeadshotNegativePrompt}
                                     isGenerating={getGeneratingInfo("headshot").isGenerating}
                                     generatingBatchSize={getGeneratingInfo("headshot").batchSize}
                                     isLocked={!asset.full_body_image_url && !hasAnyUpload}
@@ -880,17 +1057,23 @@ export default function CharacterWorkbench(props: CharacterWorkbenchProps) {
                                     supportsMotion={true}
                                     mode={headshotMode}
                                     motionRefVideos={headshotMotionVideos}
-                                    onGenerateMotionRef={(prompt: string, negativePromptForMotion: string) => handleGenerateMotionRef('head_shot', prompt, negativePromptForMotion)}
-                                    isGeneratingMotion={generatingTypes.some(t => t.type === "video_head_shot")}
+                                    isGeneratingMotion={isGeneratingHeadshotMotion}
                                     motionPrompt={headshotMotionPrompt}
                                     setMotionPrompt={setHeadshotMotionPrompt}
                                     motionNegativePrompt={headshotMotionNegativePrompt}
                                     setMotionNegativePrompt={setHeadshotMotionNegativePrompt}
                                     isVideoLoading={isVideoLoading}
                                     setIsVideoLoading={setIsVideoLoading}
-                                    motionRefAffordable={motionRefAffordable}
-                                    motionRefPrice={motionRefGeneratePrice}
-                                    balanceCredits={account?.balance_credits ?? undefined}
+                                    staticModelOptions={effectiveStaticModelOptions}
+                                    selectedStaticModel={effectiveSelectedStaticModel}
+                                    onSelectedStaticModelChange={(modelId) => {
+                                        if (onSelectedStaticModelChange) {
+                                            onSelectedStaticModelChange(modelId);
+                                            return;
+                                        }
+                                        setLocalSelectedStaticModel(modelId);
+                                    }}
+                                    staticModelSourceHint={effectiveStaticModelSourceHint}
                                     onZoomImage={setZoomedImageUrl}
                                 />
                             )}
@@ -937,7 +1120,6 @@ interface WorkbenchPanelProps {
     supportsMotion?: boolean;
     mode?: "static" | "motion";
     motionRefVideos?: VideoVariantLike[];
-    onGenerateMotionRef?: (prompt: string, negativePrompt: string) => void;
     isGeneratingMotion?: boolean;
     motionPrompt?: string;
     setMotionPrompt?: (value: string) => void;
@@ -947,9 +1129,10 @@ interface WorkbenchPanelProps {
     setIsVideoLoading?: (loading: boolean) => void;
     reverseGenerationMode?: boolean;
     reverseReferenceUrl?: string | null;
-    motionRefAffordable?: boolean;
-    motionRefPrice?: number | null;
-    balanceCredits?: number;
+    staticModelOptions?: SimpleModelOption[];
+    selectedStaticModel?: string;
+    onSelectedStaticModelChange?: (modelId: string) => void;
+    staticModelSourceHint?: string;
     onZoomImage?: (url: string) => void;
 }
 
@@ -969,7 +1152,6 @@ function WorkbenchPanel({
     supportsMotion = false,
     mode = 'static',  // 'static' | 'motion'
     motionRefVideos = [],
-    onGenerateMotionRef,
     isGeneratingMotion = false,
     motionPrompt = '',
     setMotionPrompt,
@@ -980,15 +1162,17 @@ function WorkbenchPanel({
     // Reverse Generation Props
     reverseGenerationMode = false,
     reverseReferenceUrl = null,
-    motionRefAffordable = true,
-    motionRefPrice,
-    balanceCredits,
+    staticModelOptions = [],
+    selectedStaticModel = "",
+    onSelectedStaticModelChange,
+    staticModelSourceHint,
     onZoomImage,
 }: WorkbenchPanelProps) {
-    const latestVariants = getRecentVariants(Array.isArray(asset?.variants) ? asset.variants : []);
+    const latestVariants = getLatestVariantBatch(Array.isArray(asset?.variants) ? asset.variants : []);
+    const visibleStaticVariants = isGenerating ? [] : latestVariants;
+    const staticRecordCount = isGenerating ? generatingBatchSize : visibleStaticVariants.length;
     const latestMotionVideo = getRecentVideoVariants(motionRefVideos)[0];
     const railRef = useRef<HTMLDivElement | null>(null);
-    const [showAdvanced, setShowAdvanced] = useState(false);
 
     return (
         <div className="h-full flex flex-col overflow-hidden relative">
@@ -1013,7 +1197,7 @@ function WorkbenchPanel({
                             <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
                                 {mode === 'static' ? '生成结果' : '动态参考'}
                                 <span className="ml-3 px-2 py-0.5 rounded-full bg-white/5 text-[9px] text-gray-500 font-bold border border-white/5">
-                                    {mode === 'static' ? latestVariants.length : motionRefVideos.length} RECORDS
+                                    {mode === 'static' ? staticRecordCount : motionRefVideos.length} RECORDS
                                 </span>
                             </h3>
                         </div>
@@ -1021,7 +1205,7 @@ function WorkbenchPanel({
 
                     {mode === 'static' ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
-                            {latestVariants.map((variant) => (
+                            {visibleStaticVariants.map((variant) => (
                                 <motion.div
                                     key={variant.id}
                                     layout
@@ -1034,7 +1218,7 @@ function WorkbenchPanel({
                                     }`}
                                 >
                                     <img src={getAssetUrl(variant.url)} alt="Variant" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                                    <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-all" />
+                                    <div className="absolute inset-0 bg-slate-950/10 group-hover:bg-transparent transition-all" />
                                     {selectedVariantId === variant.id && (
                                         <div className="absolute top-2 right-2 p-1.5 rounded-full bg-indigo-600 text-white shadow-lg ring-2 ring-white/20">
                                             <Check size={12} />
@@ -1050,7 +1234,7 @@ function WorkbenchPanel({
                                 </div>
                             ))}
 
-                            {latestVariants.length === 0 && !isGenerating && (
+                            {visibleStaticVariants.length === 0 && !isGenerating && (
                                 <div className="col-span-full py-20 flex flex-col items-center justify-center text-gray-500 border border-dashed border-white/5 rounded-3xl">
                                     <Sparkles size={40} strokeWidth={1} className="mb-4 opacity-20" />
                                     <p className="text-xs font-bold uppercase tracking-widest">No Variants Generated Yet</p>
@@ -1073,6 +1257,17 @@ function WorkbenchPanel({
                                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Rendering</span>
                                 </div>
                             )}
+                            {motionRefVideos.length === 0 && !isGeneratingMotion && (
+                                <div className="col-span-full rounded-3xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-14 text-center">
+                                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-indigo-400">
+                                        <Video size={24} />
+                                    </div>
+                                    <p className="text-sm font-semibold text-white">还没有动态参考视频</p>
+                                    <p className="mt-2 text-xs leading-6 text-gray-400">
+                                        完成动态参考生成后，这里会自动展示最新视频预览。
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </section>
@@ -1084,7 +1279,7 @@ function WorkbenchPanel({
                             <div className="flex items-center gap-3">
                                 <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
                                 <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
-                                    {mode === 'static' ? '提示词' : '动态描述'}
+                                    {mode === 'static' ? '正向提示词' : '动态描述'}
                                 </h3>
                             </div>
                         </div>
@@ -1102,53 +1297,23 @@ function WorkbenchPanel({
                     <div className="space-y-6">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="h-1.5 w-1.5 rounded-full bg-white/10" />
-                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">控制与设置</h3>
+                                <div className="h-1.5 w-1.5 rounded-full bg-rose-400/80" />
+                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+                                    {mode === 'static' ? '负向提示词' : '动态生成设置'}
+                                </h3>
                             </div>
                         </div>
 
                         <div className="space-y-4">
                             {mode === 'static' ? (
-                                <>
-                                    <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between">
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-xs font-bold text-gray-300">艺术指导风格</span>
-                                            <span className="text-[10px] text-gray-500">自动应用全局项目视觉定调</span>
-                                        </div>
-                                        <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
-                                    </div>
-
-                                    <div className="space-y-3">
-                                        <button
-                                            onClick={() => setShowAdvanced(!showAdvanced)}
-                                            className="flex items-center justify-between w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-all"
-                                        >
-                                            <div className="flex items-center gap-2 text-gray-400">
-                                                <Sliders size={14} />
-                                                <span className="text-xs font-bold uppercase tracking-widest">负向提示词</span>
-                                            </div>
-                                            <ChevronRight size={16} className={`text-gray-500 transform transition-transform duration-300 ${showAdvanced ? 'rotate-90' : ''}`} />
-                                        </button>
-
-                                        <AnimatePresence>
-                                            {showAdvanced && (
-                                                <motion.div
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: "auto", opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    className="overflow-hidden"
-                                                >
-                                                    <textarea
-                                                        value={negativePrompt}
-                                                        onChange={(e) => setNegativePrompt(e.target.value)}
-                                                        className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-[11px] text-gray-500 font-mono resize-none focus:border-indigo-500/50 focus:outline-none transition-all custom-scrollbar"
-                                                        placeholder="排除不想要的特征..."
-                                                    />
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
-                                </>
+                                <div className="relative">
+                                    <textarea
+                                        value={negativePrompt}
+                                        onChange={(e) => setNegativePrompt(e.target.value)}
+                                        className="w-full h-48 bg-black/40 border border-white/10 rounded-[24px] p-6 text-[13px] leading-relaxed text-gray-200 resize-none focus:border-indigo-500/50 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all custom-scrollbar"
+                                        placeholder="描述不希望出现的质量问题、畸形、杂物、背景元素..."
+                                    />
+                                </div>
                             ) : (
                                 <div className="space-y-4">
                                     <div className="p-6 rounded-3xl bg-indigo-600/10 border border-indigo-500/20">
@@ -1158,21 +1323,7 @@ function WorkbenchPanel({
                                             <span className="font-bold text-white">5.0s</span>
                                         </div>
                                     </div>
-                                    
-                                    <BillingActionButton
-                                        onClick={() => onGenerateMotionRef?.(motionPrompt, motionNegativePrompt)}
-                                        disabled={isGeneratingMotion || !motionRefAffordable}
-                                        className={`w-full py-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${
-                                            isGeneratingMotion || !motionRefAffordable
-                                                ? "bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed"
-                                                : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20"
-                                        }`}
-                                        priceCredits={motionRefPrice}
-                                        balanceCredits={balanceCredits}
-                                    >
-                                        <Sparkles size={16} className={isGeneratingMotion ? "animate-spin" : ""} />
-                                        {isGeneratingMotion ? "正在制作动态参考..." : "立即生成动态参考"}
-                                    </BillingActionButton>
+
                                 </div>
                             )}
                         </div>

@@ -50,7 +50,7 @@ async def generate_video(
 ):
     """触发整项目视频生成。"""
     try:
-        logger.info("MEDIA_API: generate_video script_id=%s", script_id)
+        logger.info("媒体接口：生成项目视频 项目ID=%s", script_id)
         receipt = task_service.create_job(
             task_type="video.generate.project",
             payload={"project_id": script_id},
@@ -64,7 +64,7 @@ async def generate_video(
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("MEDIA_API: generate_video unexpected_error script_id=%s", script_id)
+        logger.exception("媒体接口：生成项目视频 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -78,7 +78,7 @@ async def generate_audio(
     这里改为只落统一任务，避免 API 线程同步阻塞在整片音频生成上。
     """
     try:
-        logger.info("MEDIA_API: generate_audio script_id=%s", script_id)
+        logger.info("媒体接口：生成项目音频 项目ID=%s", script_id)
         receipt = task_service.create_job(
             task_type="audio.generate.project",
             payload={"project_id": script_id},
@@ -92,7 +92,7 @@ async def generate_audio(
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("MEDIA_API: generate_audio unexpected_error script_id=%s", script_id)
+        logger.exception("媒体接口：生成项目音频 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -109,7 +109,7 @@ async def create_video_task(
     """
     try:
         logger.info(
-            "MEDIA_API: create_video_task script_id=%s frame_id=%s batch_size=%s model=%s generation_mode=%s",
+            "媒体接口：创建视频任务 项目ID=%s 分镜ID=%s 批量数=%s 模型=%s 生成模式=%s",
             script_id,
             request.frame_id,
             request.batch_size,
@@ -140,13 +140,13 @@ async def create_video_task(
             movement_amplitude=request.movement_amplitude,
             idempotency_key=idempotency_key,
         )
-        logger.info("MEDIA_API: create_video_task completed script_id=%s job_count=%s", script_id, len(receipts))
+        logger.info("媒体接口：创建视频任务 完成 项目ID=%s 任务数=%s", script_id, len(receipts))
         return signed_response(receipts)
     except ValueError as exc:
-        logger.warning("MEDIA_API: create_video_task invalid_request script_id=%s detail=%s", script_id, exc)
+        logger.warning("媒体接口：创建视频任务 参数非法 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("MEDIA_API: create_video_task unexpected_error script_id=%s", script_id)
+        logger.exception("媒体接口：创建视频任务 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -154,11 +154,11 @@ async def create_video_task(
 async def bind_voice(script_id: str, char_id: str, request: BindVoiceRequest):
     """给角色绑定语音。"""
     try:
-        logger.info("MEDIA_API: bind_voice script_id=%s char_id=%s voice_id=%s", script_id, char_id, request.voice_id)
+        logger.info("媒体接口：绑定角色音色 项目ID=%s 角色ID=%s 音色ID=%s", script_id, char_id, request.voice_id)
         updated_script = video_task_service.bind_voice(script_id, char_id, request.voice_id, request.voice_name)
         return signed_response(updated_script)
     except Exception as exc:
-        logger.exception("MEDIA_API: bind_voice unexpected_error script_id=%s char_id=%s", script_id, char_id)
+        logger.exception("媒体接口：绑定角色音色 发生未预期异常 项目ID=%s 角色ID=%s", script_id, char_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -173,18 +173,18 @@ async def update_voice_params(
 ):
     """更新角色语音参数。"""
     try:
-        logger.info("MEDIA_API: update_voice_params script_id=%s char_id=%s", script_id, char_id)
+        logger.info("媒体接口：更新语音参数 项目ID=%s 角色ID=%s", script_id, char_id)
         updated_script = video_task_service.update_voice_params(script_id, char_id, request.speed, request.pitch, request.volume)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("MEDIA_API: update_voice_params failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("媒体接口：更新语音参数 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/voices")
 async def get_voices():
     """返回当前可用语音列表。"""
-    logger.info("MEDIA_API: get_voices")
+    logger.info("媒体接口：获取可用音色列表")
     return media_workflow.get_available_voices()
 
 
@@ -192,13 +192,13 @@ async def get_voices():
 async def preview_voice(voice_id: str, request: PreviewVoiceRequest):
     """返回指定音色的试听音频地址；若缓存不存在则即时生成并上传 OSS。"""
     try:
-        logger.info("MEDIA_API: preview_voice voice_id=%s", voice_id)
+        logger.info("媒体接口：试听音色 音色ID=%s", voice_id)
         return signed_response(media_workflow.audio_provider.get_voice_preview(voice_id, request.text))
     except ValueError as exc:
-        logger.warning("MEDIA_API: preview_voice invalid_request voice_id=%s detail=%s", voice_id, exc)
+        logger.warning("媒体接口：试听音色 参数非法 音色ID=%s 详情=%s", voice_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("MEDIA_API: preview_voice unexpected_error voice_id=%s", voice_id)
+        logger.exception("媒体接口：试听音色 发生未预期异常 音色ID=%s", voice_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -211,7 +211,7 @@ async def generate_line_audio(
 ):
     """按指定参数为某一帧生成对白音频。"""
     try:
-        logger.info("MEDIA_API: generate_line_audio script_id=%s frame_id=%s", script_id, frame_id)
+        logger.info("媒体接口：生成单句音频 项目ID=%s 分镜ID=%s", script_id, frame_id)
         receipt = task_service.create_job(
             task_type="audio.generate.line",
             payload={
@@ -231,7 +231,7 @@ async def generate_line_audio(
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("MEDIA_API: generate_line_audio unexpected_error script_id=%s frame_id=%s", script_id, frame_id)
+        logger.exception("媒体接口：生成单句音频 发生未预期异常 项目ID=%s 分镜ID=%s", script_id, frame_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -239,13 +239,13 @@ async def generate_line_audio(
 async def get_project_timeline(script_id: str):
     """返回项目时间轴；若尚未保存过，则按当前素材即时构建默认工程。"""
     try:
-        logger.info("MEDIA_API: get_project_timeline script_id=%s", script_id)
+        logger.info("媒体接口：获取项目时间轴 项目ID=%s", script_id)
         return signed_response(project_timeline_service.get_timeline(script_id))
     except ValueError as exc:
-        logger.warning("MEDIA_API: get_project_timeline failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("媒体接口：获取项目时间轴 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("MEDIA_API: get_project_timeline unexpected_error script_id=%s", script_id)
+        logger.exception("媒体接口：获取项目时间轴 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -258,7 +258,7 @@ async def update_project_timeline(script_id: str, request: UpdateProjectTimeline
     """
     try:
         logger.info(
-            "MEDIA_API: update_project_timeline script_id=%s track_count=%s clip_count=%s asset_count=%s",
+            "媒体接口：保存项目时间轴 项目ID=%s 轨道数=%s 片段数=%s 素材数=%s",
             script_id,
             len(request.tracks),
             len(request.clips),
@@ -273,10 +273,10 @@ async def update_project_timeline(script_id: str, request: UpdateProjectTimeline
         )
         return signed_response(project_timeline_service.save_timeline(script_id, timeline))
     except ValueError as exc:
-        logger.warning("MEDIA_API: update_project_timeline failed script_id=%s detail=%s", script_id, exc)
+        logger.warning("媒体接口：保存项目时间轴 失败 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("MEDIA_API: update_project_timeline unexpected_error script_id=%s", script_id)
+        logger.exception("媒体接口：保存项目时间轴 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -287,7 +287,7 @@ async def generate_mix_sfx(
 ):
     """为全片触发音效生成流程。"""
     try:
-        logger.info("MEDIA_API: generate_mix_sfx script_id=%s", script_id)
+        logger.info("媒体接口：生成混音音效 项目ID=%s", script_id)
         receipt = task_service.create_job(
             task_type="mix.generate.sfx",
             payload={"project_id": script_id},
@@ -301,7 +301,7 @@ async def generate_mix_sfx(
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("MEDIA_API: generate_mix_sfx unexpected_error script_id=%s", script_id)
+        logger.exception("媒体接口：生成混音音效 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -312,7 +312,7 @@ async def generate_mix_bgm(
 ):
     """触发背景音乐生成。"""
     try:
-        logger.info("MEDIA_API: generate_mix_bgm script_id=%s", script_id)
+        logger.info("媒体接口：生成混音BGM 项目ID=%s", script_id)
         receipt = task_service.create_job(
             task_type="mix.generate.bgm",
             payload={"project_id": script_id},
@@ -326,7 +326,7 @@ async def generate_mix_bgm(
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("MEDIA_API: generate_mix_bgm unexpected_error script_id=%s", script_id)
+        logger.exception("媒体接口：生成混音BGM 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -338,7 +338,7 @@ async def merge_videos(
 ):
     """把所有已选中的分镜视频合成为最终成片。"""
     try:
-        logger.info("MEDIA_API: merge_videos script_id=%s", script_id)
+        logger.info("媒体接口：合成成片 项目ID=%s", script_id)
         receipt = task_service.create_job(
             task_type="media.merge",
             payload={
@@ -355,17 +355,17 @@ async def merge_videos(
         )
         return signed_response(receipt)
     except ValueError as exc:
-        logger.error("[MERGE ERROR] Validation failed: %s", exc)
-        logger.exception("MEDIA_API: merge_videos validation_error script_id=%s", script_id)
+        logger.error("[合成错误] 参数校验失败：%s", exc)
+        logger.exception("媒体接口：合成成片 参数校验失败 项目ID=%s", script_id)
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
-        logger.error("[MERGE ERROR] Runtime error: %s", exc)
-        logger.exception("MEDIA_API: merge_videos runtime_error script_id=%s", script_id)
+        logger.error("[合成错误] 运行时异常：%s", exc)
+        logger.exception("媒体接口：合成成片 运行时异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
-        logger.error("[MERGE ERROR] Unexpected error: %s", exc)
-        logger.exception("MEDIA_API: merge_videos unexpected_error script_id=%s", script_id)
-        raise HTTPException(status_code=500, detail=f"Merge failed: {str(exc)}")
+        logger.error("[合成错误] 未预期异常：%s", exc)
+        logger.exception("媒体接口：合成成片 发生未预期异常 项目ID=%s", script_id)
+        raise HTTPException(status_code=500, detail=f"合成失败：{str(exc)}")
 
 
 @router.post("/projects/{script_id}/export", response_model=TaskReceipt)
@@ -382,10 +382,10 @@ async def export_project(
     但尚未真正接入导出管线。
     """
     try:
-        logger.info("MEDIA_API: export_project script_id=%s", script_id)
+        logger.info("媒体接口：导出项目 项目ID=%s", script_id)
         script = project_service.get_project(script_id)
         if not script:
-            raise HTTPException(status_code=404, detail="Project not found")
+            raise HTTPException(status_code=404, detail="项目不存在")
         receipt = task_service.create_job(
             task_type="project.export",
             payload={"project_id": script_id, "options": request.model_dump()},
@@ -404,12 +404,12 @@ async def export_project(
     except HTTPException:
         raise
     except ValueError as exc:
-        logger.warning("MEDIA_API: export_project invalid_request script_id=%s detail=%s", script_id, exc)
+        logger.warning("媒体接口：导出项目 参数非法 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
-        logger.exception("MEDIA_API: export_project runtime_error script_id=%s", script_id)
+        logger.exception("媒体接口：导出项目 运行时异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
-        logger.error("[EXPORT ERROR] %s", exc)
-        logger.exception("MEDIA_API: export_project unexpected_error script_id=%s", script_id)
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(exc)}")
+        logger.error("[导出错误] %s", exc)
+        logger.exception("媒体接口：导出项目 发生未预期异常 项目ID=%s", script_id)
+        raise HTTPException(status_code=500, detail=f"导出失败：{str(exc)}")

@@ -28,7 +28,8 @@ def _configure_url() -> tuple[str, str | None]:
     """统一读取仓库已有数据库配置，避免 Alembic 再维护第二套连接来源。"""
     url = _get_database_url()
     schema = _get_postgres_schema() if url.startswith("postgresql") else None
-    config.set_main_option("sqlalchemy.url", url)
+    # 中文注释：Alembic 使用 ConfigParser，URL 中的 %（如密码里的 @ 被编码为 %40）需要先转义为 %% 才能写入配置。
+    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     return url, schema
 
 

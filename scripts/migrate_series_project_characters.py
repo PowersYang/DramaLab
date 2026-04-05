@@ -32,11 +32,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     override_env_path_for_tests(Path(args.env_file).resolve())
-    candidates = SeriesCharacterMigrationService().build_candidate_groups(args.series_id)
+    audit = SeriesCharacterMigrationService().build_series_audit(args.series_id)
     print(json.dumps({
         "series_id": args.series_id,
-        "candidate_group_count": len(candidates),
-        "candidates": candidates,
+        "duplicate_candidate_group_count": audit.get("duplicate_candidate_group_count", 0),
+        "duplicate_candidates": audit.get("duplicate_candidates", []),
+        "project_series_shadow_candidate_count": audit.get("project_series_shadow_candidate_count", 0),
+        "project_series_shadow_candidates": audit.get("project_series_shadow_candidates", []),
     }, ensure_ascii=False, indent=2))
     return 0
 

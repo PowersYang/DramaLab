@@ -7,6 +7,7 @@ from .billing_transaction_repository import BillingTransactionRepository
 from .payment_event_repository import PaymentEventRepository
 from .payment_order_repository import PaymentOrderRepository
 from .auth_rate_limit_repository import AuthRateLimitRepository
+from .asset_prompt_state_repository import AssetPromptStateRepository
 from .captcha_challenge_repository import CaptchaChallengeRepository
 from .character_asset_unit_repository import CharacterAssetUnitRepository
 from .character_repository import CharacterRepository
@@ -38,6 +39,7 @@ from .workspace_repository import WorkspaceRepository
 
 __all__ = [
     "AuthRateLimitRepository",
+    "AssetPromptStateRepository",
     "BillingAccountRepository",
     "BillingChargeRepository",
     "BillingPricingRuleRepository",

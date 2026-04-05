@@ -21,7 +21,8 @@ import {
 import { api, crudApi, type StoryboardRenderPayload, type TaskJob } from "@/lib/api";
 import { useTaskStore } from "@/store/taskStore";
 import { getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
-import { getEffectiveProjectCharacters, getProjectCharacterSourceHint, isSeriesProject } from "@/lib/projectAssets";
+import { getEffectiveProjectCharacters, isSeriesProject } from "@/lib/projectAssets";
+import ProjectCharacterSourceHintBanner from "@/components/common/ProjectCharacterSourceHintBanner";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
@@ -49,6 +50,7 @@ type StoryboardProject = Omit<StoreProject, "frames" | "video_tasks" | "characte
 };
 
 interface RenderCompositionData {
+    [key: string]: unknown;
     character_ids?: string[];
     prop_ids?: string[];
     scene_id?: string;
@@ -147,6 +149,15 @@ function buildStoryboardRenderPayload(project: StoryboardProject, frame: Storybo
     return { compositionData, finalPrompt };
 }
 
+function toTimestampNumber(value?: string | number | null) {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? undefined : parsed;
+    }
+    return undefined;
+}
+
 export default function StoryboardComposer() {
     const currentProject = useProjectStore((state) => state.currentProject) as StoryboardProject | null;
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
@@ -167,8 +178,6 @@ export default function StoryboardComposer() {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [insertIndex, setInsertIndex] = useState<number | null>(null);
     const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
-    const [renderAllBatchSize, setRenderAllBatchSize] = useState<1 | 2 | 3 | 4>(1);
-    const [isSubmittingAllFrames, setIsSubmittingAllFrames] = useState(false);
     const [isSubmittingAnalysis, setIsSubmittingAnalysis] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -258,11 +267,6 @@ export default function StoryboardComposer() {
 
     const isAnalyzing = isAnalyzingTasks || isSubmittingAnalysis;
 
-    const batchRenderableFrames = useMemo(
-        () => sortedFrames.filter((frame) => !frame.locked && !activeStoryboardRenderFrameIds.has(frame.id)),
-        [activeStoryboardRenderFrameIds, sortedFrames]
-    );
-
     useEffect(() => {
         if (!currentProject || activeStoryboardRenderJobIds.length === 0) {
             return;
@@ -337,23 +341,6 @@ export default function StoryboardComposer() {
         return api.renderFrame(currentProject.id, frame.id, compositionData, finalPrompt, batchSize);
     };
 
-    const buildStoryboardRenderBatchPayload = (frames: StoryboardFrameModel[], batchSize: number): StoryboardRenderPayload[] => {
-        if (!currentProject) {
-            return [];
-        }
-
-        return frames.map((frame) => {
-            const { compositionData, finalPrompt } = buildStoryboardRenderPayload(effectiveProject || currentProject, frame);
-            return {
-                frame_id: frame.id,
-                composition_data: compositionData,
-                prompt: finalPrompt,
-                batch_size: batchSize,
-            };
-        });
-    };
-
-
     // NEW: Analyze script text to generate storyboard frames
     const handleAnalyzeToStoryboard = async () => {
         if (!currentProject) return;
@@ -399,51 +386,6 @@ export default function StoryboardComposer() {
             }
         } finally {
             setIsSubmittingAnalysis(false);
-        }
-    };
-
-    const handleRenderAllFrames = async () => {
-        if (!currentProject) return;
-        if (!storyboardRenderAffordable) {
-            alert("当前组织算力豆余额不足，无法提交分镜渲染任务。");
-            return;
-        }
-
-        const lockedCount = sortedFrames.filter((frame) => frame.locked).length;
-        const activeCount = sortedFrames.filter((frame) => activeStoryboardRenderFrameIds.has(frame.id)).length;
-        const framesToSubmit = batchRenderableFrames;
-
-        if (framesToSubmit.length === 0) {
-            alert("没有可提交的分镜。锁定中的分镜和已在生成中的分镜会被自动跳过。");
-            return;
-        }
-
-        setIsSubmittingAllFrames(true);
-
-        try {
-            const payloadItems = buildStoryboardRenderBatchPayload(framesToSubmit, renderAllBatchSize);
-            const receipts = await api.renderFramesBatch(currentProject.id, payloadItems);
-            enqueueReceipts(currentProject.id, receipts);
-
-            void fetchProjectJobs(currentProject.id).catch((error) => {
-                console.error("Failed to refresh storyboard jobs after batch submit:", error);
-            });
-
-            const summary: string[] = [
-                `已批量提交 ${receipts.length} 个分镜任务，每个分镜生成 ${renderAllBatchSize} 张图片。`
-            ];
-            if (lockedCount > 0) {
-                summary.push(`跳过 ${lockedCount} 个已锁定分镜。`);
-            }
-            if (activeCount > 0) {
-                summary.push(`跳过 ${activeCount} 个生成中的分镜。`);
-            }
-            alert(summary.join("\n"));
-        } catch (error: unknown) {
-            console.error("Failed to submit storyboard render batch:", error);
-            alert(extractErrorDetail(error, "批量提交分镜渲染任务失败"));
-        } finally {
-            setIsSubmittingAllFrames(false);
         }
     };
 
@@ -617,107 +559,28 @@ export default function StoryboardComposer() {
 
     return (
         <div className="flex flex-col h-full text-white overflow-hidden">
-            <div className="flex-shrink-0 border-b border-white/10 bg-black/20">
+            <div className="flex-shrink-0">
                 <div className={PANEL_HEADER_CLASS}>
                     <h3 className={PANEL_TITLE_CLASS}>
                         <Layout size={16} className="text-primary" /> 分镜设计
                     </h3>
-                </div>
-                <div className="px-4 pb-4">
-                    {isSeriesProject(currentProject) && (
-                        <div className="mb-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
-                            {getProjectCharacterSourceHint(currentProject)}
-                        </div>
-                    )}
-                    <motion.div
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                        className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-[0_28px_60px_-44px_rgba(15,23,42,0.46)] backdrop-blur-xl"
+                    <BillingActionButton
+                        onClick={handleAnalyzeToStoryboard}
+                        disabled={isAnalyzing || !storyboardAnalyzeAffordable}
+                        priceCredits={storyboardAnalyzePrice}
+                        balanceCredits={account?.balance_credits}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-primary hover:text-primary/80 hover:bg-primary/10 text-xs font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        tooltipText={storyboardAnalyzePrice == null ? undefined : `预计消耗${storyboardAnalyzePrice}算力豆${!storyboardAnalyzeAffordable ? "，当前余额不足" : ""}`}
                     >
-                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(56,189,248,0.12),transparent_42%),radial-gradient(circle_at_86%_32%,rgba(34,197,94,0.10),transparent_44%),radial-gradient(circle_at_40%_90%,rgba(251,191,36,0.08),transparent_42%)]" />
-                        <div className="relative grid gap-3 p-3 xl:grid-cols-12">
-                            <div className="xl:col-span-5 rounded-2xl border border-white/10 bg-black/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary ring-1 ring-primary/20">
-                                                <Zap size={14} />
-                                            </span>
-                                            <div className="font-semibold tracking-[-0.02em] text-white">步骤 1：生成分镜</div>
-                                        </div>
-                                        <div className="mt-1 text-xs leading-relaxed text-gray-400">
-                                            从剧本解析结果生成镜头列表，可再逐帧编辑与补充。
-                                        </div>
-                                    </div>
-
-                                    <BillingActionButton
-                                        onClick={handleAnalyzeToStoryboard}
-                                        disabled={isAnalyzing || !storyboardAnalyzeAffordable}
-                                        priceCredits={storyboardAnalyzePrice}
-                                        balanceCredits={account?.balance_credits}
-                                        className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-primary/25 bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(49,95,145,0.72)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_22px_36px_-20px_rgba(49,95,145,0.84)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
-                                        tooltipText={storyboardAnalyzePrice == null ? undefined : `预计消耗${storyboardAnalyzePrice}算力豆${!storyboardAnalyzeAffordable ? "，当前余额不足" : ""}`}
-                                    >
-                                        {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                                        {isAnalyzing ? "分析中..." : "生成分镜"}
-                                    </BillingActionButton>
-                                </div>
-                            </div>
-
-                            <div className="xl:col-span-7 rounded-2xl border border-white/10 bg-black/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/15">
-                                                <ImageIcon size={14} />
-                                            </span>
-                                            <div className="font-semibold tracking-[-0.02em] text-white">步骤 2：生成分镜图片</div>
-                                        </div>
-                                        <div className="mt-1 text-xs leading-relaxed text-gray-400">
-                                            为每个分镜生成候选图。候选数越多，方便挑选替换。
-                                        </div>
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-2 py-1.5">
-                                            <span className="pl-1 text-[11px] font-medium text-gray-400">每帧候选</span>
-                                            <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1">
-                                                {[1, 2, 3, 4].map((size) => (
-                                                    <button
-                                                        key={size}
-                                                        type="button"
-                                                        onClick={() => setRenderAllBatchSize(size as 1 | 2 | 3 | 4)}
-                                                        className={`rounded-md px-2.5 py-1 text-[12px] font-semibold tracking-[-0.02em] transition-all ${
-                                                            renderAllBatchSize === size
-                                                                ? "bg-white/15 text-white shadow-[0_10px_18px_-14px_rgba(15,23,42,0.9)]"
-                                                                : "text-gray-500 hover:bg-white/10 hover:text-white"
-                                                        }`}
-                                                        title={`每个分镜生成 ${size} 张候选图`}
-                                                    >
-                                                        x{size}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <BillingActionButton
-                                            onClick={handleRenderAllFrames}
-                                            disabled={isSubmittingAllFrames || sortedFrames.length === 0 || !storyboardRenderAffordable}
-                                            priceCredits={storyboardRenderPrice}
-                                            balanceCredits={account?.balance_credits}
-                                            className="group inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/20 bg-[linear-gradient(135deg,rgba(16,185,129,0.92),rgba(8,145,178,0.86))] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_34px_-20px_rgba(16,185,129,0.72)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_42px_-24px_rgba(8,145,178,0.9)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
-                                            tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
-                                        >
-                                            {isSubmittingAllFrames ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
-                                            {isSubmittingAllFrames ? "批量提交中..." : `批量生成 x${renderAllBatchSize}`}
-                                        </BillingActionButton>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </motion.div>
+                        {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                        <span>{isAnalyzing ? "分析中..." : "生成分镜"}</span>
+                    </BillingActionButton>
                 </div>
+                {isSeriesProject(currentProject) && (
+                    <div className="px-4 pb-2">
+                        <ProjectCharacterSourceHintBanner project={currentProject} />
+                    </div>
+                )}
             </div>
 
             {/* Frame List — full width */}
@@ -748,22 +611,22 @@ export default function StoryboardComposer() {
                                 <motion.div
                                     layoutId={frame.id}
                                     onClick={() => setSelectedFrameId(frame.id)}
-                                    className={`storyboard-frame-card group relative flex gap-6 p-4 rounded-xl border transition-all cursor-pointer ${selectedFrameId === frame.id
+                                    className={`storyboard-frame-card group relative flex gap-6 p-4 rounded-none border transition-all cursor-pointer ${selectedFrameId === frame.id
                                         ? "bg-white/5 border-primary ring-1 ring-primary"
                                         : "asset-surface hover:border-white/20"
                                         }`}
                                 >
                                     {/* Frame Number */}
-                                    <div className="storyboard-frame-index absolute -left-3 -top-3 w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-xs font-bold text-gray-400 shadow-lg z-10">
+                                    <div className="storyboard-frame-index absolute -left-3 -top-3 w-8 h-8 rounded-none border border-white/10 flex items-center justify-center text-xs font-bold text-gray-400 shadow-lg z-10 bg-black/80">
                                         {getFrameDisplayNumber(frame, index)}
                                     </div>
 
                                     {/* Image Preview */}
-                                    <div className="w-64 aspect-video bg-black/40 rounded-lg border border-white/5 overflow-hidden flex-shrink-0 relative">
+                                    <div className="w-64 aspect-video bg-black/40 rounded-none border border-white/5 overflow-hidden flex-shrink-0 relative">
                                         {frame.rendered_image_url || frame.image_url ? (
                                             <ImageWithRetry
                                                 key={frame.id + (frame.updated_at || 0)} // Force remount on refresh
-                                                src={getAssetUrlWithTimestamp(frame.rendered_image_url || frame.image_url, frame.updated_at)}
+                                                src={getAssetUrlWithTimestamp(frame.rendered_image_url || frame.image_url, toTimestampNumber(frame.updated_at))}
                                                 alt={`Frame ${index + 1}`}
                                                 className="w-full h-full object-cover cursor-zoom-in"
                                                 onClick={(e: React.MouseEvent) => handleImageClick(frame.id, e)}
@@ -794,7 +657,7 @@ export default function StoryboardComposer() {
                                                                 console.error("Toggle lock failed:", error);
                                                             }
                                                         }}
-                                                        className={`pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full border text-white shadow-[0_14px_28px_-20px_rgba(0,0,0,0.8)] backdrop-blur-md transition-all ${
+                                                        className={`pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-none border text-white shadow-[0_14px_28px_-20px_rgba(0,0,0,0.8)] backdrop-blur-md transition-all ${
                                                             frame.locked
                                                                 ? "border-amber-300/25 bg-amber-500/20 hover:bg-amber-500/28"
                                                                 : "border-white/15 bg-black/35 hover:bg-black/50"
@@ -808,12 +671,12 @@ export default function StoryboardComposer() {
 
                                                 <div className="flex items-center justify-center">
                                                     {frame.locked ? (
-                                                        <div className="pointer-events-none inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-semibold text-gray-200 backdrop-blur-md">
+                                                        <div className="pointer-events-none inline-flex items-center gap-2 rounded-none border border-white/10 bg-black/40 px-3 py-2 text-xs font-semibold text-gray-200 backdrop-blur-md">
                                                             <Lock size={14} className="opacity-90" />
                                                             已锁定
                                                         </div>
                                                     ) : isFrameRendering ? (
-                                                        <div className="pointer-events-none inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/45 px-3 py-2 text-xs font-semibold text-white backdrop-blur-md">
+                                                        <div className="pointer-events-none inline-flex items-center gap-2 rounded-none border border-white/10 bg-black/45 px-3 py-2 text-xs font-semibold text-white backdrop-blur-md">
                                                             <Loader2 size={14} className="animate-spin" />
                                                             生成中...
                                                         </div>
@@ -821,18 +684,17 @@ export default function StoryboardComposer() {
                                                         <BillingActionButton
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleRenderFrame(frame, renderAllBatchSize);
+                                                                handleRenderFrame(frame);
                                                             }}
                                                             disabled={!storyboardRenderAffordable}
                                                             priceCredits={storyboardRenderPrice}
                                                             balanceCredits={account?.balance_credits}
-                                                            className="pointer-events-auto inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_18px_38px_-28px_rgba(0,0,0,0.9)] backdrop-blur-md transition-all hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                            className="pointer-events-auto inline-flex items-center justify-center gap-2 rounded-none border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_18px_38px_-28px_rgba(0,0,0,0.9)] backdrop-blur-md transition-all hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
                                                             tooltipText={storyboardRenderPrice == null ? undefined : `预计消耗${storyboardRenderPrice}算力豆${!storyboardRenderAffordable ? "，当前余额不足" : ""}`}
-                                                            tooltipClassName="bottom-full top-auto mb-2 mt-0"
-                                                            costClassName="px-1.5 py-0.5 text-[10px]"
+                                                            costClassName="px-1.5 py-0.5 text-[10px] rounded-none"
                                                         >
                                                             <Wand2 size={14} />
-                                                            生成 x{renderAllBatchSize}
+                                                            生成
                                                         </BillingActionButton>
                                                     )}
                                                 </div>
@@ -871,7 +733,7 @@ export default function StoryboardComposer() {
                                                 <button
                                                     onClick={(e) => handleMoveFrame(index, 'up', e)}
                                                     disabled={index === 0}
-                                                    className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                    className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                     data-tip="上移"
                                                 >
                                                     <ArrowUp size={14} />
@@ -879,7 +741,7 @@ export default function StoryboardComposer() {
                                                 <button
                                                     onClick={(e) => handleMoveFrame(index, 'down', e)}
                                                     disabled={index === sortedFrames.length - 1}
-                                                    className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                    className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                     data-tip="下移"
                                                 >
                                                     <ArrowDown size={14} />
@@ -888,14 +750,14 @@ export default function StoryboardComposer() {
 
                                             <button
                                                 onClick={(e) => handleCopyFrame(frame.id, e)}
-                                                className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors"
+                                                className="btn-tip p-2 hover:bg-white/10 text-gray-400 hover:text-white rounded-none transition-colors"
                                                 data-tip="复制"
                                             >
                                                 <Copy size={14} />
                                             </button>
                                             <button
                                                 onClick={(e) => handleUploadFrameImage(frame.id, e)}
-                                                className="btn-tip p-2 hover:bg-blue-500/20 text-gray-400 hover:text-blue-400 rounded-lg transition-colors"
+                                                className="btn-tip p-2 hover:bg-blue-500/20 text-gray-400 hover:text-blue-400 rounded-none transition-colors"
                                                 data-tip="上传图片"
                                             >
                                                 <Upload size={14} />
@@ -904,7 +766,7 @@ export default function StoryboardComposer() {
                                                 <button
                                                     onClick={(e) => handleExtractLastFrame(frame.id, e)}
                                                     disabled={extractingFrameId === frame.id}
-                                                    className="btn-tip p-2 hover:bg-purple-500/20 text-gray-400 hover:text-purple-400 rounded-lg transition-colors disabled:opacity-50"
+                                                    className="btn-tip p-2 hover:bg-purple-500/20 text-gray-400 hover:text-purple-400 rounded-none transition-colors disabled:opacity-50"
                                                     data-tip="使用上一帧结尾画面"
                                                 >
                                                     {extractingFrameId === frame.id ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
@@ -912,7 +774,7 @@ export default function StoryboardComposer() {
                                             ) : null}
                                             <button
                                                 onClick={(e) => handleDeleteFrame(frame.id, e)}
-                                                className="btn-tip p-2 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded-lg transition-colors"
+                                                className="btn-tip p-2 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded-none transition-colors"
                                                 data-tip="删除"
                                             >
                                                 <Trash2 size={14} />

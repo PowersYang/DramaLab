@@ -13,6 +13,7 @@ from .project_sync_descriptions import ProjectSyncDescriptionsExecutor
 from .series_import_assets import SeriesImportAssetsExecutor
 from .series_import_confirm import SeriesImportConfirmExecutor
 from .series_import_preview import SeriesImportPreviewExecutor
+from .series_assets_extract import SeriesAssetsExtractExecutor
 from .series_asset_generate import SeriesAssetGenerateExecutor
 from .storyboard_analyze import StoryboardAnalyzeExecutor
 from .storyboard_generate_all import StoryboardGenerateAllExecutor
@@ -39,6 +40,7 @@ __all__ = [
     "SeriesImportAssetsExecutor",
     "SeriesImportConfirmExecutor",
     "SeriesImportPreviewExecutor",
+    "SeriesAssetsExtractExecutor",
     "SeriesAssetGenerateExecutor",
     "StoryboardAnalyzeExecutor",
     "StoryboardGenerateAllExecutor",

@@ -19,6 +19,15 @@ interface VideoVariantSelectorProps {
 
 const getApiBaseUrl = () => API_URL;
 
+const toSortableTimestamp = (value?: string | number | null) => {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+};
+
 export const VideoVariantSelector: React.FC<VideoVariantSelectorProps> = ({
     videos = [],
     onDelete,
@@ -41,11 +50,11 @@ export const VideoVariantSelector: React.FC<VideoVariantSelectorProps> = ({
             const completed = videos.filter(v => v.status === 'completed');
             if (completed.length > 0) {
                 // Sort by created_at desc
-                completed.sort((a, b) => b.created_at - a.created_at);
+                completed.sort((a, b) => toSortableTimestamp(b.created_at) - toSortableTimestamp(a.created_at));
                 setSelectedVideoId(completed[0].id);
             } else {
                 // Or just the latest one
-                const sorted = [...videos].sort((a, b) => b.created_at - a.created_at);
+                const sorted = [...videos].sort((a, b) => toSortableTimestamp(b.created_at) - toSortableTimestamp(a.created_at));
                 setSelectedVideoId(sorted[0].id);
             }
         }

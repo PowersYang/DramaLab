@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, MapPin, Box, Save, Sparkles, Plus, Trash2 } from "lucide-react";
+import { User, MapPin, Box, Save, Sparkles, Plus, Trash2, Wand2 } from "lucide-react";
 import { api, crudApi } from "@/lib/api";
+import BillingActionButton from "@/components/billing/BillingActionButton";
+import { useBillingGuard } from "@/hooks/useBillingGuard";
 import { useProjectStore } from "@/store/projectStore";
-import { getEffectiveProjectCharacters, getProjectCharacterSourceHint, isSeriesProject } from "@/lib/projectAssets";
+import { getEffectiveProjectCharacters } from "@/lib/projectAssets";
 import { PANEL_HEADER_CLASS, PANEL_TITLE_CLASS } from "@/components/modules/panelHeaderStyles";
 
 interface ScriptNode {
@@ -62,6 +64,8 @@ function hasPropAssets(prop: any) {
 export default function ScriptProcessor() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const analyzeProject = useProjectStore((state) => state.analyzeProject);
+    const { account, getTaskPrice, canAffordTask } = useBillingGuard();
 
     // Initialize from project data
     const [script, setScript] = useState(currentProject?.originalText || "");
@@ -70,7 +74,10 @@ export default function ScriptProcessor() {
     // UI State
     const [selectedNode, setSelectedNode] = useState<ScriptNode | null>(null);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [isExtractingEntities, setIsExtractingEntities] = useState(false);
     const showPanel = true;
+    const extractTaskPrice = getTaskPrice("project.reparse");
+    const extractTaskAffordable = canAffordTask("project.reparse");
 
     // Sync from project
     useEffect(() => {
@@ -109,6 +116,7 @@ export default function ScriptProcessor() {
     const handleDeleteNode = async (node: ScriptNode, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
+        const isSeriesSceneOrProp = Boolean(currentProject.series_id && (node.type === "scene" || node.type === "prop"));
 
         const hasRelatedAssets = (() => {
             if (node.type === "character") {
@@ -134,9 +142,13 @@ export default function ScriptProcessor() {
             return frames.some((frame: any) => (frame.prop_ids || []).includes(node.id));
         })();
 
-        const confirmMessage = hasRelatedAssets || hasRelatedFrames
+        const baseConfirmMessage = hasRelatedAssets || hasRelatedFrames
             ? `“${node.name}” 已有关联资产或分镜，删除后可能影响已有数据。确认继续删除吗？`
             : `确认删除“${node.name}”吗？`;
+        // 中文注释：分集里删除共享场景/道具时，后端默认只清理当前分集引用，不会直接删掉剧集主档。
+        const confirmMessage = isSeriesSceneOrProp
+            ? `${baseConfirmMessage}\n若该实体来自剧集共享资产，本次操作不会删除剧集主档实体。`
+            : baseConfirmMessage;
         if (!confirm(confirmMessage)) return;
 
         try {
@@ -150,6 +162,16 @@ export default function ScriptProcessor() {
 
             const updatedProject = await api.getProject(currentProject.id);
             updateProject(currentProject.id, updatedProject);
+
+            if (isSeriesSceneOrProp && node.id) {
+                const stillExists = node.type === "scene"
+                    ? (updatedProject.scenes || []).some((item: any) => item.id === node.id)
+                    : (updatedProject.props || []).some((item: any) => item.id === node.id);
+                if (stillExists) {
+                    const assetLabel = node.type === "scene" ? "场景" : "道具";
+                    alert(`当前分集里的“${node.name}”属于剧集共享${assetLabel}，分集删除只会清理当前分镜引用，不会删除剧集资产主档。请前往“剧集资产”页面执行主档删除。`);
+                }
+            }
         } catch (error) {
             console.error("Failed to delete node:", error);
             alert("删除实体失败");
@@ -182,6 +204,29 @@ export default function ScriptProcessor() {
         setSelectedNode(updatedNode);
     };
 
+    const handleExtractEntities = async () => {
+        if (!currentProject) return;
+        if (!script.trim()) {
+            alert("请先输入剧本内容，再提取实体。");
+            return;
+        }
+        if (!extractTaskAffordable) {
+            alert("当前算力豆余额不足，暂时无法提取实体。");
+            return;
+        }
+
+        try {
+            // 中文注释：这里统一复用 projectStore 里的 analyzeProject 闭环，让入队、等待任务完成和项目详情刷新继续走同一条链路。
+            setIsExtractingEntities(true);
+            await analyzeProject(script);
+        } catch (error) {
+            console.error("Failed to extract entities:", error);
+            alert(error instanceof Error ? error.message : "提取实体失败，请稍后重试");
+        } finally {
+            setIsExtractingEntities(false);
+        }
+    };
+
     return (
         <div className="flex h-full w-full overflow-hidden">
             {/* Left: Script Editor */}
@@ -191,6 +236,16 @@ export default function ScriptProcessor() {
                         <Sparkles className="text-primary" size={18} />
                         {currentProject?.title || "剧本编辑器"}
                     </h2>
+                    <BillingActionButton
+                        onClick={handleExtractEntities}
+                        disabled={isExtractingEntities || !script.trim() || !extractTaskAffordable}
+                        priceCredits={extractTaskPrice}
+                        balanceCredits={account?.balance_credits}
+                        className="studio-action-button studio-action-button-warm text-xs disabled:cursor-not-allowed"
+                    >
+                        <Wand2 size={14} />
+                        {isExtractingEntities ? "提取中..." : "提取实体"}
+                    </BillingActionButton>
                 </div>
 
                 <div className="flex-1 relative p-6">
@@ -232,11 +287,6 @@ export default function ScriptProcessor() {
 
                         <div className="studio-panel-subheader px-4 py-2">
                             <p className="text-[11px] text-gray-500">已识别 {nodes.length} 个关键要素</p>
-                            {isSeriesProject(currentProject) && (
-                                <p className="mt-1 text-[11px] text-amber-300/80">
-                                    {getProjectCharacterSourceHint(currentProject)}
-                                </p>
-                            )}
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">

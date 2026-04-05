@@ -8,6 +8,7 @@ import time
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from ..application.services import CharacterService, ProjectService, PropService, SceneService
+from ..application.services.art_direction_resolution_service import ArtDirectionResolutionService
 from ..application.tasks import TaskService
 from ..auth.constants import CAP_ASSET_EDIT, CAP_PROJECT_CREATE, CAP_PROJECT_DELETE, CAP_PROJECT_EDIT
 from ..auth.dependencies import RequestContext, get_request_context, require_capability
@@ -26,6 +27,7 @@ from ..schemas.requests import (
     CreateProjectRequest,
     CreatePropRequest,
     ReparseProjectRequest,
+    UpdateProjectArtDirectionOverrideRequest,
     UpdateStyleRequest, UpdatePromptConfigRequest, UpdateModelSettingsRequest,
 )
 from ..schemas.task_models import TaskReceipt
@@ -39,6 +41,7 @@ scene_service = SceneService()
 prop_service = PropService()
 asset_workflow = AssetWorkflow()
 task_service = TaskService()
+art_direction_resolution_service = ArtDirectionResolutionService()
 
 
 @router.post("/projects", response_model=Script)
@@ -49,7 +52,7 @@ async def create_project(
 ):
     """根据小说文本创建新项目。"""
     # 路由层只记录轻量上下文，避免和请求中间件重复打印完整正文。
-    logger.info("PROJECT_API: create_project title=%s skip_analysis=%s", request.title, skip_analysis)
+    logger.info("项目接口：创建项目 标题=%s 跳过解析=%s", request.title, skip_analysis)
     result = project_service.create_project(
         request.title,
         request.text,
@@ -58,7 +61,7 @@ async def create_project(
         workspace_id=context.current_workspace_id,
         created_by=context.user.id,
     )
-    logger.info("PROJECT_API: create_project completed project_id=%s", result.id)
+    logger.info("项目接口：创建项目 完成 项目ID=%s", result.id)
     return signed_response(result)
 
 
@@ -73,12 +76,12 @@ async def reparse_project(
     """重新解析已有项目文本，并替换其中的实体数据。"""
     request_id = getattr(http_request.state, "request_id", None)
     try:
-        logger.info("PROJECT_API: reparse_project script_id=%s request_id=%s", script_id, request_id)
+        logger.info("项目接口：重新解析项目 项目ID=%s 请求ID=%s", script_id, request_id)
         project = project_service.get_project(script_id)
         if not project:
-            raise ValueError("Script not found")
+            raise ValueError("项目不存在")
         if project.workspace_id != context.current_workspace_id:
-            raise ValueError("Project not found")
+            raise ValueError("项目不存在")
         text_digest = hashlib.sha256((request.text or "").encode("utf-8")).hexdigest()[:16]
         receipt = task_service.create_job(
             task_type="project.reparse",
@@ -92,7 +95,7 @@ async def reparse_project(
             dedupe_scope=f"project_reparse:{text_digest}",
         )
         logger.info(
-            "PROJECT_API: reparse_project queued script_id=%s request_id=%s job_id=%s",
+            "项目接口：重新解析项目 已入队 项目ID=%s 请求ID=%s 任务ID=%s",
             script_id,
             request_id,
             receipt.job_id,
@@ -100,14 +103,14 @@ async def reparse_project(
         return signed_response(receipt)
     except ValueError as exc:
         logger.warning(
-            "PROJECT_API: reparse_project not_found script_id=%s request_id=%s detail=%s",
+            "项目接口：重新解析项目 未找到 项目ID=%s 请求ID=%s 详情=%s",
             script_id,
             request_id,
             exc,
         )
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("PROJECT_API: reparse_project failed script_id=%s request_id=%s", script_id, request_id)
+        logger.exception("项目接口：重新解析项目 发生未预期异常 项目ID=%s 请求ID=%s", script_id, request_id)
         # 把 request_id 回传给前端，便于代理层报错后快速定位到后端异常栈。
         raise HTTPException(
             status_code=500,
@@ -125,7 +128,7 @@ async def list_projects(context: RequestContext = Depends(get_request_context)):
     started_at = time.perf_counter()
     projects = project_service.list_projects(workspace_id=context.current_workspace_id)
     logger.info(
-        "PROJECT_API: list_projects count=%s workspace_id=%s duration_ms=%.2f",
+        "项目接口：列出项目 数量=%s 工作区ID=%s 耗时ms=%.2f",
         len(projects),
         context.current_workspace_id,
         (time.perf_counter() - started_at) * 1000,
@@ -139,7 +142,7 @@ async def list_project_briefs(context: RequestContext = Depends(get_request_cont
     started_at = time.perf_counter()
     projects = project_service.list_project_briefs(workspace_id=context.current_workspace_id)
     logger.info(
-        "PROJECT_API: list_project_briefs count=%s duration_ms=%.2f",
+        "项目接口：列出项目简表 数量=%s 耗时ms=%.2f",
         len(projects),
         (time.perf_counter() - started_at) * 1000,
     )
@@ -152,7 +155,7 @@ async def list_project_summaries(context: RequestContext = Depends(get_request_c
     started_at = time.perf_counter()
     projects = project_service.list_project_summaries(workspace_id=context.current_workspace_id)
     logger.info(
-        "PROJECT_API: list_project_summaries count=%s duration_ms=%.2f",
+        "项目接口：列出项目汇总 数量=%s 耗时ms=%.2f",
         len(projects),
         (time.perf_counter() - started_at) * 1000,
     )
@@ -165,12 +168,13 @@ async def get_project(script_id: str, context: RequestContext = Depends(get_requ
     started_at = time.perf_counter()
     script = project_service.get_project(script_id)
     if not script:
-        logger.warning("PROJECT_API: get_project not_found script_id=%s", script_id)
-        raise HTTPException(status_code=404, detail="Project not found")
+        logger.warning("项目接口：获取项目 未找到 项目ID=%s", script_id)
+        raise HTTPException(status_code=404, detail="项目不存在")
     if script.workspace_id != context.current_workspace_id:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail="项目不存在")
+    script = art_direction_resolution_service.apply_resolved_art_direction(script)
     logger.info(
-        "PROJECT_API: get_project hit script_id=%s characters=%s scenes=%s props=%s frames=%s video_tasks=%s duration_ms=%.2f",
+        "项目接口：获取项目 命中 项目ID=%s 角色=%s 场景=%s 道具=%s 分镜=%s 视频任务=%s 耗时ms=%.2f",
         script_id,
         len(script.characters or []),
         len(script.scenes or []),
@@ -182,6 +186,50 @@ async def get_project(script_id: str, context: RequestContext = Depends(get_requ
     return signed_response(script)
 
 
+@router.get("/projects/{script_id}/art_direction")
+async def get_project_art_direction(
+    script_id: str,
+    context: RequestContext = Depends(get_request_context),
+):
+    """返回项目当前生效的美术来源与解析结果。"""
+    project = project_service.get_project(script_id)
+    if not project or project.workspace_id != context.current_workspace_id:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return signed_response(art_direction_resolution_service.build_project_payload(project))
+
+
+@router.put("/projects/{script_id}/art_direction/override")
+async def update_project_art_direction_override(
+    script_id: str,
+    request: UpdateProjectArtDirectionOverrideRequest,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
+    """保存项目级美术覆写；系列项目会标记为已偏离剧集。"""
+    project = project_service.get_project(script_id)
+    if not project or project.workspace_id != context.current_workspace_id:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    updated = art_direction_resolution_service.save_project_override(
+        script_id,
+        selected_style_id=request.selected_style_id,
+        style_config=request.style_config,
+        updated_by=context.user.id,
+    )
+    return signed_response(updated)
+
+
+@router.delete("/projects/{script_id}/art_direction/override")
+async def clear_project_art_direction_override(
+    script_id: str,
+    context: RequestContext = Depends(require_capability(CAP_PROJECT_EDIT)),
+):
+    """清空项目级美术覆写，恢复继承剧集。"""
+    project = project_service.get_project(script_id)
+    if not project or project.workspace_id != context.current_workspace_id:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    updated = art_direction_resolution_service.clear_project_override(script_id, updated_by=context.user.id)
+    return signed_response(updated)
+
+
 @router.delete("/projects/{script_id}")
 async def delete_project(
     script_id: str,
@@ -189,18 +237,18 @@ async def delete_project(
 ):
     """按 ID 删除项目。注意：这是永久删除。"""
     try:
-        logger.info("PROJECT_API: delete_project script_id=%s", script_id)
+        logger.info("项目接口：删除项目 项目ID=%s", script_id)
         project = project_service.get_project(script_id)
         if not project or project.workspace_id != context.current_workspace_id:
-            raise ValueError("Project not found")
+            raise ValueError("项目不存在")
         result = project_service.delete_project(script_id)
-        logger.info("PROJECT_API: delete_project completed script_id=%s", script_id)
+        logger.info("项目接口：删除项目 完成 项目ID=%s", script_id)
         return result
     except ValueError as exc:
-        logger.warning("PROJECT_API: delete_project not_found script_id=%s detail=%s", script_id, exc)
+        logger.warning("项目接口：删除项目 未找到 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("PROJECT_API: delete_project failed script_id=%s", script_id)
+        logger.exception("项目接口：删除项目 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -212,12 +260,12 @@ async def sync_descriptions(
 ):
     """把脚本模块里的实体描述同步回素材模块。"""
     try:
-        logger.info("PROJECT_API: sync_descriptions script_id=%s", script_id)
+        logger.info("项目接口：同步描述 项目ID=%s", script_id)
         project = project_service.get_project(script_id)
         if not project:
-            raise ValueError("Script not found")
+            raise ValueError("项目不存在")
         if project.workspace_id != context.current_workspace_id:
-            raise ValueError("Script not found")
+            raise ValueError("项目不存在")
         receipt = task_service.create_job(
             task_type="project.sync_descriptions",
             payload={"project_id": script_id},
@@ -229,13 +277,13 @@ async def sync_descriptions(
             idempotency_key=idempotency_key,
             dedupe_scope="project_sync_descriptions",
         )
-        logger.info("PROJECT_API: sync_descriptions queued script_id=%s job_id=%s", script_id, receipt.job_id)
+        logger.info("项目接口：同步描述 已入队 项目ID=%s 任务ID=%s", script_id, receipt.job_id)
         return signed_response(receipt)
     except ValueError as exc:
-        logger.warning("PROJECT_API: sync_descriptions not_found script_id=%s detail=%s", script_id, exc)
+        logger.warning("项目接口：同步描述 未找到 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("PROJECT_API: sync_descriptions failed script_id=%s", script_id)
+        logger.exception("项目接口：同步描述 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -323,29 +371,29 @@ async def update_project_style(
 ):
     """更新项目的全局风格设置。"""
     try:
-        logger.info("PROJECT_API: update_project_style script_id=%s style_preset=%s", script_id, request.style_preset)
+        logger.info("项目接口：更新项目风格 项目ID=%s 风格预设=%s", script_id, request.style_preset)
         project = project_service.get_project(script_id)
         if not project or project.workspace_id != context.current_workspace_id:
-            raise ValueError("Script not found")
+            raise ValueError("项目不存在")
         updated_script = project_service.update_style(script_id, request.style_preset, request.style_prompt)
-        logger.info("PROJECT_API: update_project_style completed script_id=%s", script_id)
+        logger.info("项目接口：更新项目风格 完成 项目ID=%s", script_id)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("PROJECT_API: update_project_style not_found script_id=%s detail=%s", script_id, exc)
+        logger.warning("项目接口：更新项目风格 未找到 项目ID=%s 详情=%s", script_id, exc)
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("PROJECT_API: update_project_style failed script_id=%s", script_id)
+        logger.exception("项目接口：更新项目风格 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/projects/{script_id}/generate_assets")
 async def generate_assets(script_id: str, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     """触发项目素材生成。"""
-    logger.info("PROJECT_API: generate_assets script_id=%s", script_id)
+    logger.info("项目接口：生成项目素材 项目ID=%s", script_id)
     script = project_service.get_project(script_id)
     if not script:
-        logger.warning("PROJECT_API: generate_assets not_found script_id=%s", script_id)
-        raise HTTPException(status_code=404, detail="Project not found")
+        logger.warning("项目接口：生成项目素材 未找到 项目ID=%s", script_id)
+        raise HTTPException(status_code=404, detail="项目不存在")
     try:
         asset_workflow.prepare_generate_assets(script_id)
         receipt = task_service.create_job(
@@ -359,10 +407,10 @@ async def generate_assets(script_id: str, idempotency_key: str | None = Header(N
             idempotency_key=idempotency_key,
             dedupe_scope="generate-assets",
         )
-        logger.info("PROJECT_API: generate_assets queued script_id=%s job_id=%s", script_id, receipt.job_id)
+        logger.info("项目接口：生成项目素材 已入队 项目ID=%s 任务ID=%s", script_id, receipt.job_id)
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("PROJECT_API: generate_assets failed script_id=%s", script_id)
+        logger.exception("项目接口：生成项目素材 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -388,16 +436,16 @@ async def delete_prop(script_id: str, prop_id: str):
 async def update_model_settings(script_id: str, request: UpdateModelSettingsRequest):
     """更新项目级模型配置与宽高比设置。"""
     try:
-        logger.info("PROJECT_API: update_model_settings script_id=%s", script_id)
+        logger.info("项目接口：更新模型配置 项目ID=%s", script_id)
         updated_script = project_service.update_model_settings(script_id, **request.model_dump())
-        logger.info("PROJECT_API: update_model_settings completed script_id=%s", script_id)
+        logger.info("项目接口：更新模型配置 完成 项目ID=%s", script_id)
         return signed_response(updated_script)
     except ValueError as exc:
-        logger.warning("PROJECT_API: update_model_settings not_found script_id=%s detail=%s", script_id, exc)
+        logger.warning("项目接口：更新模型配置 未找到 项目ID=%s 详情=%s", script_id, exc)
         status_code = 400 if "model" in str(exc).lower() else 404
         raise HTTPException(status_code=status_code, detail=str(exc))
     except Exception as exc:
-        logger.exception("PROJECT_API: update_model_settings failed script_id=%s", script_id)
+        logger.exception("项目接口：更新模型配置 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -405,13 +453,13 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
 async def get_prompt_config(script_id: str):
     """读取项目自定义提示词配置，并附带系统默认值。"""
     try:
-        logger.info("PROJECT_API: get_prompt_config script_id=%s", script_id)
+        logger.info("项目接口：获取项目提示词配置 项目ID=%s", script_id)
         script = project_service.get_project(script_id)
         if not script:
-            logger.warning("PROJECT_API: get_prompt_config not_found script_id=%s", script_id)
-            raise HTTPException(status_code=404, detail="Project not found")
+            logger.warning("项目接口：获取项目提示词配置 未找到 项目ID=%s", script_id)
+            raise HTTPException(status_code=404, detail="项目不存在")
         config = script.prompt_config if hasattr(script, "prompt_config") else PromptConfig()
-        logger.info("PROJECT_API: get_prompt_config completed script_id=%s", script_id)
+        logger.info("项目接口：获取项目提示词配置 完成 项目ID=%s", script_id)
         return {
             "prompt_config": config.model_dump(),
             "defaults": {
@@ -423,7 +471,7 @@ async def get_prompt_config(script_id: str):
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("PROJECT_API: get_prompt_config failed script_id=%s", script_id)
+        logger.exception("项目接口：获取项目提示词配置 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -431,17 +479,17 @@ async def get_prompt_config(script_id: str):
 async def update_prompt_config(script_id: str, request: UpdatePromptConfigRequest):
     """更新项目自定义提示词配置；空字符串表示回退系统默认值。"""
     try:
-        logger.info("PROJECT_API: update_prompt_config script_id=%s", script_id)
+        logger.info("项目接口：更新项目提示词配置 项目ID=%s", script_id)
         config = project_service.update_prompt_config(
             script_id,
             storyboard_polish=request.storyboard_polish,
             video_polish=request.video_polish,
             r2v_polish=request.r2v_polish,
         )
-        logger.info("PROJECT_API: update_prompt_config completed script_id=%s", script_id)
+        logger.info("项目接口：更新项目提示词配置 完成 项目ID=%s", script_id)
         return {"prompt_config": config.model_dump()}
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("PROJECT_API: update_prompt_config failed script_id=%s", script_id)
+        logger.exception("项目接口：更新项目提示词配置 发生未预期异常 项目ID=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))

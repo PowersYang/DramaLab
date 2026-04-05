@@ -456,6 +456,53 @@ class BillingServiceTest(unittest.TestCase):
 
         self.assertIsNotNone(TaskService().get_job(receipt.job_id))
 
+    def test_task_service_create_series_job_inherits_series_workspace_and_charges_normally(self):
+        from src.application.services import BillingService
+        from src.application.tasks import TaskService
+        from src.repository import SeriesRepository
+        from src.schemas.models import Series
+        from src.utils.datetime import utc_now
+
+        org = self._create_org("org_billing_series_job")
+        now = utc_now()
+        SeriesRepository().create(
+            Series(
+                id="series_billing_job_1",
+                title="Series Billing Job",
+                description="desc",
+                characters=[],
+                scenes=[],
+                props=[],
+                organization_id=org.id,
+                workspace_id="ws_series_job",
+                created_by="user_series",
+                updated_by="user_series",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        billing_service = BillingService()
+        billing_service.upsert_pricing_rule(task_type="series.assets.extract", price_credits=6, actor_id="admin_1")
+        billing_service.manual_recharge(organization_id=org.id, amount_cents=500, actor_id="admin_1", idempotency_key="seed-series-job")
+
+        receipt = TaskService().create_job(
+            task_type="series.assets.extract",
+            payload={"series_id": "series_billing_job_1", "text": "周野推门走进审讯室。"},
+            project_id=None,
+            series_id="series_billing_job_1",
+            queue_name="llm",
+            resource_type="series",
+            resource_id="series_billing_job_1",
+        )
+
+        job = TaskService().get_job(receipt.job_id)
+        self.assertIsNotNone(job)
+        self.assertEqual(job.organization_id, org.id)
+        self.assertEqual(job.workspace_id, "ws_series_job")
+        self.assertEqual(job.created_by, "user_series")
+        self.assertEqual(billing_service.get_account(org.id).balance_credits, 44)
+
     def test_task_service_dedupe_reuse_does_not_charge_twice(self):
         from src.application.services import BillingService
         from src.application.tasks import TaskService
@@ -510,6 +557,66 @@ class BillingServiceTest(unittest.TestCase):
         account = billing_service.get_account(org.id)
         self.assertEqual(account.balance_credits, 35)
         self.assertEqual(len(billing_service.list_transactions(org.id, transaction_type="task_debit")), 1)
+
+    def test_task_service_allows_resubmitting_same_payload_after_previous_job_completed(self):
+        from src.application.services import BillingService
+        from src.application.tasks import TaskService
+        from src.repository import BillingChargeRepository
+        from src.repository import ProjectRepository
+        from src.schemas.models import Script
+        from src.utils.datetime import utc_now
+
+        org = self._create_org("org_billing_resubmit")
+        now = utc_now()
+        ProjectRepository().sync([
+            Script(
+                id="project_billing_resubmit_1",
+                title="Billing Resubmit Project",
+                original_text="text",
+                characters=[],
+                scenes=[],
+                props=[],
+                frames=[],
+                video_tasks=[],
+                organization_id=org.id,
+                workspace_id="ws_resubmit",
+                created_by="user_1",
+                updated_by="user_1",
+                created_at=now,
+                updated_at=now,
+            )
+        ])
+
+        billing_service = BillingService()
+        billing_service.upsert_pricing_rule(task_type="project.reparse", price_credits=15, actor_id="admin_1")
+        billing_service.manual_recharge(organization_id=org.id, amount_cents=500, actor_id="admin_1", idempotency_key="seed-resubmit")
+
+        task_service = TaskService()
+        receipt_1 = task_service.create_job(
+            task_type="project.reparse",
+            payload={"project_id": "project_billing_resubmit_1", "text": "new text"},
+            project_id="project_billing_resubmit_1",
+            queue_name="llm",
+            resource_type="project",
+            resource_id="project_billing_resubmit_1",
+        )
+        task_service.mark_job_succeeded(receipt_1.job_id, result_json={"ok": True})
+
+        receipt_2 = task_service.create_job(
+            task_type="project.reparse",
+            payload={"project_id": "project_billing_resubmit_1", "text": "new text"},
+            project_id="project_billing_resubmit_1",
+            queue_name="llm",
+            resource_type="project",
+            resource_id="project_billing_resubmit_1",
+        )
+
+        self.assertNotEqual(receipt_1.job_id, receipt_2.job_id)
+        self.assertIsNotNone(BillingChargeRepository().get_by_job_id(receipt_1.job_id))
+        self.assertIsNotNone(BillingChargeRepository().get_by_job_id(receipt_2.job_id))
+        account = billing_service.get_account(org.id)
+        self.assertEqual(account.balance_credits, 20)
+        self.assertEqual(len(billing_service.list_transactions(org.id, transaction_type="task_debit")), 2)
 
     def test_task_charge_refunds_on_failure_and_reholds_on_retry(self):
         from src.application.services import BillingService

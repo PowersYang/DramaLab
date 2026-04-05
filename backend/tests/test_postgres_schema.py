@@ -206,6 +206,11 @@ class PostgresSchemaSqlTest(unittest.TestCase):
             columns = {column["name"] for column in inspect(get_engine()).get_columns("projects")}
             self.assertIn("timeline_json", columns)
             self.assertIn("status", columns)
+            self.assertIn("art_direction_source", columns)
+            self.assertIn("art_direction_override", columns)
+            self.assertIn("art_direction_resolved", columns)
+            self.assertIn("art_direction_overridden_at", columns)
+            self.assertIn("art_direction_overridden_by", columns)
 
             override_env_path_for_tests(None)
 
@@ -255,6 +260,8 @@ class PostgresSchemaSqlTest(unittest.TestCase):
 
             columns = {column["name"] for column in inspect(get_engine()).get_columns("series")}
             self.assertIn("status", columns)
+            self.assertIn("art_direction_updated_at", columns)
+            self.assertIn("art_direction_updated_by", columns)
 
             override_env_path_for_tests(None)
             get_engine.cache_clear()

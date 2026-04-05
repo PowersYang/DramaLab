@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ...common.log import get_logger
 from ...db.session import session_scope
-from ...repository import ProjectRepository, TaskAttemptRepository, TaskEventRepository, TaskJobRepository, VideoTaskRepository
+from ...repository import ProjectRepository, SeriesRepository, TaskAttemptRepository, TaskEventRepository, TaskJobRepository, VideoTaskRepository
 from ..services.billing_service import BillingService
 from ..services.task_concurrency_service import TaskConcurrencyService
 from ...schemas.models import VideoTask
@@ -32,6 +32,7 @@ class TaskService:
 
     def __init__(self):
         self.project_repository = ProjectRepository()
+        self.series_repository = SeriesRepository()
         self.video_task_repository = VideoTaskRepository()
         self.task_job_repository = TaskJobRepository()
         self.task_attempt_repository = TaskAttemptRepository()
@@ -48,22 +49,23 @@ class TaskService:
         resource_type: str | None = None,
         resource_id: str | None = None,
         idempotency_key: str | None = None,
+        requested_model: str | None = None,
     ) -> TaskReceipt:
         project = self.project_repository.get(video_task.project_id)
         if not project:
-            raise ValueError("Project not found")
+            raise ValueError("项目不存在")
 
         if idempotency_key:
             existing = self.task_job_repository.get_by_idempotency_key(idempotency_key)
             if existing:
-                logger.info("TASK_SERVICE: reuse_by_idempotency job_id=%s key=%s", existing.id, idempotency_key)
+                logger.info("任务服务：按幂等键复用 任务ID=%s 幂等键=%s", existing.id, idempotency_key)
                 return self._to_receipt(existing)
 
-        payload = self._build_video_payload(video_task)
+        payload = self._build_video_payload(video_task, requested_model=requested_model)
         dedupe_key = self._build_dedupe_key(task_type, payload)
         existing = self.task_job_repository.get_active_by_dedupe_key(dedupe_key)
         if existing:
-            logger.info("TASK_SERVICE: reuse_by_dedupe job_id=%s dedupe_key=%s", existing.id, dedupe_key)
+            logger.info("任务服务：按去重键复用 任务ID=%s 去重键=%s", existing.id, dedupe_key)
             if not video_task.source_job_id:
                 video_task.source_job_id = existing.id
                 self.video_task_repository.save(video_task)
@@ -99,7 +101,10 @@ class TaskService:
                 self.billing_service.charge_task_submission(
                     job=job,
                     actor_id=job.created_by,
-                    idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
+                    idempotency_key=self._build_charge_idempotency_key(
+                        idempotency_key=idempotency_key,
+                        job_id=job.id,
+                    ),
                     session=session,
                 )
                 video_task.source_job_id = job.id
@@ -115,7 +120,7 @@ class TaskService:
                         event_type="job.created",
                         to_status=job.status,
                         progress=0,
-                        message="Video generation job queued",
+                        message="视频生成任务已入队",
                         event_payload_json={
                             "task_type": task_type,
                             "resource_type": resource_type,
@@ -137,7 +142,7 @@ class TaskService:
                     return self._to_receipt(existing, source_video_task_id=video_task.id)
                 raise
         logger.info(
-            "TASK_SERVICE: create_video_generation_job job_id=%s task_type=%s project_id=%s source_video_task_id=%s",
+            "任务服务：创建视频生成任务完成 任务ID=%s 任务类型=%s 项目ID=%s 来源视频任务ID=%s",
             job.id,
             task_type,
             video_task.project_id,
@@ -162,20 +167,27 @@ class TaskService:
         dedupe_scope: str | None = None,
     ) -> TaskReceipt:
         project = self.project_repository.get(project_id) if project_id else None
+        series = self.series_repository.get(series_id) if series_id else None
         if project_id and not project:
-            raise ValueError("Project not found")
+            raise ValueError("项目不存在")
+        if series_id and not series:
+            raise ValueError("系列不存在")
 
         if idempotency_key:
             existing = self.task_job_repository.get_by_idempotency_key(idempotency_key)
             if existing:
-                logger.info("TASK_SERVICE: reuse_generic_by_idempotency job_id=%s key=%s", existing.id, idempotency_key)
+                logger.info("任务服务：通用任务按幂等键复用 任务ID=%s 幂等键=%s", existing.id, idempotency_key)
                 return self._to_receipt(existing)
 
         dedupe_key = self._build_generic_dedupe_key(task_type, payload, project_id, resource_id, dedupe_scope)
         existing = self.task_job_repository.get_active_by_dedupe_key(dedupe_key)
         if existing:
-            logger.info("TASK_SERVICE: reuse_generic_by_dedupe job_id=%s dedupe_key=%s", existing.id, dedupe_key)
+            logger.info("任务服务：通用任务按去重键复用 任务ID=%s 去重键=%s", existing.id, dedupe_key)
             return self._to_receipt(existing)
+
+        owner_organization_id = getattr(project, "organization_id", None) or getattr(series, "organization_id", None)
+        owner_workspace_id = getattr(project, "workspace_id", None) or getattr(series, "workspace_id", None)
+        owner_actor_id = getattr(project, "updated_by", None) or getattr(series, "updated_by", None)
 
         now = utc_now()
         job = TaskJob(
@@ -184,8 +196,8 @@ class TaskService:
             status=TaskStatus.QUEUED,
             queue_name=queue_name,
             priority=priority,
-            organization_id=getattr(project, "organization_id", None),
-            workspace_id=getattr(project, "workspace_id", None),
+            organization_id=owner_organization_id,
+            workspace_id=owner_workspace_id,
             project_id=project_id,
             series_id=series_id,
             resource_type=resource_type,
@@ -195,8 +207,8 @@ class TaskService:
             dedupe_key=dedupe_key,
             max_attempts=max_attempts,
             timeout_seconds=timeout_seconds,
-            created_by=getattr(project, "updated_by", None),
-            updated_by=getattr(project, "updated_by", None),
+            created_by=owner_actor_id,
+            updated_by=owner_actor_id,
             created_at=now,
             updated_at=now,
         )
@@ -209,7 +221,10 @@ class TaskService:
                 self.billing_service.charge_task_submission(
                     job=job,
                     actor_id=job.created_by,
-                    idempotency_key=self._build_charge_idempotency_key(idempotency_key=idempotency_key, dedupe_key=dedupe_key),
+                    idempotency_key=self._build_charge_idempotency_key(
+                        idempotency_key=idempotency_key,
+                        job_id=job.id,
+                    ),
                     session=session,
                 )
                 self.task_event_repository.create(
@@ -223,7 +238,7 @@ class TaskService:
                         event_type="job.created",
                         to_status=job.status,
                         progress=0,
-                        message=f"{task_type} queued",
+                        message=f"{task_type} 已入队",
                         event_payload_json={
                             "task_type": task_type,
                             "resource_type": resource_type,
@@ -240,7 +255,7 @@ class TaskService:
                 if existing:
                     return self._to_receipt(existing)
                 raise
-        logger.info("TASK_SERVICE: create_job job_id=%s task_type=%s project_id=%s series_id=%s", job.id, task_type, project_id, series_id)
+        logger.info("任务服务：创建任务完成 任务ID=%s 任务类型=%s 项目ID=%s 系列ID=%s", job.id, task_type, project_id, series_id)
         return self._to_receipt(job)
 
     def list_project_jobs(self, project_id: str, statuses: list[str] | None = None) -> list[TaskJob]:
@@ -296,8 +311,8 @@ class TaskService:
                 continue
 
             message = (
-                f"Recovered stale {job.status.value} job after worker restart. "
-                f"Last heartbeat at {last_seen_at.isoformat()}."
+                f"worker 重启后回收僵尸任务：原状态={job.status.value}。"
+                f"最后心跳时间={last_seen_at.isoformat()}。"
             )
             self._close_running_attempts(job.id, message, ended_at=now)
 
@@ -344,7 +359,7 @@ class TaskService:
         with session_scope() as session:
             job = self.task_job_repository.get(job_id, session=session)
             if not job:
-                raise ValueError(f"Task job {job_id} not found")
+                raise ValueError(f"任务 {job_id} 不存在")
             if job.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.TIMED_OUT}:
                 return job
 
@@ -371,7 +386,7 @@ class TaskService:
                     from_status=job.status,
                     to_status=updated.status,
                     progress=0,
-                    message="Task cancellation requested",
+                    message="已请求取消任务",
                     created_at=now,
                     updated_at=now,
                 ),
@@ -390,19 +405,21 @@ class TaskService:
         with session_scope() as session:
             job = self.task_job_repository.get(job_id, session=session)
             if not job:
-                raise ValueError(f"Task job {job_id} not found")
+                raise ValueError(f"任务 {job_id} 不存在")
             if job.status not in {TaskStatus.FAILED, TaskStatus.TIMED_OUT, TaskStatus.CANCELLED}:
                 return job
             if job.attempt_count >= job.max_attempts:
-                raise TaskRetryLimitReached(f"Task job {job_id} reached max attempts")
+                raise TaskRetryLimitReached(f"任务 {job_id} 已达到最大重试次数")
 
             self.billing_service.reopen_task_charge_for_retry(job=job, actor_id=job.updated_by, session=session)
 
             now = utc_now()
+            retry_queue_name = self._resolve_retry_queue_name(job)
             updated = self.task_job_repository.patch(
                 job_id,
                 {
                     "status": TaskStatus.QUEUED.value,
+                    "queue_name": retry_queue_name,
                     "scheduled_at": now,
                     "claimed_at": None,
                     "started_at": None,
@@ -427,7 +444,7 @@ class TaskService:
                     from_status=job.status,
                     to_status=updated.status,
                     progress=0,
-                    message="Task re-queued manually",
+                    message="任务已手动重新入队",
                     created_at=now,
                     updated_at=now,
                 ),
@@ -455,7 +472,7 @@ class TaskService:
     def mark_job_running(self, job_id: str, worker_id: str) -> TaskJob:
         job = self.task_job_repository.get(job_id)
         if not job:
-            raise ValueError(f"Task job {job_id} not found")
+            raise ValueError(f"任务 {job_id} 不存在")
         now = utc_now()
         updated = self.task_job_repository.patch(
             job_id,
@@ -479,7 +496,7 @@ class TaskService:
                 from_status=job.status,
                 to_status=updated.status,
                 progress=1,
-                message="Worker started executing task",
+                message="工作线程开始执行任务",
                 created_at=now,
                 updated_at=now,
             )
@@ -493,7 +510,7 @@ class TaskService:
         with session_scope() as session:
             job = self.task_job_repository.get(job_id, session=session)
             if not job:
-                raise ValueError(f"Task job {job_id} not found")
+                raise ValueError(f"任务 {job_id} 不存在")
             now = utc_now()
             updated = self.task_job_repository.patch(
                 job_id,
@@ -519,7 +536,7 @@ class TaskService:
                     from_status=job.status,
                     to_status=updated.status,
                     progress=100,
-                    message="Task finished successfully",
+                    message="任务执行成功",
                     event_payload_json=result_json or {},
                     created_at=now,
                     updated_at=now,
@@ -677,7 +694,7 @@ class TaskService:
             )
             return updated
 
-    def _build_video_payload(self, video_task: VideoTask) -> dict:
+    def _build_video_payload(self, video_task: VideoTask, requested_model: str | None = None) -> dict:
         return {
             "video_task_id": video_task.id,
             "project_id": video_task.project_id,
@@ -693,6 +710,7 @@ class TaskService:
             "prompt_extend": video_task.prompt_extend,
             "negative_prompt": video_task.negative_prompt,
             "model": video_task.model,
+            "requested_model": requested_model or video_task.model,
             "shot_type": video_task.shot_type,
             "generation_mode": video_task.generation_mode,
             "reference_video_urls": video_task.reference_video_urls or [],
@@ -715,18 +733,22 @@ class TaskService:
         self,
         task_type: str,
         payload: dict,
-        project_id: str,
+        project_id: str | None,
         resource_id: str | None,
         dedupe_scope: str | None,
     ) -> str:
         normalized = json.dumps(payload, sort_keys=True, ensure_ascii=True)
         digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
         scope = dedupe_scope or resource_id or "project"
-        return f"{task_type}:{project_id}:{scope}:{digest}"
+        # 中文注释：统一资产链路可能同时携带 project_id 和 series_id；
+        # 去重 owner 优先按 series 归并，避免同一系列资产在不同分集入口重复排队。
+        owner_id = payload.get("series_id") or project_id or "global"
+        return f"{task_type}:{owner_id}:{scope}:{digest}"
 
-    def _build_charge_idempotency_key(self, *, idempotency_key: str | None, dedupe_key: str) -> str:
-        # 中文注释：扣费幂等必须至少绑定到 dedupe_key，避免多实例同时处理同一活动任务时重复扣豆。
-        return f"task_charge:{idempotency_key}" if idempotency_key else f"task_charge:{dedupe_key}"
+    def _build_charge_idempotency_key(self, *, idempotency_key: str | None, job_id: str) -> str:
+        # 中文注释：显式幂等键用于“同一次提交”的重放保护；未显式传入时退回到 job_id，
+        # 这样活动任务是否复用仍由 dedupe_key 控制，而历史上已经结束的同类任务可以再次提交并重新扣费。
+        return f"task_charge:{idempotency_key}" if idempotency_key else f"task_charge:{job_id}"
 
     def _to_receipt(self, job: TaskJob, source_video_task_id: str | None = None) -> TaskReceipt:
         return TaskReceipt(
@@ -741,6 +763,13 @@ class TaskService:
             source_video_task_id=source_video_task_id or (job.payload_json or {}).get("video_task_id"),
             created_at=job.created_at,
         )
+
+    def _resolve_retry_queue_name(self, job: TaskJob) -> str:
+        # 中文注释：系列动作参考任务重试时强制迁移到专用队列，
+        # 避免历史失败任务继续在共享 video 队列被旧 worker 抢到并重复报错。
+        if job.task_type == "asset.motion_ref.generate" and job.series_id:
+            return "video_series_motion"
+        return job.queue_name
 
     def _close_running_attempts(self, job_id: str, error_message: str, *, ended_at) -> None:
         # 重启恢复时同步收口 attempt，避免审计视图里一直残留 running 记录。

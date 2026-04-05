@@ -20,7 +20,13 @@ vi.mock("next/dynamic", () => ({
 }));
 
 vi.mock("@/components/studio/admin/AdminSummaryStrip", () => ({
-  default: () => <div data-testid="admin-summary-strip" />,
+  default: ({ items }: any) => (
+    <div data-testid="admin-summary-strip">
+      {items?.map((item: any) => (
+        <span key={item.label}>{item.label}:{item.value}</span>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock("@/components/studio/announcement/AnnouncementBoard", () => ({
@@ -94,6 +100,12 @@ describe("Studio information architecture", () => {
         status: "processing",
         updated_at: "2026-04-05T09:00:00.000Z",
       },
+      {
+        id: "project-2",
+        title: "第二集",
+        status: "completed",
+        updated_at: "2026-04-04T09:00:00.000Z",
+      },
     ]);
     mockListSeriesSummaries.mockResolvedValue([
       {
@@ -120,6 +132,7 @@ describe("Studio information architecture", () => {
 
     expect(screen.getByText("新建剧集")).toBeInTheDocument();
     expect(screen.queryByText("新建项目")).not.toBeInTheDocument();
+    expect(screen.getByText("进行中项目:1")).toBeInTheDocument();
   });
 
   it("treats shows as the primary object in the studio ledger", async () => {

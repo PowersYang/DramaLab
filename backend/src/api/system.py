@@ -31,7 +31,7 @@ model_provider_service = ModelProviderService()
 @router.get("/debug/config")
 async def debug_config():
     """检查 OSS 配置是否正常。"""
-    logger.info("SYSTEM_API: debug_config")
+    logger.info("系统接口：调试配置")
     uploader = OSSImageUploader()
     return {
         "oss_configured": uploader.is_configured,
@@ -50,14 +50,14 @@ async def debug_config():
 @router.get("/system/check")
 async def check_system():
     """检查系统依赖与基础配置。"""
-    logger.info("SYSTEM_API: check_system")
+    logger.info("系统接口：系统检查")
     return run_system_checks()
 
 
 @router.get("/system/models/available")
 async def get_available_models():
     """返回当前平台已启用的业务可用模型。"""
-    logger.info("SYSTEM_API: get_available_models")
+    logger.info("系统接口：获取可用模型")
     return signed_response(model_provider_service.list_available_models())
 
 
@@ -65,16 +65,16 @@ async def get_available_models():
 async def upload_file(file: UploadFile = File(...)):
     """上传文件，并返回可供前端访问的地址。"""
     try:
-        logger.info("SYSTEM_API: upload_file filename=%s", file.filename)
+        logger.info("系统接口：上传文件 文件名=%s", file.filename)
         with staged_upload_file(file.file, file.filename) as file_path:
             oss_url = OSSImageUploader().upload_image(file_path, sub_path="uploads")
             if oss_url:
-                logger.info("SYSTEM_API: upload_file uploaded_to_oss filename=%s", file.filename)
+                logger.info("系统接口：上传文件 已上传到OSS 文件名=%s", file.filename)
                 return signed_response({"url": oss_url})
 
-        raise RuntimeError("OSS upload failed. Static file mount has been removed, so local fallback URLs are no longer supported.")
+        raise RuntimeError("OSS 上传失败。由于已移除本地静态文件挂载，无法再回退到本地 URL。")
     except Exception as exc:
-        logger.exception("SYSTEM_API: upload_file unexpected_error filename=%s", file.filename)
+        logger.exception("系统接口：上传文件 发生未预期异常 文件名=%s", file.filename)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -85,7 +85,7 @@ async def import_file_preview(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """上传 txt/md 文件，并异步返回 LLM 预拆分任务。"""
-    logger.info("SYSTEM_API: import_file_preview filename=%s suggested_episodes=%s", file.filename, suggested_episodes)
+    logger.info("系统接口：导入文件预览 文件名=%s 建议集数=%s", file.filename, suggested_episodes)
     if suggested_episodes < 1 or suggested_episodes > 50:
         raise HTTPException(status_code=400, detail="建议集数应在 1-50 之间")
     try:
@@ -111,10 +111,10 @@ async def import_file_preview(
         )
         return signed_response(receipt)
     except ValueError as exc:
-        logger.warning("SYSTEM_API: import_file_preview invalid_request filename=%s detail=%s", file.filename, exc)
+        logger.warning("系统接口：导入文件预览 参数非法 文件名=%s 详情=%s", file.filename, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("SYSTEM_API: import_file_preview unexpected_error filename=%s", file.filename)
+        logger.exception("系统接口：导入文件预览 发生未预期异常 文件名=%s", file.filename)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -125,14 +125,14 @@ async def import_file_confirm(
 ):
     """确认分集结果，并正式创建系列与分集项目。"""
     try:
-        logger.info("SYSTEM_API: import_file_confirm title=%s episode_count=%s has_import_id=%s", request.title, len(request.episodes), bool(request.import_id))
+        logger.info("系统接口：确认导入 标题=%s 分集数=%s 是否带import_id=%s", request.title, len(request.episodes), bool(request.import_id))
         text = None
         if request.import_id:
             text = system_service.pop_import_text(request.import_id)
         if not text:
             text = request.text
         if not text:
-            raise ValueError("No text available. Provide import_id or text.")
+            raise ValueError("没有可用的文本，请提供 import_id 或 text。")
         receipt = task_service.create_job(
             task_type="series.import.confirm",
             payload={
@@ -153,10 +153,10 @@ async def import_file_confirm(
         )
         return signed_response(receipt)
     except ValueError as exc:
-        logger.warning("SYSTEM_API: import_file_confirm invalid_request title=%s detail=%s", request.title, exc)
+        logger.warning("系统接口：确认导入 参数非法 标题=%s 详情=%s", request.title, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("SYSTEM_API: import_file_confirm unexpected_error title=%s", request.title)
+        logger.exception("系统接口：确认导入 发生未预期异常 标题=%s", request.title)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -183,7 +183,7 @@ async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("An error occurred")
+        logger.exception("系统接口：美术指导风格分析发生未预期异常 script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -202,7 +202,7 @@ async def save_art_direction(script_id: str, request: SaveArtDirectionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("An error occurred")
+        logger.exception("系统接口：保存美术指导发生未预期异常 script_id=%s", script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -214,7 +214,7 @@ async def get_style_presets():
         presets = system_service.list_style_presets()
         return {"presets": [preset.model_dump(mode="json") for preset in presets]}
     except Exception as exc:
-        logger.exception("An error occurred")
+        logger.exception("系统接口：读取风格预设发生未预期异常")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -227,7 +227,7 @@ async def get_user_art_styles(context: RequestContext = Depends(get_request_cont
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("An error occurred")
+        logger.exception("系统接口：读取用户美术风格发生未预期异常 user_id=%s", context.user.id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -240,7 +240,7 @@ async def save_user_art_styles(request: SaveUserArtStylesRequest, context: Reque
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.exception("An error occurred")
+        logger.exception("系统接口：保存用户美术风格发生未预期异常 user_id=%s", context.user.id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 @router.post("/video/polish_prompt", response_model=TaskReceipt)
@@ -265,7 +265,7 @@ async def polish_video_prompt(request: PolishVideoPromptRequest, idempotency_key
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("An error occurred")
+        logger.exception("系统接口：润色视频提示词发生未预期异常 script_id=%s", request.script_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -292,5 +292,5 @@ async def polish_r2v_prompt(request: PolishR2VPromptRequest, idempotency_key: st
         )
         return signed_response(receipt)
     except Exception as exc:
-        logger.exception("An error occurred")
+        logger.exception("系统接口：润色R2V提示词发生未预期异常 script_id=%s", request.script_id)
         raise HTTPException(status_code=500, detail=str(exc))

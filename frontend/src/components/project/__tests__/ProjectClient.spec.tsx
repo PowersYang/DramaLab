@@ -24,7 +24,6 @@ vi.mock("framer-motion", () => ({
 }));
 
 vi.mock("lucide-react", () => ({
-    Palette: () => <span />,
     Layout: () => <span />,
     Film: () => <span />,
     Share2: () => <span />,
@@ -59,10 +58,6 @@ vi.mock("@/components/modules/ScriptProcessor", () => ({
     default: () => <div>剧本处理内容</div>,
 }));
 
-vi.mock("@/components/modules/ArtDirection", () => ({
-    default: () => <div>美术设定内容</div>,
-}));
-
 vi.mock("@/components/modules/ConsistencyVault", () => ({
     default: () => <div>资产制作内容</div>,
 }));
@@ -89,6 +84,14 @@ vi.mock("@/components/modules/FinalMixStudio", () => ({
 
 vi.mock("@/components/modules/ExportStudio", () => ({
     default: () => <div>导出成片内容</div>,
+}));
+
+vi.mock("@/components/project/ProjectArtDirectionStatusCard", () => ({
+    default: () => <div>美术来源卡片</div>,
+}));
+
+vi.mock("@/components/project/ProjectArtDirectionOverridePanel", () => ({
+    default: () => <div>项目覆写面板</div>,
 }));
 
 vi.mock("@/store/projectStore", () => ({
@@ -139,5 +142,15 @@ describe("ProjectClient", () => {
             expect(screen.getByText("资产制作内容")).toBeInTheDocument();
         });
         expect(screen.queryByText("剧本处理内容")).not.toBeInTheDocument();
+    });
+
+    it("does not expose art direction as a pipeline step or top status card anymore", async () => {
+        render(<ProjectClient id="project-1" />);
+
+        await waitFor(() => {
+            expect(screen.getByText("剧本处理内容")).toBeInTheDocument();
+        });
+        expect(screen.queryByRole("button", { name: "美术设定" })).not.toBeInTheDocument();
+        expect(screen.queryByText("美术来源卡片")).not.toBeInTheDocument();
     });
 });

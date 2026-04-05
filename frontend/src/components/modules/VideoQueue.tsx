@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, RefreshCw, Copy, Download, Trash2, AlertCircle } from "lucide-react";
 
 import { TaskJob, VideoTask } from "@/lib/api";
+import { formatTaskModelSummary, getTaskModelInfo } from "@/lib/taskModelInfo";
 import { getAssetUrl } from "@/lib/utils";
 import { useTaskStore } from "@/store/taskStore";
 import { useBillingGuard } from "@/hooks/useBillingGuard";
@@ -96,6 +97,8 @@ function JobCard({ job, priceCredits, onCancel, onRetry }: { job: TaskJob; price
     const isActive = ["queued", "claimed", "running", "retry_waiting", "cancel_requested"].includes(job.status);
     const isFailed = ["failed", "timed_out"].includes(job.status);
     const sourceVideoTaskId = job.payload_json?.video_task_id;
+    const modelSummary = formatTaskModelSummary(job);
+    const fallbackReason = getTaskModelInfo(job).fallbackReason;
 
     return (
         <motion.div
@@ -125,6 +128,8 @@ function JobCard({ job, priceCredits, onCancel, onRetry }: { job: TaskJob; price
                     <p className="video-helper-text mt-1">
                         {sourceVideoTaskId ? `video_task=${sourceVideoTaskId.slice(0, 8)}` : formatJobType(job.task_type)}
                     </p>
+                    {modelSummary ? <p className="video-helper-text mt-1">{modelSummary}</p> : null}
+                    {fallbackReason ? <p className="mt-1 text-[11px] leading-5 text-amber-500">{fallbackReason}</p> : null}
                 </div>
                 <div className="flex gap-2">
                     {isActive && (
